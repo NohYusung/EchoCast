@@ -1,0 +1,25 @@
+.playControlArea {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.playButton {
+  display: flex;
+  align-items: center;
+}
+
+.changeButton {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.recordLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ff2c5a;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}

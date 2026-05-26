@@ -1,0 +1,490 @@
+.holeItem {
+  padding: 0 16px;
+  margin-bottom: 12px;
+}
+
+.collapsed {
+}
+
+.recordingPanelActive {
+}
+
+.holeItemHeaderWrapper {
+  width: 100%;
+  background: #f9f9f9;
+  border-radius: 4px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.headerToggleButton {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.expanded .holeItemHeaderWrapper {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Figma 기본 카드와 동일 톤 유지 — 녹음 여부에 따른 테두리 강조 없음 */
+
+/* 피그마: 접힘(^) / 펼침(v) — downArrow 에셋은 기본이 아래방향이라 접힘에서 180° 회전 */
+.accordionIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  vertical-align: middle;
+
+  img {
+    width: 12px;
+    height: 12px;
+    transition: transform 0.2s ease;
+    transform: rotate(180deg);
+  }
+}
+
+.accordionIcon img.iconExpanded {
+  transform: rotate(0deg);
+}
+
+/* 화살표 + 대사 번호만 한 줄 (피그마) */
+.toggleHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.headerTitleGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.scriptIndex {
+  font-size: 12px;
+  font-weight: 700;
+  color: #333333;
+}
+
+.applyStatusBadge {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: normal;
+  font-weight: 700;
+  color: #ff2d55;
+}
+
+/* 나레이션·지문: 아이콘+gap 만큼 들여서 «대사 01» 텍스트 시작과 수직 정렬 */
+.toggleBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.characterLabel {
+  display: block;
+  margin: 0;
+  font-size: 12px;
+  line-height: normal;
+  color: #333333;
+  font-weight: 700;
+}
+
+.holeItemScript {
+  display: block;
+  margin: 0;
+  font-size: 12px;
+  line-height: normal;
+  color: #333333;
+  font-weight: 400;
+}
+
+/* Figma: PC(11074:30675)·태블릿(11079:30844) 확장 카드 — 캐릭터·대사 16px. 모바일(11074:30521)은 12px 유지.
+   녹음 전(녹음 시작)·후(진행 바) 동일 크기 — recordingPanelActive에 묶지 않음 */
+@media (min-width: 768px) {
+  .characterLabel,
+  .holeItemScript {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  .applyStatusBadge {
+    font-size: 16px;
+    line-height: 1;
+  }
+}
+
+.inlineActions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.previewButton {
+  flex-shrink: 0;
+  min-height: 24px;
+  border-radius: 32px;
+  border: 1px solid #e5e5e5;
+  background: #ffffff;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+
+  img {
+    width: 16px;
+    height: 16px;
+  }
+
+  span {
+    font-size: 12px;
+    font-weight: 400;
+    color: #333333;
+    line-height: normal;
+    white-space: nowrap;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.moveButton {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  flex-shrink: 1;
+  min-width: 0;
+
+  span {
+    font-size: 12px;
+    font-weight: 400;
+    color: #333333;
+    line-height: normal;
+    white-space: nowrap;
+  }
+
+  img {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.recordingArea {
+  background: #f9f9f9;
+  margin-top: 1px;
+  padding: 0 16px 16px;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.recordingAreaExpanded {
+}
+
+.recordingAreaRecordingPanel {
+}
+
+.sampleImageWrap {
+  margin-top: 12px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 120px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #e5e5e5;
+  background: #dfe4ef;
+}
+
+.sampleImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+}
+
+.sampleImageVisible {
+  opacity: 1;
+}
+
+.playerBar {
+  position: relative;
+  z-index: 1;
+  margin-top: 12px;
+  min-height: 40px;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  background: #ffffff;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stopButton {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 999px;
+  background: #333333;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 1;
+
+  span {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: #ff2d55;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.3;
+  }
+}
+
+.progressTrack {
+  position: relative;
+  flex: 1 1 auto;
+  height: 2px;
+  background: #d9d9d9;
+  /* Figma: 2px 트랙 + 16px 원형 썸(트랙 밖으로 반쯤 노출) — overflow:hidden이면 썸이 잘림 */
+  overflow: visible;
+}
+
+.progressThumb {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #333333;
+  transform: translate(-50%, -50%);
+  /* 썸이 옆 버튼 위로 겹쳐도 클릭은 버튼이 받도록 */
+  pointer-events: none;
+}
+
+.recordingMeta {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666666;
+}
+
+.recordingControls {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.secondaryControlBtn {
+  min-width: 56px;
+  min-height: 24px;
+  border-radius: 999px;
+  border: none;
+  background: #b4b3b3;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 8px;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.secondaryControlBtnActive {
+  background: #333333;
+  border-color: #333333;
+  color: #ffffff;
+}
+
+.applyButton {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  border: none;
+  border-radius: 4px;
+  background: #333333;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.recordButtonFrame {
+  margin-top: 12px;
+  min-height: 40px;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recordMainBtn {
+  min-width: 81px;
+  min-height: 24px;
+  border: none;
+  border-radius: 32px;
+  background: #333333;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  img {
+    width: 16px;
+    height: 16px;
+  }
+
+  span {
+    font-size: 12px;
+    font-weight: 400;
+  }
+}
+
+.recording {
+  background: #ff5f5f;
+}
+
+@media (min-width: 768px) {
+  .collapsed {
+    .holeItemHeaderWrapper {
+      width: 297px;
+    }
+  }
+
+  .recordingAreaExpanded {
+    display: grid;
+    grid-template-columns: 266px 266px;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    justify-content: space-between;
+    align-items: stretch;
+    column-gap: 32px;
+    row-gap: 10px;
+
+    .sampleImageWrap {
+      grid-column: 1;
+      grid-row: 1 / span 3;
+      justify-self: start;
+      margin-top: 0;
+      width: 266px;
+      height: 193.728px;
+      min-height: 193.728px;
+      aspect-ratio: auto;
+    }
+
+    .playerBar,
+    .recordButtonFrame {
+      grid-column: 2;
+      grid-row: 2;
+      align-self: end;
+      width: 266px;
+      margin-top: 0;
+    }
+
+    .applyButton {
+      grid-column: 2;
+      grid-row: 3;
+      align-self: end;
+      width: 266px;
+      margin-top: 0;
+    }
+  }
+
+  /* 녹음 패널 활성 시에도 toggleBody padding-left 유지 — 대사 블록이 왼쪽으로 붙는 것 방지 */
+  .recordingPanelActive {
+    .headerTitleGroup {
+      gap: 0;
+    }
+  }
+
+  .recordingAreaRecordingPanel {
+    .recordButtonFrame {
+      display: none;
+    }
+  }
+}
+
+@media (min-width: 1024px) {
+  .recordingAreaExpanded {
+    grid-template-columns: 377.591px minmax(0, 1fr);
+
+    .sampleImageWrap {
+      width: 377.591px;
+      height: 275px;
+      min-height: 275px;
+    }
+
+    .recordButtonFrame,
+    .playerBar,
+    .applyButton {
+      width: 100%;
+    }
+  }
+}

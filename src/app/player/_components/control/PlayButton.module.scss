@@ -1,0 +1,65 @@
+.playerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #ffffff;
+  border-radius: 58px;
+  background: #333333;
+  color: #ffffff;
+  padding: 8px 16px 8px 8px;
+  min-width: 116px;
+  min-height: 52px;
+  cursor: pointer;
+}
+
+.icon {
+  width: 36px;
+  height: 36px;
+  display: block;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .playerButton {
+    padding-right: 16px;
+    min-width: 116px;
+    min-height: 52px;
+  }
+
+  .icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .label {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 769px) {
+  .playerButton {
+    gap: 12px;
+    padding: 8px 24px 8px 16px;
+    min-width: 192px;
+    min-height: 70px;
+  }
+
+  .icon {
+    width: 54px;
+    height: 54px;
+  }
+
+  .label {
+    font-size: 24px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+}

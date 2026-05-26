@@ -1,0 +1,63 @@
+.toolbarButtonsFloat {
+  height: 30px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+
+  .toolbarButton {
+    width: 80px;
+    height: 80px;
+    background-color: transparent; // v-bind(background_color)를 기본값으로 대체
+    border-radius: 3px;
+    padding: 1px;
+    cursor: pointer;
+
+    img {
+      width: 100%;
+      height: 100%;
+    }
+
+    &:hover {
+      filter: brightness(1.2);
+    }
+
+    &:disabled {
+      filter: brightness(0.1);
+    }
+  }
+}
+
+.toolbarButtonsCenter {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 5px;
+
+  .toolbarButton {
+    // .toolbarButtonsFloat .toolbarButton과 중복되는 스타일이 많으므로,
+    // 공통 클래스로 묶어 관리하면 더 효율적입니다.
+    // 여기서는 원본 구조를 최대한 유지합니다.
+    width: 30px;
+    height: 30px;
+    background-color: transparent;
+    border-radius: 3px;
+    padding: 1px;
+    cursor: pointer;
+
+    img {
+      width: 100%;
+      height: 100%;
+    }
+
+    &:hover {
+      filter: brightness(1.2);
+    }
+
+    &:disabled {
+      filter: brightness(0.1);
+    }
+  }
+}

@@ -1,0 +1,89 @@
+.loadingWrapper {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: all;
+  opacity: 0;
+  transition: opacity 200ms ease;
+
+  &.fadeLoading {
+    opacity: 1;
+  }
+}
+
+.loadingWrapper.isFullscreen {
+  position: fixed;
+  inset: 0;
+}
+
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 11, 14, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.loadingCenter {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.loadingProgress {
+  color: #ffffff;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.circularProgress {
+  width: 100px;
+  height: 100px;
+
+  @media (min-width: 768px) {
+    width: 135px;
+    height: 135px;
+  }
+
+  &.indeterminate {
+    animation: rotate 2s linear infinite;
+  }
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.iconSpeaker {
+  width: 24px;
+  height: 24px;
+
+  @media (min-width: 768px) {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+.loadingText {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 13px;
+
+  @media (min-width: 768px) {
+    font-size: 14px;
+  }
+}

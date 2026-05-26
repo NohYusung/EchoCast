@@ -1,0 +1,35 @@
+.toonBox {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  // Vue 파일에 있던 #center-line 스타일. 필요시 주석 해제하여 사용
+  /*
+  #center-line {
+    position: sticky;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    top: 50%;
+    background-color: var(--color-view-top-line);
+    z-index: 4;
+    pointer-events: none;
+  }
+  */
+}
+
+.toonContent {
+  position: relative;
+  overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1; /* col 클래스 대체 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+
+  &::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, and Opera */
+  }
+}
