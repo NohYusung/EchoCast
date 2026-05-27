@@ -1,0 +1,117 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+.gitmessage
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# JetBrains / IntelliJ
+.idea/
+*.iml
+
+# Serena MCP (local index/cache)
+.serena/
+
+# Cursor profile extension files to ignore
+anthropic.claude-code
+anysphere.cursorpyright
+bradlc.vscode-tailwindcss
+christian-kohler.path-intellisense
+dbaeumer.vscode-eslint
+dracula-theme.theme-dracula
+dsznajder.es7-react-js-snippets
+eamodio.gitlens
+editorconfig.editorconfig
+esbenp.prettier-vscode
+formulahendry.auto-rename-tag
+k--kato.intellij-idea-keybindings
+ms-python.autopep8
+ms-python.debugpy
+ms-python.python
+ms-vscode.vscode-typescript-next
+ritwickdey.liveserver
+usernamehw.errorlens
+
+# Temporary
+/reference
+
+# Agent workflows
+.agent/
+
+# Local MCP config (per-developer)
+.cursor/mcp.json
+.vscode/mcp.json
+
+# 기획/가이드 docx (바이너리 — 팀원별 로컬만 보관)
+docs/planning/*.docx
+
+# Cursor 로컬 문서 (ai-handoff, 작업 메모 등 — 팀 공유 불필요)
+.cursor/ai-handoff.md
+
+# Lighthouse temporary files
+lighthouse-report.json
+ai-audit-prompt.txt
+
+# Web Vitals 로그 (경로별·날짜별 src/web-vital-logs)
+src/web-vital-logs/
+package-lock.json
+
+# MCP 템플릿 테스트용
+tmp-mcp-test/
+
+# harness — do not track runtime state
+.agents/state.json
+.agents/.stop
+
+# harness/agent local workflow files (do not commit to shared branches)
+.codex/
+agents/
+CLAUDE.md
+docs/workflow/
+.cursor/agents/harness-*.md
+.cursor/skills/harness/
+.cursor/rules/harness-*.mdc
+.cursor/rules/ticket-ship-workflow.mdc
+.cursor/rules/work-summary-format.mdc
+.cursor/worktrees.json
+.claude/agents/
+.claude/skills/feature-dev/
+.claude/skills/code-review/
+.claude/skills/player-dev/
+.claude/skills/review/
