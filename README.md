@@ -1,12 +1,25 @@
 # test-player
 
-- `vogopang_front`의 player 로직을 로컬 JSON으로 검증하기 위한 테스트 앱입니다.
-- 백엔드에서 받던 player payload는 `public/json/player/*.json`에 둡니다.
-- 실제 이미지/오디오 리소스는 JSON의 경로와 `.env.local`의 media base URL을 통해 가져옵니다.
+`test-player` is a monorepo scaffold for testing the next Dubright player direction.
 
-## Commands
+## Structure
 
-- `npm run dev`
-- `npm run test`
-- `npm run typecheck`
-- `npm run build`
+- `back/`: NestJS + TypeScript API scaffold.
+- `front/`: React + Next.js player test surface.
+
+## Principles
+
+- Use existing Dubright code to confirm requirements and data contracts.
+- Use `vogopang_back` and `vogopang_front` as implementation references.
+- Do not copy the old Dubright player structure as the new implementation pattern.
+- Model image and video playback together.
+- Replace the legacy `spoint`-first scroll model with scene, media, and cue based playback data.
+
+## Scripts
+
+- `npm run dev:back`: run the NestJS API on `http://localhost:4100`.
+- `npm run dev:front`: run the Next.js app on `http://localhost:3000`.
+- `npm run typecheck`: typecheck all workspaces.
+- `npm test`: run all workspace tests.
+- `npm run build`: build all workspaces.
+
