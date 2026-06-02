@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import {
+import type {
     PlaybackManifest,
     PlayerManifestVariant,
-    SAMPLE_PLAYBACK_MANIFEST,
 } from '../domain/playback-manifest';
+import { SAMPLE_DUBRIGHT_PLAYER_FIXTURE } from '../domain/dubright-player-fixture';
+import { buildPlaybackManifestFromDubrightFixture } from '../domain/player-manifest-builder';
 
 @Injectable()
 export class GeneralPlayerService {
@@ -11,23 +12,13 @@ export class GeneralPlayerService {
         manifestId: string;
         variant?: PlayerManifestVariant;
     }): PlaybackManifest {
-        if (args.manifestId !== SAMPLE_PLAYBACK_MANIFEST.id) {
+        if (args.manifestId !== SAMPLE_DUBRIGHT_PLAYER_FIXTURE.id) {
             throw new NotFoundException('Player manifest not found');
         }
 
-        const variant = args.variant ?? 'image-video';
-        const scenes =
-            variant === 'image-only'
-                ? SAMPLE_PLAYBACK_MANIFEST.scenes.filter(
-                      (scene) => scene.media.kind === 'image'
-                  )
-                : SAMPLE_PLAYBACK_MANIFEST.scenes;
-
-        return {
-            ...SAMPLE_PLAYBACK_MANIFEST,
-            variant,
-            scenes,
-        };
+        return buildPlaybackManifestFromDubrightFixture({
+            fixture: SAMPLE_DUBRIGHT_PLAYER_FIXTURE,
+            variant: args.variant,
+        });
     }
 }
-

@@ -6,6 +6,8 @@
 
 - `back/`: NestJS + TypeScript API scaffold.
 - `front/`: React + Next.js player test surface.
+- `back/src/services/player/domain/`: fixture and playback manifest generation logic.
+- `front/src/app/player/`: manifest-consuming runtime console.
 
 ## Principles
 
@@ -23,3 +25,9 @@
 - `npm test`: run all workspace tests.
 - `npm run build`: build all workspaces.
 
+## Player Flow
+
+- `GET /player/manifest/sample-player` returns the generated sample playback manifest.
+- `?variant=image-only` keeps image scenes while preserving source timeline positions.
+- The frontend requests the API manifest first and falls back to `front/src/data/sampleManifest.ts` when the API is unavailable.
+- Set `NEXT_PUBLIC_API_BASE_URL=http://localhost:4100` for the frontend to call the local NestJS API directly.

@@ -197,6 +197,10 @@
   background: #5cc7aa;
 }
 
+.statusDotFallback {
+  background: #f1bc5a;
+}
+
 .manifestList {
   display: grid;
   gap: 0;
@@ -235,6 +239,11 @@
   background: #12161d;
 }
 
+.cueItemActive {
+  border-color: #5cc7aa;
+  background: #14221f;
+}
+
 .cueLabel {
   color: #f7f1e8;
   font-size: 13px;
@@ -268,4 +277,3 @@
     grid-template-columns: 1fr;
   }
 }
-
