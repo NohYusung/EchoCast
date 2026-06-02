@@ -175,6 +175,7 @@ export default function PlayerPage() {
 
   const version = (() => {
     const format = (content.format_version ?? "").toUpperCase();
+    if (format.includes("V2")) return "V2";
     if (format.includes("V0")) return "V0";
     if (format.includes("V1")) return "V1";
 

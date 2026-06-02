@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { playerLogger } from "@/app/player/_lib/playerLogger";
+import {
+  getPlaybackContentImages,
+  getPlaybackContentManifest,
+} from "@/lib/playbackContentAccess";
+import { getPlaybackAudioResourceRequests } from "@/lib/playbackV2/runtime";
 import { usePlayerStore } from "@/stores/usePlayerStore";
 
 interface UsePlayerInitializationParams {
@@ -177,7 +182,7 @@ export function usePlayerInitialization(params: UsePlayerInitializationParams) {
   useEffect(() => {
     const playerStoreState = usePlayerStore.getState();
     const content = playerStoreState.content as any;
-    if (!content?.images?.length) return;
+    if (getPlaybackContentImages(content).length === 0) return;
     if (!playerContentIdentityKey) return;
     const initKey = `${episodeId}|${playerContentIdentityKey}|${retrySeed}`;
     if (lastInitializedContentKeyRef.current === initKey) return;
@@ -207,7 +212,7 @@ export function usePlayerInitialization(params: UsePlayerInitializationParams) {
       const audioUrls: string[] = [];
       const imageUrls: string[] = [];
       const clearTextImageUrls: string[] = [];
-      const imageList = content.images ?? [];
+      const imageList = getPlaybackContentImages(content);
       const clearTextImages: unknown[] = [];
 
         for (const image of imageList) {
@@ -221,12 +226,27 @@ export function usePlayerInitialization(params: UsePlayerInitializationParams) {
         }
 
         // 오디오 트랙 URL 추출
+        const uniqueAudioUrlSet = new Set<string>();
+        const pushAudioUrl = (url?: string | null) => {
+          if (!url) return;
+          if (uniqueAudioUrlSet.has(url)) return;
+          uniqueAudioUrlSet.add(url);
+          audioUrls.push(url);
+        };
+
+        const playbackManifest = getPlaybackContentManifest(content);
+        if (playbackManifest) {
+          for (const request of getPlaybackAudioResourceRequests(playbackManifest)) {
+            pushAudioUrl(request.src);
+          }
+        }
+
         if (content.audio_tracks) {
           for (const track of content.audio_tracks) {
             const clips = track.clips ?? [];
             for (const clip of clips) {
               const url = clip.url || clip.rawSrc || clip.src;
-              if (url) audioUrls.push(url);
+              pushAudioUrl(url);
             }
           }
         }
@@ -239,7 +259,7 @@ export function usePlayerInitialization(params: UsePlayerInitializationParams) {
               const records = hole.records ?? [];
               for (const record of records) {
                 const url = record.url || record.rawSrc || record.src;
-                if (url) audioUrls.push(url);
+                pushAudioUrl(url);
               }
             }
           }

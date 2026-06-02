@@ -21,6 +21,31 @@ import {
   resolveEpisodeRecordingAudioUrl,
   uuidAliasKeys,
 } from '@/api/episodeRecordings';
+import type { PlaybackManifest } from "@/data/playbackV2Types";
+import type { PlayerRuntimeContent } from "@/data/vogopangContentTypes";
+import {
+  createPlaybackTimelineIndex,
+} from "@/lib/playbackV2";
+import {
+  getPlaybackContentImages,
+  getPlaybackContentManifest,
+  getPlaybackContentVoiceHoles,
+} from "@/lib/playbackContentAccess";
+import {
+  advancePlayerClock,
+  getAudioSchedulerWindow,
+  getAudioSchedulePlaybackWindow,
+  getPlaybackAudioResourceRequests,
+  getDueVisualEffectCues,
+  getPlaybackVisualEffectEvents,
+  sampleCameraEngine,
+  type PlayerClockState,
+} from "@/lib/playbackV2/runtime";
+import { PLAYBACK_V2_CAMERA_POSITION_EVENT } from "@/app/player/_lib/playbackCameraViewport";
+import { waitForAudioContextRunning as waitForAudioContextRunningWithTimeout } from "@/app/player/_lib/audioContextReadiness";
+import {
+  getPlaybackResourceReloadPlan,
+} from "@/app/player/_lib/playbackResourceReload";
 import {
   devLog,
   devError,
@@ -34,6 +59,7 @@ import {
   SetupHelper,
   PositionCalculator, CARTOON_IMAGE_WIDTH_BASE, CARTOON_IMAGE_WIDTH_BASE_SIZE,
 } from './toonWorkCommon';
+import { getCenteredInlineMediaScrollTop } from './inlineMediaPlayback';
 import {PurchaseCasting} from "@/models/playerData";
 
 interface ShockWaveWrapper {
@@ -57,6 +83,16 @@ export type ContentVersion = 'V0' | 'V1' | 'V2' | 'V3';
 
 export type RecordingSite = 'edu' | 'kids' | 'senior';
 
+const INLINE_MEDIA_SCROLL_SELECTOR = '[data-player-inline-media="true"]';
+const PLAYBACK_MANIFEST_AUDIO_LOOKAHEAD_MS = 1500;
+
+type ToonWorkAudioMode = "enabled" | "degraded";
+
+type ToonWorkPlayInput = number | {
+  startMs?: number;
+  audioMode?: ToonWorkAudioMode;
+};
+
 interface UseToonWorkOptions {
   version?: ContentVersion;
   /** 도메인별 녹음 분리 (미지정 시 공통 키 사용) */
@@ -70,6 +106,24 @@ interface UseToonWorkOptions {
   recordingEpisodeId?: number;
   onComplete?: () => void;
   onProgressUpdate?: (progress: { step: string; percentage: number }) => void;
+  onTimeUpdate?: (timeMs: number) => void;
+}
+
+function normalizeToonWorkPlayInput(input?: ToonWorkPlayInput): {
+  startMs?: number;
+  audioMode: ToonWorkAudioMode;
+} {
+  if (typeof input === "number") {
+    return {
+      startMs: input,
+      audioMode: "enabled",
+    };
+  }
+
+  return {
+    startMs: input?.startMs,
+    audioMode: input?.audioMode ?? "enabled",
+  };
 }
 
 /**
@@ -91,6 +145,45 @@ function effectiveAudioClipDurationMs(clip: {
   };
 
   return Math.max(0, base - subTrim(clip.trim_left_ms) - subTrim(clip.trim_right_ms));
+}
+
+function datasetNumber(value: string | undefined): number | null {
+  if (value == null || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getActiveInlineMediaCenteredScrollTop(
+  contentList: HTMLElement | null,
+  virtualTimeMs: number,
+): number | null {
+  if (!contentList) return null;
+
+  const mediaElements = contentList.querySelectorAll<HTMLElement>(INLINE_MEDIA_SCROLL_SELECTOR);
+  if (mediaElements.length === 0) return null;
+
+  const contentRect = contentList.getBoundingClientRect();
+  const maxScrollTop = Math.max(0, contentList.scrollHeight - contentList.clientHeight);
+
+  for (const mediaElement of mediaElements) {
+    const startMs = datasetNumber(mediaElement.dataset.inlineMediaStartMs);
+    const durationMs = datasetNumber(mediaElement.dataset.inlineMediaDurationMs);
+    if (startMs == null || durationMs == null || durationMs <= 0) continue;
+    if (virtualTimeMs < startMs || virtualTimeMs >= startMs + durationMs) continue;
+
+    const mediaRect = mediaElement.getBoundingClientRect();
+    if (mediaRect.height <= 0) return null;
+
+    const mediaTop = mediaRect.top - contentRect.top + contentList.scrollTop;
+    return getCenteredInlineMediaScrollTop({
+      mediaTop,
+      mediaHeight: mediaRect.height,
+      viewportHeight: contentList.clientHeight,
+      maxScrollTop,
+    });
+  }
+
+  return null;
 }
 
 type AudioGraphPoint = [number, number];
@@ -364,6 +457,7 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
     recordingEpisodeId = 0,
     onComplete,
     onProgressUpdate,
+    onTimeUpdate,
   } = options;
   const playerStore = usePlayerStore();
   const loadRecordings = useRecordingStore((s) => s.loadRecordings);
@@ -399,7 +493,7 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
   const [episode, setEpisode] = useState<any>({});
   const [images, setImages] = useState<any[]>([]);
   const [clearTextImages, setClearTextImages] = useState<any[]>([]);
-  const [contentData, setContentData] = useState<any>({});
+  const [contentData, setContentData] = useState<PlayerRuntimeContent | null>(null);
   const [spointMappingData, setSpointMappingData] = useState<any[]>([]);
   const [voiceShockWaves, setVoiceShockWaves] = useState<any[]>([]);
   const [audioShockWaves, setAudioShockWaves] = useState<any[]>([]);
@@ -602,6 +696,127 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
     }
     return newAudioShockWaves;
   }, [playerStore]);
+
+  const setupPlaybackManifestAudio = useCallback(
+    async (
+      playbackManifest: PlaybackManifest,
+      onProgress?: (loaded: number, total: number) => void,
+    ) => {
+      setLoadingCount((prev) => prev + 1);
+
+      const requests = getPlaybackAudioResourceRequests(playbackManifest);
+      const nextVoiceShockWaves: ShockWaveWrapper[] = [];
+      const nextAudioShockWaves: ShockWaveWrapper[] = [];
+      const failedVoices: string[] = [];
+      const failedAudios: string[] = [];
+      let loadedCount = 0;
+
+      onProgress?.(0, requests.length);
+
+      try {
+        for (const request of requests) {
+          const mediaType = request.cueType === "voice" ? "records" : "audio";
+          const originalSrc = request.src;
+
+          try {
+            const cachedUrl = playerStore.getCachedAudioUrl(originalSrc);
+            const src =
+              cachedUrl ||
+              (await playerStore.downloadAudio(originalSrc, mediaType)) ||
+              getFetchUrl(getMediaUrl(originalSrc, mediaType));
+            const shockWave = createShockWave();
+            const loaded = await shockWave.load(
+              src,
+              normalizeClipEffectsForTone(request.effects),
+              false,
+              1.0,
+            );
+
+            if (!loaded) {
+              if (request.cueType === "voice") failedVoices.push(originalSrc);
+              else failedAudios.push(originalSrc);
+              continue;
+            }
+
+            if (request.cueType === "voice") {
+              nextVoiceShockWaves.push({
+                character_uuid: request.trackId,
+                hole: {
+                  uuid: request.sourceRefId,
+                  start_ms: request.startMs,
+                  duration_ms: request.durationMs,
+                  duration_ms_force: request.durationMs,
+                  script: "",
+                  records: [
+                    {
+                      src: originalSrc,
+                      artist_no: request.artistNo ?? 0,
+                    },
+                  ],
+                },
+                record: {
+                  src: originalSrc,
+                  artist_no: request.artistNo ?? 0,
+                },
+                shockWave,
+                timer: null,
+              });
+            } else {
+              nextAudioShockWaves.push({
+                audio_uuid: request.trackId,
+                clip: {
+                  uuid: request.sourceRefId,
+                  src: originalSrc,
+                  start_ms: request.startMs,
+                  duration_ms: request.durationMs,
+                  effective_duration_ms: request.durationMs,
+                  trim_left_ms: request.sourceStartMs,
+                  trim_right_ms: Math.max(
+                    0,
+                    request.durationMs - (request.sourceEndMs - request.sourceStartMs),
+                  ),
+                  volume: request.volume,
+                  effects: request.effects,
+                },
+                shockWave,
+                timer: null,
+              });
+            }
+          } catch (error) {
+            devError("[setupPlaybackManifestAudio] 오디오 로딩 실패:", originalSrc, error);
+            if (request.cueType === "voice") failedVoices.push(originalSrc);
+            else failedAudios.push(originalSrc);
+          } finally {
+            loadedCount += 1;
+            onProgress?.(loadedCount, requests.length);
+          }
+        }
+
+        setVoiceShockWaves(nextVoiceShockWaves);
+        setAudioShockWaves(nextAudioShockWaves);
+
+        if (failedVoices.length > 0 || failedAudios.length > 0) {
+          setFailedResources((prev) => ({
+            ...prev,
+            voice: [...prev.voice, ...failedVoices],
+            audio: [...prev.audio, ...failedAudios],
+          }));
+        }
+
+        playerLogger.log(
+          `[setupPlaybackManifestAudio] manifest 오디오 로딩 완료: voice=${nextVoiceShockWaves.length}, audio=${nextAudioShockWaves.length}, failed=${failedVoices.length + failedAudios.length}`,
+        );
+      } finally {
+        setLoadingCount((prev) => prev - 1);
+      }
+
+      return {
+        voiceShockWaves: nextVoiceShockWaves,
+        audioShockWaves: nextAudioShockWaves,
+      };
+    },
+    [playerStore],
+  );
 
   const getMergeEffect = useCallback((holeEffect: any | null = null, recordEffect: any | null = null) => {
     return EffectProcessor.mergeEffects(holeEffect, recordEffect);
@@ -1137,6 +1352,67 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
     [audioShockWaves]
   );
 
+  const playPlaybackManifestAudioCues = useCallback(
+    (
+      timeStartMs: number,
+      playbackManifest: PlaybackManifest,
+      targetVoiceShockWaves: any[],
+      targetAudioShockWaves: any[],
+      scheduledCueIds?: Set<string>,
+      lookaheadMs = Number.POSITIVE_INFINITY,
+    ) => {
+      const timelineIndex = createPlaybackTimelineIndex(playbackManifest);
+      const schedules = getAudioSchedulerWindow({
+        timelineIndex,
+        currentTimeMs: timeStartMs,
+        lookaheadMs,
+        scheduledCueIds,
+      });
+      const voiceByHoleId = new Map<string, any>();
+      const audioByClipId = new Map<string, any>();
+
+      targetVoiceShockWaves.forEach((shockWave) => {
+        const holeId = String(shockWave.hole?.uuid ?? "");
+        if (holeId) voiceByHoleId.set(holeId, shockWave);
+      });
+      targetAudioShockWaves.forEach((shockWave) => {
+        const clipId = String(shockWave.clip?.uuid ?? "");
+        if (clipId) audioByClipId.set(clipId, shockWave);
+      });
+
+      schedules.forEach((schedule) => {
+        const cue = schedule.cue;
+        const shockWave =
+          cue.type === "voice"
+            ? voiceByHoleId.get(cue.sourceRef.id)
+            : audioByClipId.get(cue.sourceRef.id);
+        if (!shockWave?.shockWave) return;
+
+        const playbackWindow = getAudioSchedulePlaybackWindow(schedule);
+        const playableDurationMs = playbackWindow.playDurationMs;
+        if (playableDurationMs <= 0) return;
+
+        scheduledCueIds?.add(cue.id);
+        shockWave.timer = setTimeout(() => {
+          if (typeof shockWave.shockWave?.setVolumeEnvelope === 'function') {
+            shockWave.shockWave.setVolumeEnvelope(
+              [
+                [cue.sourceStartMs / 1000, 1],
+                [cue.sourceEndMs / 1000, 1],
+              ],
+              { baseGain: cue.volume },
+            );
+          }
+          void shockWave.shockWave.playSound(
+            playbackWindow.sourceOffsetMs / 1000,
+            playableDurationMs / 1000,
+          );
+        }, schedule.delayMs);
+      });
+    },
+    [],
+  );
+
   const setToonContentImageTop = useCallback(
     (position: number) => {
       // 모든 스크롤 레이어를 찾아서 동시에 스크롤 (일반 레이어 + ClearText 레이어)
@@ -1158,8 +1434,31 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
     []
   );
 
+  const setPlaybackCameraPosition = useCallback(
+    (position: number) => {
+      if (version === "V2" && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent(PLAYBACK_V2_CAMERA_POSITION_EVENT, {
+            detail: { positionPx: position },
+          }),
+        );
+        return;
+      }
+
+      setToonContentImageTop(position);
+    },
+    [setToonContentImageTop, version],
+  );
+
   const playSPointsAndEffects = useCallback(
-    (timeMs: number, targetEffects: any[] | null = null, targetMarkers: any[] | null = null) => {
+    (
+      timeMs: number,
+      targetEffects: any[] | null = null,
+      targetMarkers: any[] | null = null,
+      targetVoiceShockWaves: any[] | null = null,
+      targetAudioShockWaves: any[] | null = null,
+      shouldSchedulePlaybackManifestAudio = true,
+    ) => {
       shouldStopAllAnimationsRef.current = false;
 
       for (const timer of tmrSpointsRef.current) {
@@ -1169,9 +1468,27 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
       }
       tmrSpointsRef.current = [];
 
+      const playbackManifest = getPlaybackContentManifest(contentData) ?? undefined;
+      const playbackTimelineIndex = playbackManifest
+        ? createPlaybackTimelineIndex(playbackManifest)
+        : null;
+      const scheduledManifestAudioCueIds = new Set<string>();
+      const scheduleManifestAudioCues = (virtualTimeMs: number) => {
+        if (!playbackManifest || !shouldSchedulePlaybackManifestAudio) return;
+        playPlaybackManifestAudioCues(
+          virtualTimeMs,
+          playbackManifest,
+          targetVoiceShockWaves ?? voiceShockWaves,
+          targetAudioShockWaves ?? audioShockWaves,
+          scheduledManifestAudioCueIds,
+          PLAYBACK_MANIFEST_AUDIO_LOOKAHEAD_MS,
+        );
+      };
       const currentEffects = targetEffects || effects;
       const currentMarkers = targetMarkers || markers;
-      const sortedMarkers = [...currentMarkers].sort((a, b) => (a.time_ms ?? 0) - (b.time_ms ?? 0));
+      const sortedMarkers = playbackTimelineIndex
+        ? []
+        : [...currentMarkers].sort((a, b) => (a.time_ms ?? 0) - (b.time_ms ?? 0));
 
       const sortEffects = [...currentEffects]
         .filter((e) => {
@@ -1223,26 +1540,35 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
           ...point,
           type: 'spoint',
         })),
-        ...sortEffects.map((effect) => ({
-          ...effect,
-          type: 'effect',
-        })),
+        ...(playbackTimelineIndex
+          ? []
+          : sortEffects.map((effect) => ({
+              ...effect,
+              type: 'effect',
+            }))),
       ].sort((a, b) => (a.time_ms ?? 0) - (b.time_ms ?? 0));
 
       const pos = getPositionAtTime(timeMs);
-      setToonContentImageTop(pos);
+      setPlaybackCameraPosition(pos);
+      onTimeUpdate?.(timeMs);
+      scheduleManifestAudioCues(timeMs);
 
       const maxEndTime =
-        timelineEvents.length > 0
+        playbackManifest
+          ? playbackManifest.durationMs
+          : timelineEvents.length > 0
           ? (timelineEvents[timelineEvents.length - 1].time_ms ?? 0) + 500
           : timeMs + 500;
 
       const state = {
-        lastTimestamp: null as number | null,
-        virtualTime: timeMs,
+        clock: {
+          currentTimeMs: timeMs,
+          lastTimestampMs: null,
+        } as PlayerClockState,
         lastVirtualTime: timeMs,
         currentPosition: null as number | null,
         nextEventIndex: 0,
+        visualCueCursorIndex: 0,
         animationId: null as number | null,
         lastTargetPosition: null as number | null,
       };
@@ -1250,6 +1576,13 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
       function getPositionAtTime(virtualTimeMs: number): number {
         const contentList = getToonContentImageList();
         const currentScrollTop = contentList?.scrollTop ?? 0;
+        const centeredInlineMediaScrollTop = getActiveInlineMediaCenteredScrollTop(
+          contentList,
+          virtualTimeMs,
+        );
+        if (!playbackTimelineIndex && centeredInlineMediaScrollTop != null) {
+          return centeredInlineMediaScrollTop;
+        }
 
         if (version === 'V0') {
           const scrollHeight = contentList?.scrollHeight ?? 0;
@@ -1259,6 +1592,19 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
             scrollHeight,
             currentScrollTop
           );
+        } else if (playbackTimelineIndex) {
+          const scrollHeight = contentList?.scrollHeight ?? 0;
+          const viewportHeight = contentList?.clientHeight ?? 0;
+          return sampleCameraEngine({
+            timelineIndex: playbackTimelineIndex,
+            currentTimeMs: virtualTimeMs,
+            metrics: {
+              scrollHeight,
+              viewportHeight,
+              currentScrollTop,
+            },
+            inlineMediaScrollTop: centeredInlineMediaScrollTop,
+          });
         } else {
           const viewOffsetTop = newViewOffsetTop();
           const imageScale = workspaceOptions.image_scale ?? 1;
@@ -1289,22 +1635,26 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
           return;
         }
 
-        if (state.lastTimestamp === null) {
-          state.lastTimestamp = timestamp;
+        const clockFrame = advancePlayerClock({
+          state: state.clock,
+          timestampMs: timestamp,
+          playSpeed,
+          maxDeltaMs: 100,
+        });
+        state.clock = clockFrame.state;
+
+        if (!clockFrame.advanced) {
           state.animationId = requestAnimationFrame(animate);
           return;
         }
 
-        const deltaTime = timestamp - state.lastTimestamp;
-        state.lastTimestamp = timestamp;
-
-        const adjustedDeltaTime = Math.min(deltaTime, 100);
-        const virtualElapsed = adjustedDeltaTime * playSpeed;
-        state.virtualTime += virtualElapsed;
+        const virtualTime = state.clock.currentTimeMs;
+        onTimeUpdate?.(virtualTime);
+        scheduleManifestAudioCues(virtualTime);
 
         while (
           state.nextEventIndex < timelineEvents.length &&
-          (timelineEvents[state.nextEventIndex].time_ms ?? 0) <= state.virtualTime &&
+          (timelineEvents[state.nextEventIndex].time_ms ?? 0) <= virtualTime &&
           !shouldStopAllAnimationsRef.current
           ) {
           const event = timelineEvents[state.nextEventIndex];
@@ -1322,32 +1672,52 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
           state.nextEventIndex++;
         }
 
+        if (playbackTimelineIndex) {
+          const dueVisualCues = getDueVisualEffectCues({
+            timelineIndex: playbackTimelineIndex,
+            currentTimeMs: virtualTime,
+            cursorIndex: state.visualCueCursorIndex,
+          });
+          state.visualCueCursorIndex = dueVisualCues.nextCursorIndex;
+          getPlaybackVisualEffectEvents(dueVisualCues.cues).forEach((effectEvent) => {
+            if (toonWorkRef.current && typeof toonWorkRef.current.playEffect === 'function') {
+              try {
+                toonWorkRef.current.playEffect(effectEvent, false, 0, playSpeed);
+              } catch (error) {
+                devError('playEffect 호출 중 오류:', error);
+              }
+            }
+          });
+        }
+
         if (shouldStopAllAnimationsRef.current) {
           return;
         }
 
-        const targetPosition = getPositionAtTime(state.virtualTime);
+        const targetPosition = getPositionAtTime(virtualTime);
 
         if (
           state.currentPosition === null ||
           Math.abs(targetPosition - state.currentPosition) > 0.5
         ) {
-          setToonContentImageTop(targetPosition);
+          setPlaybackCameraPosition(targetPosition);
           state.currentPosition = targetPosition;
           state.lastTargetPosition = targetPosition;
         }
 
-        state.lastVirtualTime = state.virtualTime;
+        state.lastVirtualTime = virtualTime;
 
         // 스크롤 위치 기반 완료 감지 (재생이 실제로 진행 중일 때만)
         const contentList = getToonContentImageList();
-        const hasProgressed = state.virtualTime > timeMs + 500; // 재생 시작 후 500ms 이상 경과
-        const isScrollAtBottom = contentList && hasProgressed
-          ? Math.abs(contentList.scrollTop + contentList.clientHeight - contentList.scrollHeight) < 10
-          : false;
+        const hasProgressed = virtualTime > timeMs + 500; // 재생 시작 후 500ms 이상 경과
+        const isScrollAtBottom = playbackManifest
+          ? true
+          : contentList && hasProgressed
+            ? Math.abs(contentList.scrollTop + contentList.clientHeight - contentList.scrollHeight) < 10
+            : false;
 
         // 시간 기반 그리고 스크롤 위치 기반으로 완료 판단 (둘 다 충족해야 함)
-        const isTimeComplete = state.virtualTime >= maxEndTime && state.nextEventIndex >= timelineEvents.length;
+        const isTimeComplete = virtualTime >= maxEndTime && state.nextEventIndex >= timelineEvents.length;
         const isComplete = isTimeComplete && isScrollAtBottom;
 
         if (
@@ -1359,7 +1729,7 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
           devLog('애니메이션 자연 종료', {
             isTimeComplete,
             isScrollAtBottom,
-            virtualTime: state.virtualTime,
+            virtualTime,
             maxEndTime
           });
           if (onComplete) {
@@ -1396,9 +1766,14 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
       newViewOffsetTop,
       workspaceOptions,
       getToonContentImageList,
-      setToonContentImageTop,
+      setPlaybackCameraPosition,
       calculatedWidth,  // 화면 크기 변경 시 재계산 필요
       onComplete,
+      onTimeUpdate,
+      contentData,
+      playPlaybackManifestAudioCues,
+      voiceShockWaves,
+      audioShockWaves,
     ]
   );
 
@@ -1437,36 +1812,25 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
   const waitForAudioContextRunning = useCallback(async (timeout = 3000): Promise<boolean> => {
     try {
       const Tone = await import('tone');
-      const startTime = Date.now();
 
       playerLogger.log('[waitForAudioContextRunning] 시작, 현재 상태:', Tone.context.state);
 
-      while (Date.now() - startTime < timeout) {
-        const currentState = Tone.context.state as AudioContextState;
+      const result = await waitForAudioContextRunningWithTimeout({
+        getState: () => Tone.context.state as AudioContextState,
+        resume: () => Tone.context.resume(),
+        totalTimeoutMs: timeout,
+        resumeTimeoutMs: 500,
+        pollIntervalMs: 100,
+      });
 
-        if (currentState === 'running') {
-          playerLogger.log('[waitForAudioContextRunning] 완료, 최종 상태: running, 성공: true');
-          return true;
-        }
+      playerLogger.log(
+        '[waitForAudioContextRunning] 완료, 최종 상태:',
+        result.state,
+        '성공:',
+        result.ok,
+      );
 
-        if (currentState === 'suspended') {
-          playerLogger.log('[waitForAudioContextRunning] suspended 상태 감지, resume 시도');
-          await Tone.context.resume();
-          playerLogger.log('[waitForAudioContextRunning] resume 호출 완료, 상태:', Tone.context.state);
-        } else if (currentState === 'closed') {
-          playerLogger.error('[waitForAudioContextRunning] AudioContext가 closed 상태입니다.');
-          return false;
-        }
-
-        // 100ms 대기 후 다시 확인
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      const finalState = Tone.context.state as AudioContextState;
-      const isRunning = finalState === 'running';
-      playerLogger.log('[waitForAudioContextRunning] 완료, 최종 상태:', finalState, '성공:', isRunning);
-
-      return isRunning;
+      return result.ok;
     } catch (error) {
       playerLogger.error('[waitForAudioContextRunning] 오류:', error);
       return false;
@@ -1474,7 +1838,10 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
   }, []);
 
   // --- Public API ---
-  const play = useCallback(async (startMsOverride?: number) => {
+  const play = useCallback(async (input?: ToonWorkPlayInput) => {
+    const playOptions = normalizeToonWorkPlayInput(input);
+    const isAudioDegraded = playOptions.audioMode === "degraded";
+
     // 초기화가 진행 중이면 재생 불가
     if (isInitializing) {
       devLog('초기화 진행 중 - 재생이 불가능합니다.');
@@ -1482,33 +1849,35 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
     }
 
     // Safari 백그라운드 복귀 대응: AudioContext 및 전역 상태 확인
-    try {
-      const Tone = await import('tone');
+    if (!isAudioDegraded) {
+      try {
+        const Tone = await import('tone');
 
-      // AudioContext를 'running' 상태로 만들고 확인
-      playerLogger.log('[useToonWork] AudioContext 상태 확인 시작:', Tone.context.state);
-      const isAudioReady = await waitForAudioContextRunning();
+        // AudioContext를 'running' 상태로 만들고 확인
+        playerLogger.log('[useToonWork] AudioContext 상태 확인 시작:', Tone.context.state);
+        const isAudioReady = await waitForAudioContextRunning();
 
-      if (!isAudioReady) {
-        playerLogger.error('[useToonWork] AudioContext를 running 상태로 만들지 못했습니다.');
-        // 사용자에게 알림
+        if (!isAudioReady) {
+          playerLogger.error('[useToonWork] AudioContext를 running 상태로 만들지 못했습니다.');
+          // 사용자에게 알림
+          const { notify } = await import('@/lib/notify');
+          notify.error('오디오 시스템을 시작할 수 없습니다. 페이지를 새로고침해주세요.');
+          return;
+        }
+
+        playerLogger.log('[useToonWork] AudioContext running 확인 완료');
+
+        // Destination 볼륨이 -Infinity인 경우 (백그라운드에서 자동 음소거된 경우) 복구
+        if (Tone.Destination.volume.value === -Infinity && !isMutedRef.current) {
+          playerLogger.log('[useToonWork] Destination 볼륨 비정상 감지 - 복구');
+          Tone.Destination.volume.value = 0;
+        }
+      } catch (error) {
+        playerLogger.error('[useToonWork] AudioContext 상태 확인/복구 실패:', error);
         const { notify } = await import('@/lib/notify');
-        notify.error('오디오 시스템을 시작할 수 없습니다. 페이지를 새로고침해주세요.');
+        notify.error('오디오 시스템 오류가 발생했습니다.');
         return;
       }
-
-      playerLogger.log('[useToonWork] AudioContext running 확인 완료');
-
-      // Destination 볼륨이 -Infinity인 경우 (백그라운드에서 자동 음소거된 경우) 복구
-      if (Tone.Destination.volume.value === -Infinity && !isMutedRef.current) {
-        playerLogger.log('[useToonWork] Destination 볼륨 비정상 감지 - 복구');
-        Tone.Destination.volume.value = 0;
-      }
-    } catch (error) {
-      playerLogger.error('[useToonWork] AudioContext 상태 확인/복구 실패:', error);
-      const { notify } = await import('@/lib/notify');
-      notify.error('오디오 시스템 오류가 발생했습니다.');
-      return;
     }
 
     let currentAudioShockWaves = audioShockWaves;
@@ -1518,25 +1887,15 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
 
     // 리소스 부족 감지 및 재로딩 로직
     if (contentData) {
-      let needReload = false;
-      const reasons: string[] = [];
-
-      if (contentData.audio_tracks?.length > 0 && audioShockWaves.length === 0) {
-        needReload = true;
-        reasons.push('audio');
-      }
-      if (contentData.tracks?.length > 0 && voiceShockWaves.length === 0) {
-        needReload = true;
-        reasons.push('voice');
-      }
-      if (contentData.effects?.length > 0 && effects.length === 0) {
-        needReload = true;
-        reasons.push('effects');
-      }
-      if (contentData.spoints?.length > 0 && markers.length === 0) {
-        needReload = true;
-        reasons.push('markers');
-      }
+      const reloadPlan = getPlaybackResourceReloadPlan({
+        content: contentData,
+        audioMode: isAudioDegraded ? "degraded" : "normal",
+        voiceShockWaveCount: voiceShockWaves.length,
+        audioShockWaveCount: audioShockWaves.length,
+        effectCount: effects.length,
+        markerCount: markers.length,
+      });
+      const { needReload, reasons, playbackManifest } = reloadPlan;
 
       if (needReload) {
         playerLogger.log(`[useToonWork] play() - 리소스 부족 감지(${reasons.join(', ')}), 재로딩 시작`);
@@ -1545,6 +1904,14 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
 
           if (reasons.includes('effects')) {
             tasks.push(setupEffects(contentData).then(res => { currentEffects = res; }));
+          }
+          if (reasons.includes('manifest-audio') && playbackManifest) {
+            tasks.push(
+              setupPlaybackManifestAudio(playbackManifest).then((res) => {
+                currentVoiceShockWaves = res.voiceShockWaves;
+                currentAudioShockWaves = res.audioShockWaves;
+              }),
+            );
           }
           if (reasons.includes('audio')) {
             tasks.push(setupAudio(contentData).then(res => { currentAudioShockWaves = res; }));
@@ -1584,13 +1951,15 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
     shouldStopAllAnimationsRef.current = false;
 
     // ref를 사용하여 항상 최신 mute 상태를 가져옴
-    await AudioController.applyMuteState(isMutedRef.current);
+    if (!isAudioDegraded) {
+      await AudioController.applyMuteState(isMutedRef.current);
+    }
 
     let rawTimeMs: number;
     let usedExplicitStartMs = false;
-    if (typeof startMsOverride === "number" && Number.isFinite(startMsOverride)) {
+    if (typeof playOptions.startMs === "number" && Number.isFinite(playOptions.startMs)) {
       usedExplicitStartMs = true;
-      rawTimeMs = Math.max(0, startMsOverride);
+      rawTimeMs = Math.max(0, playOptions.startMs);
     } else {
       rawTimeMs = getTimeLineMs(currentMarkers);
     }
@@ -1599,9 +1968,19 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
     const timeMs = usedExplicitStartMs
       ? rawTimeMs
       : Math.max(0, rawTimeMs - PLAYBACK_LEAD_MS);
-    playVoiceAndEffects(timeMs, currentVoiceShockWaves);
-    playAudioAndEffects(timeMs, currentAudioShockWaves);
-    playSPointsAndEffects(timeMs, currentEffects, currentMarkers);
+    const playbackManifest = getPlaybackContentManifest(contentData) ?? undefined;
+    if (!playbackManifest && !isAudioDegraded) {
+      playVoiceAndEffects(timeMs, currentVoiceShockWaves);
+      playAudioAndEffects(timeMs, currentAudioShockWaves);
+    }
+    playSPointsAndEffects(
+      timeMs,
+      currentEffects,
+      currentMarkers,
+      currentVoiceShockWaves,
+      currentAudioShockWaves,
+      !isAudioDegraded,
+    );
   }, [
     isInitializing,
     loadingCount,
@@ -1618,6 +1997,7 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
     markers,
     setupAudio,
     setupVoice,
+    setupPlaybackManifestAudio,
     setupEffects,
     setupMarker,
     waitForAudioContextRunning
@@ -1806,8 +2186,8 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
         // 이미지 준비: 0-25%
         updateProgress({ step: '이미지 준비 중...', percentage: 0 });
         playerLogger.log('이미지 가공');
-        playerLogger.log(content.images);
-        const imageList = content.images ?? [];
+        const imageList = getPlaybackContentImages(content);
+        playerLogger.log(imageList);
 
         const directions = data.directions ?? [];
         let clearTextImages = [];
@@ -1824,23 +2204,41 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
         playerLogger.log(`[initializeVoiceToon] 이미지 ${imageList.length + clearTextImages.length}개 준비`);
         updateProgress({ step: '이미지 준비 완료', percentage: 5 });
 
-        // 마커/이펙트 설정
-        await setupMarker(content);
-        await setupEffects(content);
+        const playbackManifest = getPlaybackContentManifest(content) ?? undefined;
 
-        // 보이스 로딩: 10-90%
-        updateProgress({step: '보이스 로딩 중...', percentage: 10});
-        await setupVoice(content, 1.0, (loaded, total) => {
-          const voiceProgress = total > 0 ? (loaded / total) * 80 : 0;
-          updateProgress({step: `보이스 로딩 중... (${loaded}/${total})`, percentage: 10 + voiceProgress});
-        });
+        if (playbackManifest) {
+          setMarkers([]);
+          setEffects([]);
+        } else {
+          // 마커/이펙트 설정
+          await setupMarker(content);
+          await setupEffects(content);
+        }
 
-        // 사운드(오디오) 로딩: 90-95%
-        updateProgress({step: '사운드 로딩 중...', percentage: 90});
-        await setupAudio(content, (loaded, total) => {
-          const audioProgress = total > 0 ? (loaded / total) * 5 : 0;
-          updateProgress({step: `사운드 로딩 중... `, percentage: 90 + audioProgress});
-        });
+        if (playbackManifest) {
+          updateProgress({ step: 'manifest 오디오 로딩 중...', percentage: 10 });
+          await setupPlaybackManifestAudio(playbackManifest, (loaded, total) => {
+            const manifestAudioProgress = total > 0 ? (loaded / total) * 85 : 85;
+            updateProgress({
+              step: `manifest 오디오 로딩 중... (${loaded}/${total})`,
+              percentage: 10 + manifestAudioProgress,
+            });
+          });
+        } else {
+          // 보이스 로딩: 10-90%
+          updateProgress({step: '보이스 로딩 중...', percentage: 10});
+          await setupVoice(content, 1.0, (loaded, total) => {
+            const voiceProgress = total > 0 ? (loaded / total) * 80 : 0;
+            updateProgress({step: `보이스 로딩 중... (${loaded}/${total})`, percentage: 10 + voiceProgress});
+          });
+
+          // 사운드(오디오) 로딩: 90-95%
+          updateProgress({step: '사운드 로딩 중...', percentage: 90});
+          await setupAudio(content, (loaded, total) => {
+            const audioProgress = total > 0 ? (loaded / total) * 5 : 0;
+            updateProgress({step: `사운드 로딩 중... `, percentage: 90 + audioProgress});
+          });
+        }
 
         // 최종 설정: 95-100%
         updateProgress({step: '최종 설정 중...', percentage: 95});
@@ -1882,6 +2280,7 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
       setupEffects,
       setupAudio,
       setupVoice,
+      setupPlaybackManifestAudio,
       handleResize,
       setToonContentImageTop,
       updateProgress,
@@ -1894,8 +2293,15 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
   );
 
   const changeVoice = useCallback(async () => {
-    await setupVoice(contentData);
-  }, [contentData, setupVoice]);
+    const playbackManifest = getPlaybackContentManifest(contentData);
+    if (playbackManifest) {
+      await setupPlaybackManifestAudio(playbackManifest);
+      return;
+    }
+    if (contentData) {
+      await setupVoice(contentData);
+    }
+  }, [contentData, setupPlaybackManifestAudio, setupVoice]);
 
   // 캐스팅 변경 시 보이스만 재로드 (ticketCastings 기반)
   const reloadVoice = useCallback(async (ticketCastings: PurchaseCasting[]) => {
@@ -1903,10 +2309,11 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
       castingsCount: ticketCastings.length,
     });
 
-    if (!contentData || !contentData.tracks) {
+    if (!contentData) {
       playerLogger.error('[reloadVoice] contentData 없음');
       return;
     }
+    const playbackManifest = getPlaybackContentManifest(contentData);
 
     try {
       // 1. 기존 보이스 ShockWave 정리 (현재 상태 캡처)
@@ -1975,13 +2382,17 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
 
       // 4. 보이스 재로드 (setupVoice의 skipCleanup 플래그 없이 호출)
       // setupVoice 내부에서 voiceShockWaves.length가 0이므로 중복 정리 없음
-      await setupVoice(contentData);
+      if (playbackManifest) {
+        await setupPlaybackManifestAudio(playbackManifest);
+      } else {
+        await setupVoice(contentData);
+      }
 
       playerLogger.log('[reloadVoice] 보이스 재로드 완료');
     } catch (error) {
       playerLogger.error('[reloadVoice] 오류:', error);
     }
-  }, [contentData, setupVoice, voiceShockWaves]);
+  }, [contentData, setupPlaybackManifestAudio, setupVoice, voiceShockWaves]);
 
   const cleanup = useCallback(async () => {
     playerLogger.log('[useToonWork] cleanup() 시작 - 모든 리소스 정리');
@@ -2113,20 +2524,7 @@ export function useToonWork(options: UseToonWorkOptions = {}) {
   }, []);
 
   const getAllHoles = useCallback(() => {
-    const content: any = contentData ?? {};
-    const newHoles: any[] = [];
-    if (content.tracks) {
-      for (const track of content.tracks) {
-        const character_uuid = track.character_uuid ?? undefined;
-        const character_name = track.character_name ?? '';
-        const holesArr = track.holes ?? [];
-        for (const hole of holesArr) {
-          newHoles.push({ ...hole, character_uuid, characterName: character_name });
-        }
-      }
-    }
-    newHoles.sort((a, b) => (a.start_ms ?? 0) - (b.start_ms ?? 0));
-    return newHoles;
+    return getPlaybackContentVoiceHoles(contentData ?? null);
   }, [contentData]);
 
   /** 재생 타임라인과 동일한 정규화 마커 (장면 이동·시크 등에서 store spoints 대신 사용) */

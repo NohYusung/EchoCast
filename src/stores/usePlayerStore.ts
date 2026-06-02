@@ -2,7 +2,10 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { decode } from "@msgpack/msgpack";
-import type { VogopangContent } from "@/data/vogopangContentTypes";
+import type {
+  PlayerRuntimeContent,
+  VogopangContent,
+} from "@/data/vogopangContentTypes";
 import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { PLAYER_LIB_LOAD_BLOCKED_USER_MESSAGE } from "@/app/player/_lib/playerLibLoadMessages";
 import { useErrorDialogStore } from "@/stores/useErrorDialogStore";
@@ -25,10 +28,19 @@ import { postTrialPlayerInfo } from "@/api/trialsPublic";
 import { getLibraryServiceTypeSessionHint } from "@/lib/libraryServiceTypeSession";
 import { DEFAULT_PLAYER_API_KEY_MAP, resolvePlayerBackendIds } from "@/lib/playerBackendIds";
 import { isAllowedPlayerKey, normalizeBackendPayload } from "@/lib/playerContentNormalize";
+import {
+  getPlaybackContentImages,
+  hasPlayableContentImages,
+} from "@/lib/playbackContentAccess";
 import { extractSeriesEpisodeNavFromPlayerInfoPayload } from "@/lib/playerInfoEpisodes";
 import type { PlayerEpisodeListItem } from "@/app/player/playerEpisodeListData";
 import type { LibraryServiceType } from "@/types/libraryServiceMode";
 import { getLocalPlayerJsonPath } from "@/lib/localPlayerContent";
+import { waitForAudioContextRunning } from "@/app/player/_lib/audioContextReadiness";
+import {
+  resolvePlaybackAudioStartPolicy,
+  type PlaybackAudioMode,
+} from "@/app/player/_lib/playerPlaybackReadiness";
 
 // ===== Module-level Cache (Zustand 상태 업데이트를 피하기 위한 전역 캐시) =====
 // 이 Map들은 Zustand store 외부에 존재하여 상태 업데이트로 인한 사이드 이펙트를 방지합니다.
@@ -57,7 +69,7 @@ export interface ToonWorkDependency {
   isStop: boolean
   setSelectArtistNos: (nos: number[]) => void
   changeVoice: () => Promise<void>
-  play: (startMsOverride?: number) => void
+  play: (options?: number | { startMs?: number; audioMode?: PlaybackAudioMode }) => void
 }
 
 export interface PlayerControlDependencies {
@@ -78,7 +90,7 @@ export interface PlayerControlDependencies {
 
 // ===== Player State Interface (vogopang: 캐스팅/티켓/에피소드 없음) =====
 export interface PlayerState {
-  content: VogopangContent | null;
+  content: PlayerRuntimeContent | null;
 
   isMuted: boolean;
   isClearText: boolean;
@@ -594,11 +606,11 @@ export const usePlayerStore = create<PlayerState>()(
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const buf = await res.arrayBuffer();
           const content = decode(new Uint8Array(buf)) as VogopangContent;
-          if (!content?.images || !Array.isArray(content.images)) {
+          if (!hasPlayableContentImages(content)) {
             throw new Error("Invalid vogopang content");
           }
           set({ content, loading: false });
-          playerLogger.log("[loadVogopangContent] ok, images:", content.images?.length);
+          playerLogger.log("[loadVogopangContent] ok, images:", getPlaybackContentImages(content).length);
           return true;
         } catch (err) {
           playerLogger.error("[loadVogopangContent] error", err);
@@ -617,11 +629,11 @@ export const usePlayerStore = create<PlayerState>()(
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const buf = await res.arrayBuffer();
           const content = decode(new Uint8Array(buf)) as VogopangContent;
-          if (!content?.images || !Array.isArray(content.images)) {
+          if (!hasPlayableContentImages(content)) {
             throw new Error("Invalid vogopang content");
           }
           set({ content, loading: false });
-          playerLogger.log("[loadVogopangContentByUuid] ok, images:", content.images?.length);
+          playerLogger.log("[loadVogopangContentByUuid] ok, images:", getPlaybackContentImages(content).length);
           return true;
         } catch (err) {
           playerLogger.error("[loadVogopangContentByUuid] error", err);
@@ -651,7 +663,7 @@ export const usePlayerStore = create<PlayerState>()(
           const payload = (await res.json()) as Record<string, unknown>;
           const normalized = normalizeBackendPayload(payload);
           const { content } = normalized;
-          if (!content?.images || !Array.isArray(content.images)) {
+          if (!hasPlayableContentImages(content)) {
             throw new Error("Invalid player content");
           }
 
@@ -663,7 +675,7 @@ export const usePlayerStore = create<PlayerState>()(
           });
           playerLogger.log(
             "[loadLibContentByPlayerKey] ok local JSON, images:",
-            content.images?.length,
+            getPlaybackContentImages(content).length,
             "normalizedFrom:",
             normalized.path,
             "episodeNav:",
@@ -678,7 +690,10 @@ export const usePlayerStore = create<PlayerState>()(
         }
       },
       getVersion: () => get().content?.format_version ?? 'V1',
-      hasV2: () => false,
+      hasV2: () => {
+        const format = String(get().content?.format_version ?? "").toUpperCase();
+        return format.includes("V2") || Boolean(get().content?.playback_manifest);
+      },
       hasV0: () => false,
       openAutoPlayDialog: () => set({ isOpenAutoPlayDialog: true }),
       closeAutoPlayDialog: () => set({ isOpenAutoPlayDialog: false }),
@@ -704,6 +719,8 @@ export const usePlayerStore = create<PlayerState>()(
 
             set({ isPlayTransitioning: true });
 
+            let audioMode: PlaybackAudioMode = "enabled";
+
             try {
               const Tone = await import('tone');
 
@@ -711,47 +728,46 @@ export const usePlayerStore = create<PlayerState>()(
 
               // AudioContext를 running 상태로 만들고 확인
               const contextState = Tone.getContext().state as AudioContextState;
+              let audioContextReady = contextState === 'running';
               if (contextState !== 'running') {
                 playerLogger.log('[PlayerStore] AudioContext가 running 상태가 아님, resume 시도');
 
-                const startTime = Date.now();
-                const timeout = 3000;
-                let isRunning = false;
+                const audioReady = await waitForAudioContextRunning({
+                  getState: () => Tone.getContext().state as AudioContextState,
+                  resume: () => Tone.getContext().resume(),
+                  totalTimeoutMs: 3000,
+                  resumeTimeoutMs: 500,
+                  pollIntervalMs: 100,
+                });
 
-                while (Date.now() - startTime < timeout) {
-                  const currentState = Tone.getContext().state as AudioContextState;
+                playerLogger.log(
+                  '[PlayerStore] AudioContext 최종 상태:',
+                  audioReady.state,
+                  '성공:',
+                  audioReady.ok,
+                );
+                audioContextReady = audioReady.ok;
+              }
 
-                  if (currentState === 'running') {
-                    isRunning = true;
-                    break;
-                  }
+              const audioPolicy = resolvePlaybackAudioStartPolicy({
+                isPlaybackV2Content: store.hasV2(),
+                audioContextReady,
+              });
+              audioMode = audioPolicy.audioMode;
 
-                  if (currentState === 'suspended') {
-                    playerLogger.log('[PlayerStore] AudioContext suspended, resuming...');
-                    await Tone.getContext().resume();
-                    playerLogger.log('[PlayerStore] Resume 호출 완료, 상태:', Tone.getContext().state);
-                  } else if (currentState === 'closed') {
-                    playerLogger.error('[PlayerStore] AudioContext가 closed 상태입니다.');
-                    break;
-                  }
-
-                  // 100ms 대기 후 다시 확인
-                  await new Promise(resolve => setTimeout(resolve, 100));
-                }
-
-                const finalState = Tone.getContext().state as AudioContextState;
-                isRunning = finalState === 'running';
-                playerLogger.log('[PlayerStore] AudioContext 최종 상태:', finalState, '성공:', isRunning);
-
-                if (!isRunning) {
-                  playerLogger.error('[PlayerStore] AudioContext를 running 상태로 만들지 못했습니다.');
+              if (audioPolicy.shouldNotifyAudioFailure) {
+                playerLogger.error('[PlayerStore] AudioContext를 running 상태로 만들지 못했습니다.');
+                if (audioPolicy.canStartPlayback) {
+                  notify.info('오디오 시스템을 시작할 수 없어 화면 재생만 시작합니다.');
+                } else {
                   notify.error('오디오 시스템을 시작할 수 없습니다. 페이지를 새로고침해주세요.');
-                  set({ isPlayTransitioning: false });
-                  return;
                 }
               }
 
-              playerLogger.log('[PlayerStore] AudioContext running 확인 완료');
+              if (!audioPolicy.canStartPlayback) {
+                set({ isPlayTransitioning: false });
+                return;
+              }
 
               // 중지된 음성이 재생되지 않도록 항상 완전히 정리
               playerLogger.log('[PlayerStore] Cleaning Tone.js transport before play');
@@ -759,9 +775,17 @@ export const usePlayerStore = create<PlayerState>()(
               Tone.getTransport().cancel();
             } catch (e) {
               playerLogger.error('[PlayerStore] Failed to prepare Tone.js context', e);
-              notify.error('오디오 시스템 오류가 발생했습니다. 페이지를 새로고침해주세요.');
-              set({ isPlayTransitioning: false });
-              return;
+              const audioPolicy = resolvePlaybackAudioStartPolicy({
+                isPlaybackV2Content: store.hasV2(),
+                audioContextReady: false,
+              });
+              audioMode = audioPolicy.audioMode;
+              if (!audioPolicy.canStartPlayback) {
+                notify.error('오디오 시스템 오류가 발생했습니다. 페이지를 새로고침해주세요.');
+                set({ isPlayTransitioning: false });
+                return;
+              }
+              notify.info('오디오 시스템 오류로 화면 재생만 시작합니다.');
             }
 
             // 재생 중이었다면 먼저 중지
@@ -773,7 +797,10 @@ export const usePlayerStore = create<PlayerState>()(
             // Tone.js 정리 후 안정적인 재생을 위해 짧은 딜레이
             playerLogger.log('[PlayerStore] Starting new playback after delay');
             setTimeout(() => {
-              toonWork.play(options?.startMs);
+              toonWork.play({
+                startMs: options?.startMs,
+                audioMode,
+              });
               setState.setIsPlaying(true);
               set({ isPlayTransitioning: false });
             }, 150);

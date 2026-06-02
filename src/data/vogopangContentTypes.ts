@@ -1,3 +1,8 @@
+import type {
+  PlaybackManifest,
+  StoryAuthoringDocument,
+} from "@/data/playbackV2Types";
+
 /**
  * 플레이어 콘텐츠 JSON 구조 타입 (각 사이트 player/_json/*.json)
  *
@@ -14,8 +19,12 @@ export interface VogopangContentImage {
 
 export interface VogopangContentSpoint {
   uuid: string;
+  id?: number;
+  roundId?: number;
+  index?: number;
   top: number;
   time_ms: number;
+  startMs?: number;
   transition_effect: { before_ms: number; after_ms: number };
   positionRatio?: number;
 }
@@ -55,6 +64,7 @@ export interface VogopangContentTrack {
 
 /** 오디오 트랙 내 clip 구조 */
 export interface VogopangContentAudioClip {
+  uuid?: string;
   src?: string;
   url?: string;
   rawSrc?: string;
@@ -73,6 +83,24 @@ export interface VogopangContentAudioTrack {
   [key: string]: unknown;
 }
 
+export interface VogopangContentInlineMedia {
+  type: "youtube";
+  mode: "inline";
+  src: string;
+  embedUrl?: string;
+  after_image_order: number;
+  start_ms?: number;
+  duration_ms?: number;
+  startMs?: number;
+  durationMs?: number;
+  after_script_uuid?: string;
+  before_script_uuid?: string;
+  aspect_ratio?: string;
+  render_image_order?: number;
+  render_image_offset_ratio?: number;
+  title?: string;
+}
+
 /** 플레이어 콘텐츠 JSON 루트 구조 */
 export interface VogopangContent {
   images: VogopangContentImage[];
@@ -81,4 +109,21 @@ export interface VogopangContent {
   spoints: VogopangContentSpoint[];
   tracks: VogopangContentTrack[];
   audio_tracks?: VogopangContentAudioTrack[];
+  inline_media?: VogopangContentInlineMedia[];
+  playback_manifest?: PlaybackManifest;
+  authoring_document?: StoryAuthoringDocument;
 }
+
+export interface PlaybackV2RuntimeContent {
+  format_version: "V2";
+  replace_images: unknown[];
+  playback_manifest: PlaybackManifest;
+  authoring_document: StoryAuthoringDocument;
+  images?: never;
+  spoints?: never;
+  tracks?: never;
+  audio_tracks?: never;
+  inline_media?: never;
+}
+
+export type PlayerRuntimeContent = VogopangContent | PlaybackV2RuntimeContent;

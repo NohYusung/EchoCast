@@ -2,9 +2,10 @@
 import { useCallback, useEffect } from "react";
 import { getLibMediaUrl, getMediaUrl, isLibMediaPath } from "@/lib/environment";
 import { playerLogger } from "@/app/player/_lib/playerLogger";
+import type { ContentVersion } from "@/app/player/_lib/useToonWork";
 
 interface UseImageLoadingParams {
-  version: "V0" | "V1";
+  version: ContentVersion;
   totalImagesRef: React.MutableRefObject<number>;
   totalClearTextImagesRef: React.MutableRefObject<number>;
   baseToonWorkRef: React.MutableRefObject<any>;
@@ -78,11 +79,11 @@ export function useImageLoading(params: UseImageLoadingParams) {
     const checkLoadedImages = () => {
       const normalImages =
         baseToonWorkRef.current && "querySelectorAll" in baseToonWorkRef.current
-          ? baseToonWorkRef.current.querySelectorAll("img")
+          ? baseToonWorkRef.current.querySelectorAll('img[data-player-counted-image="true"]')
           : [];
       const clearImages =
         clearTextBaseToonWorkRef.current && "querySelectorAll" in clearTextBaseToonWorkRef.current
-          ? clearTextBaseToonWorkRef.current.querySelectorAll("img")
+          ? clearTextBaseToonWorkRef.current.querySelectorAll('img[data-player-counted-image="true"]')
           : [];
 
       let normalLoadedCount = 0;

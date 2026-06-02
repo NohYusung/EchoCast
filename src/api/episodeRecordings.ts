@@ -1,9 +1,8 @@
 import type {
-  VogopangContent,
-  VogopangContentHole,
-  VogopangContentTrack,
+  PlayerRuntimeContent,
 } from "@/data/vogopangContentTypes";
 import { getFetchUrl, getMediaUrl } from "@/lib/environment";
+import { getPlaybackContentVoiceHoles } from "@/lib/playbackContentAccess";
 
 export interface EpisodeRecordingApiItem {
   id?: number;
@@ -30,14 +29,8 @@ export function uuidAliasKeys(raw: unknown): string[] {
   return Array.from(new Set([value, lower, compact]));
 }
 
-export function collectHolesFromContent(content: VogopangContent | null | undefined) {
-  const tracks = Array.isArray(content?.tracks) ? content.tracks : [];
-  return tracks.flatMap((track: VogopangContentTrack) =>
-    (track.holes ?? []).map((hole: VogopangContentHole) => ({
-      ...hole,
-      characterName: track.character_name,
-    })),
-  );
+export function collectHolesFromContent(content: PlayerRuntimeContent | null | undefined) {
+  return getPlaybackContentVoiceHoles(content);
 }
 
 export async function fetchEpisodeRecordings(

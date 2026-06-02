@@ -6,6 +6,7 @@ import { PlayerEpisodeListStrip } from "@/app/player/_components/PlayerEpisodeLi
 import type { PlayerEpisodeListItem } from "@/app/player/playerEpisodeListData";
 import { PlayerControlType } from "@/app/player/types";
 import { usePlayerStore } from "@/stores/usePlayerStore";
+import type { PlayerPlaybackReadiness } from "@/app/player/_lib/playerPlaybackReadiness";
 
 interface PlayerRecordingMarker {
   holeUuid: string;
@@ -118,6 +119,9 @@ interface PlayerControlsProps {
   onRecordingMarkerSelect?: (startMs: number, holeUuid?: string) => void;
   handlePlayClick: () => void;
   handleControl: (type: PlayerControlType, options?: any) => Promise<void>;
+  playbackReadiness: PlayerPlaybackReadiness;
+  runtimeLoadingCount: number;
+  runtimeIsInitializing: boolean;
   /** 재생 중 몰입 모드: 상·하단 컨트롤을 화면 밖으로 숨김 */
   chromeHidden?: boolean;
   onListButtonClick?: () => Promise<void> | void;
@@ -135,10 +139,14 @@ export const PlayerControls = React.memo<PlayerControlsProps>(
     onRecordingMarkerSelect,
     handlePlayClick,
     handleControl,
+    playbackReadiness,
+    runtimeLoadingCount,
+    runtimeIsInitializing,
     chromeHidden = false,
     onListButtonClick,
   }) => {
     const isEpisodeListOpen = usePlayerStore((s) => s.isEpisodeListOpen);
+    const isPlayTransitioning = usePlayerStore((s) => s.isPlayTransitioning);
     const apiNav = usePlayerStore((s) => s.playerSeriesEpisodeNav);
     const listItems = apiNav?.items ?? [];
     const apiIdx =
@@ -209,6 +217,12 @@ export const PlayerControls = React.memo<PlayerControlsProps>(
         <div
           className={clsx("player-controls-top-region", chromeHidden && "is-chrome-hidden")}
           style={{ bottom: shellStackPx }}
+          data-player-playback-ready={playbackReadiness.isReady ? "true" : "false"}
+          data-player-playback-blocked-reason={playbackReadiness.reason}
+          data-player-runtime-loading-count={runtimeLoadingCount}
+          data-player-runtime-initializing={runtimeIsInitializing ? "true" : "false"}
+          data-player-is-playing={isPlaying ? "true" : "false"}
+          data-player-play-transitioning={isPlayTransitioning ? "true" : "false"}
         >
           <div className="player-main-controls">
             <PlayerControlButton

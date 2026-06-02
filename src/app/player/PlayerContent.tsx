@@ -51,6 +51,20 @@ import { useGlobalSnackBarStore } from "@/stores/useGlobalSnackBarStore";
 import clsx from "clsx";
 import { PlayerImmersivePeekOverlay } from "@/app/player/_components/PlayerImmersivePeekOverlay";
 import { getPlayerImmersivePeekBottomOffset } from "@/app/player/_lib/playerChromeStackOffset";
+import {
+  resolvePlayerLoadingState,
+  resolvePlayerPlaybackReadiness,
+} from "@/app/player/_lib/playerPlaybackReadiness";
+import {
+  getPlaybackContentImages,
+  getPlaybackContentSceneMarkers,
+} from "@/lib/playbackContentAccess";
+import {
+  isSnappedBackwardToSceneStart,
+  resolveSceneNavigateTimeMs,
+  resolveTimelineSceneMarkers,
+  type PlaybackSceneNavigationMarker,
+} from "@/app/player/_lib/playbackSceneNavigation";
 import { useCanBypassPlayerLoanGate } from "@/hooks/useCanBypassPlayerLoanGate";
 import { useServiceMode } from "@/contexts/ServiceModeContext";
 import { isLibraryServiceModeApiEnabled } from "@/lib/libraryServiceModeFlag";
@@ -58,7 +72,7 @@ import { isLibraryServiceModeApiEnabled } from "@/lib/libraryServiceModeFlag";
 interface PlayerContentProps {
   seriesId: number;
   episodeId: number;
-  version: "V0" | "V1";
+  version: ContentVersion;
   /** URL `playerKey` — 에피소드 목록에서 현재 회차 표시용 */
   currentPlayerKey: string;
   backHref?: string | (() => void);
@@ -73,112 +87,7 @@ export interface PlayerContentRef {
   handleStop: () => Promise<void>;
 }
 
-type SceneMarker = {
-  positionRatio?: number;
-  top?: number;
-  time_ms?: number;
-  startMs?: number;
-  index?: number;
-};
-
-/**
- * 가장 가까운 spoint `time_ms` (기존 동작).
- * 홀이 두 키프레임 사이에서 다음 쪽에 더 가까우면 **다음** 시각으로 붙는다.
- */
-function nearestSpointTimeMs(
-  requestedMs: number,
-  spoints: Array<{ time_ms?: number }>,
-): number {
-  if (spoints.length === 0) return requestedMs;
-  const times = spoints
-    .map((s) => s.time_ms)
-    .filter((t): t is number => typeof t === "number" && Number.isFinite(t));
-  if (times.length === 0) return requestedMs;
-  let best = times[0]!;
-  let bestDist = Math.abs(best - requestedMs);
-  for (let i = 1; i < times.length; i++) {
-    const t = times[i]!;
-    const d = Math.abs(t - requestedMs);
-    if (d < bestDist || (d === bestDist && t < best)) {
-      best = t;
-      bestDist = d;
-    }
-  }
-  return best;
-}
-
-/**
- * `requestedMs` 이하인 마지막 spoint 시각 (앵커). 이전 대사/컷 쪽으로 붙일 때 사용.
- */
-function anchorSpointTimeMs(requestedMs: number, spoints: Array<{ time_ms?: number }>): number {
-  if (spoints.length === 0) return requestedMs;
-  const sorted = [
-    ...new Set(
-      spoints
-        .map((s) => s.time_ms)
-        .filter((t): t is number => typeof t === "number" && Number.isFinite(t)),
-    ),
-  ].sort((a, b) => a - b);
-  if (sorted.length === 0) return requestedMs;
-  if (requestedMs < sorted[0]) return requestedMs;
-  if (requestedMs >= sorted[sorted.length - 1]) return sorted[sorted.length - 1];
-  let best = sorted[0];
-  for (const t of sorted) {
-    if (t <= requestedMs) best = t;
-    else break;
-  }
-  return best;
-}
-
-/** 키프레임 위·경계 근처에서만 쓰는 nearest 신뢰 오차 (ms). */
-const SPOINT_NAVIGATE_NEAREST_MAX_ERROR_MS = 200;
-/** 구간 내부라도 키프레임 경계에 너무 가까우면 스냅 (ms). */
-const SPOINT_NAVIGATE_SEGMENT_EDGE_SNAP_MS = 600;
-
-/**
- * 마커 이동용. `getPositionAtTime*`는 두 spoint 사이에서 보간하므로,
- * 홀 시각이 **연속한 두 고유 키프레임 사이**에 있으면 스냅하지 않고 `requestedMs` 그대로 쓴다.
- * (nearest만 쓰면 구간 중간에서도 다음 키프레임으로 붙어 **다음 장면**으로 튀는 경우가 있음)
- * 그 외(키프레임 위·타임라인 앞/뒤)만 nearest → (오차 크면) 앵커.
- */
-function resolveNavigateTimeMsFromSpoints(
-  requestedMs: number,
-  spoints: Array<{ time_ms?: number }>,
-): number {
-  const sorted = [
-    ...new Set(
-      spoints
-        .map((s) => s.time_ms)
-        .filter((t): t is number => typeof t === "number" && Number.isFinite(t)),
-    ),
-  ].sort((a, b) => a - b);
-  //시작값 끝값이 2개 이상이면 반복문을 돌면서 첫지점과 끝지점중 가까운 값을 구해서 600ms랑 비교
-  if (sorted.length >= 2) {
-    for (let i = 0; i < sorted.length - 1; i++) {
-      //시작지점
-      const lo = sorted[i]!;
-      //끝지점
-      const hi = sorted[i + 1]!;
-      // 첫지점과 끝지점중 가까운 값을 구해서 600ms랑 비교
-      if (requestedMs > lo && requestedMs < hi) {
-        const msAfterLo = requestedMs - lo;
-        const msBeforeHi = hi - requestedMs;
-        const nearestEdgeGapMs = Math.min(msAfterLo, msBeforeHi);
-        // 600ms 이하면 가까운 값을 반환
-        if (nearestEdgeGapMs <= SPOINT_NAVIGATE_SEGMENT_EDGE_SNAP_MS) {
-          return msAfterLo <= msBeforeHi ? lo : hi;
-        }
-        return requestedMs;
-      }
-    }
-  }
-
-  const nearest = nearestSpointTimeMs(requestedMs, spoints);
-  if (Math.abs(nearest - requestedMs) <= SPOINT_NAVIGATE_NEAREST_MAX_ERROR_MS) {
-    return nearest;
-  }
-  return anchorSpointTimeMs(requestedMs, spoints);
-}
+type SceneMarker = PlaybackSceneNavigationMarker;
 
 function uuidAliasKeys(raw: unknown): string[] {
   const value = String(raw ?? "").trim();
@@ -202,20 +111,9 @@ function hasDirectImageRef(ref: RecordingPreviewDirectImageRef | null | undefine
   return Boolean(ref?.imageUuids?.length || ref?.imageSrcs?.length);
 }
 
-function resolvePlaybackSceneMarkers(
-  playbackMarkers: SceneMarker[],
-  spoints: SceneMarker[],
-): SceneMarker[] {
-  if (playbackMarkers.length > 0) {
-    return playbackMarkers;
-  }
-
-  return MarkerHelper.sortByIndex(spoints.map((marker) => MarkerHelper.normalizeMarker(marker)));
-}
-
 function resolveSceneNavigateTargetScrollTop(params: {
   startMs: number;
-  spoints: Array<{ time_ms?: number }>;
+  sceneMarkers: Array<{ time_ms?: number }>;
   version: ContentVersion;
   contentList: HTMLElement | null;
   markers: SceneMarker[];
@@ -225,7 +123,7 @@ function resolveSceneNavigateTargetScrollTop(params: {
 }): number | null {
   const {
     startMs,
-    spoints,
+    sceneMarkers,
     version,
     contentList,
     markers,
@@ -238,7 +136,7 @@ function resolveSceneNavigateTargetScrollTop(params: {
     return null;
   }
 
-  const navigateTimeMs = resolveNavigateTimeMsFromSpoints(startMs, spoints);
+  const navigateTimeMs = resolveSceneNavigateTimeMs(startMs, sceneMarkers);
   const currentScrollTop = contentList.scrollTop ?? 0;
   const scrollHeight = contentList.scrollHeight ?? 0;
   const scrollRange = Math.max(1, scrollHeight - contentList.clientHeight);
@@ -269,7 +167,7 @@ function resolveSceneNavigateTargetScrollTop(params: {
 
 function resolveRecordingPreviewForScene(params: {
   startMs: number;
-  spoints: Array<{ time_ms?: number }>;
+  sceneMarkers: Array<{ time_ms?: number }>;
   images: VogopangContentImage[];
   version: ContentVersion;
   contentList: HTMLElement | null;
@@ -281,7 +179,7 @@ function resolveRecordingPreviewForScene(params: {
 }) {
   const {
     startMs,
-    spoints,
+    sceneMarkers,
     images,
     version,
     contentList,
@@ -291,10 +189,10 @@ function resolveRecordingPreviewForScene(params: {
     calculatedWidth,
     directImage,
   } = params;
-  const navigateTimeMs = resolveNavigateTimeMsFromSpoints(startMs, spoints);
+  const navigateTimeMs = resolveSceneNavigateTimeMs(startMs, sceneMarkers);
   const targetScrollTop = resolveSceneNavigateTargetScrollTop({
     startMs,
-    spoints,
+    sceneMarkers,
     version,
     contentList,
     markers,
@@ -305,16 +203,17 @@ function resolveRecordingPreviewForScene(params: {
 
   return resolveRecordingPreviewThumbnail({
     holeStartMs: startMs,
-    spoints,
+    sceneMarkers,
     images,
     contentList,
     markers,
     version,
     targetScrollTop,
     directImage,
-    isSnappedBackwardToSceneStart:
-      navigateTimeMs < startMs &&
-      startMs - navigateTimeMs <= SPOINT_NAVIGATE_SEGMENT_EDGE_SNAP_MS,
+    isSnappedBackwardToSceneStart: isSnappedBackwardToSceneStart({
+      requestedMs: startMs,
+      navigateTimeMs,
+    }),
   });
 }
 
@@ -362,14 +261,34 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
     /** tracks/holes 개수 제외 — 비동기로 채워질 때 키가 바뀌며 에러·재시도 상태가 초기화되는 것 방지 */
     const playerContentIdentityKey = usePlayerStore((s) => {
       const c = s.content;
-      if (!c?.images?.length) return "";
-      const img0 = String(c.images[0]?.uuid ?? "");
-      const nImg = c.images.length;
-      const clip0 = c.audio_tracks?.[0]?.clips?.[0];
-      const durMs = String(clip0?.duration_ms ?? "0");
-      const trimL = String(clip0?.trim_left_ms ?? "0");
-      const trimR = String(clip0?.trim_right_ms ?? "0");
-      return `${img0}|${nImg}|${String(c.format_version ?? "")}|${durMs}|${trimL}|${trimR}`;
+      const images = getPlaybackContentImages(c);
+      if (!images.length) return "";
+      const img0 = String(images[0]?.uuid ?? "");
+      const nImg = images.length;
+      const audioCue0 = c?.playback_manifest?.audioCues[0];
+      const clip0 = c?.audio_tracks?.[0]?.clips?.[0];
+      const durMs = String(audioCue0?.durationMs ?? clip0?.duration_ms ?? "0");
+      const trimL = String(audioCue0?.trimLeftMs ?? clip0?.trim_left_ms ?? "0");
+      const trimR = String(audioCue0?.trimRightMs ?? clip0?.trim_right_ms ?? "0");
+      const mediaCue0 = c?.playback_manifest?.visualCues.find(
+        (cue) => cue.type === "inline-media",
+      );
+      const media0 = c?.inline_media?.[0];
+      const mediaKey = mediaCue0
+        ? [
+            mediaCue0.sourceRef?.id ?? mediaCue0.id,
+            mediaCue0.startMs,
+            mediaCue0.durationMs,
+          ].join(":")
+        : media0
+          ? [
+              media0.src,
+              media0.after_image_order,
+              media0.start_ms ?? 0,
+              media0.duration_ms ?? 0,
+            ].join(":")
+          : "";
+      return `${img0}|${nImg}|${String(c?.format_version ?? "")}|${durMs}|${trimL}|${trimR}|${mediaKey}`;
     });
     const searchParams = useSearchParams();
     const urlEpisodeId = useMemo(() => {
@@ -387,7 +306,11 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
 
     const playerSeriesEpisodeNav = usePlayerStore((s) => s.playerSeriesEpisodeNav);
     const isEpisodeListOpen = usePlayerStore((s) => s.isEpisodeListOpen);
-    const playerContentSpoints = usePlayerStore((s) => s.content?.spoints ?? []);
+    const playerContentForSceneMarkers = usePlayerStore((s) => s.content);
+    const playerContentSceneMarkers = useMemo(
+      () => getPlaybackContentSceneMarkers(playerContentForSceneMarkers),
+      [playerContentForSceneMarkers],
+    );
 
     const { headerTitle, headerSubtitle } = useMemo(() => {
       const eid = episodeId > 0 ? episodeId : urlEpisodeId;
@@ -452,11 +375,13 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
     } = state;
 
     const [immersivePeekVisible, setImmersivePeekVisible] = useState(false);
+    const [playbackTimeMs, setPlaybackTimeMs] = useState(0);
     const [loadingErrorMessage, setLoadingErrorMessage] = useState<string | null>(null);
     const [initializationRetrySeed, setInitializationRetrySeed] = useState(0);
     /** 자동 재시도 소진 여부 — ref만 사용(비동기 catch·타임아웃과 state 불일치 방지) */
     const autoRetriedCountRef = useRef(0);
     const loadingTimeoutRef = useRef<number | null>(null);
+    const playbackTimeUpdateAtRef = useRef(0);
     /** Next `useSearchParams` 보강으로 (0,0)→(series,episode)로만 바뀌는 프레임이 있어, 그때 에러 UI를 지우지 않음 */
     const prevSeriesEpisodeForErrorResetRef = useRef<{
       seriesId: number;
@@ -495,6 +420,13 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
       setPreloadProgress(progress);
     }, [setPreloadProgress]);
 
+    const handleTimelineTimeUpdate = useCallback((timeMs: number) => {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      if (now - playbackTimeUpdateAtRef.current < 150) return;
+      playbackTimeUpdateAtRef.current = now;
+      setPlaybackTimeMs(timeMs);
+    }, []);
+
     const handlePlaybackComplete = useCallback(async () => {
       playerLogger.log("[PlayerContent] Playback complete");
 
@@ -528,6 +460,7 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
       recordingEpisodeId: resolvedRecordingEpisodeId,
       onComplete: handlePlaybackComplete,
       onProgressUpdate: handleProgressUpdate,
+      onTimeUpdate: handleTimelineTimeUpdate,
     });
 
     // 플레이어 컨트롤 Hook (handleStop, handleControl, handlePlayClick)
@@ -560,6 +493,11 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
     );
 
     const immersiveChromeHidden = isPlaying && showContent;
+    const playbackReadiness = resolvePlayerPlaybackReadiness({
+      isInitializing: toonWork.isInitializing,
+      resourceLoadingCount: toonWork.loadingCount,
+      playerStoreLoading: playerStore.loading,
+    });
 
     useEffect(() => {
       setImmersivePeekVisible(false);
@@ -1030,7 +968,13 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
     }, [isPlaying, handleControl, overlayRef]);
 
     // 로딩바에 표시할 진행률 및 메시지 계산 (프리로드 + 초기화 통합)
-    const isLoading = isPreloading || toonWork.isInitializing;
+    const loadingState = resolvePlayerLoadingState({
+      isPreloading,
+      isInitializing: toonWork.isInitializing,
+      resourceLoadingCount: toonWork.loadingCount,
+      hasFinalLoadingError: isInitLoadFinalOverlayMessage(loadingErrorMessage),
+    });
+    const isLoading = loadingState.isLoading;
     const getLoadingProgress = () => {
       // percentage 기반으로 직접 반환 (0-100%)
       if (preloadProgress.percentage !== undefined) {
@@ -1174,15 +1118,15 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
     const recordingDialogHoles = useMemo(() => {
       const imageLoadTick = loadedImagesCount;
       void imageLoadTick;
-      const images = playerStore.content?.images ?? [];
+      const images = getPlaybackContentImages(playerStore.content);
       const contentList = toonWork.getToonContentImageList();
       const playbackMarkers = toonWork.getMarkers?.() ?? [];
-      const markers = resolvePlaybackSceneMarkers(playbackMarkers, playerContentSpoints);
+      const markers = resolveTimelineSceneMarkers(playbackMarkers, playerContentSceneMarkers);
 
       return serverEpisodeHolesWithContentMeta.map((hole) => {
         const preview = resolveRecordingPreviewForScene({
           startMs: hole.startMs,
-          spoints: playerContentSpoints,
+          sceneMarkers: playerContentSceneMarkers,
           images,
           contentList,
           markers,
@@ -1205,8 +1149,8 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
       });
     }, [
       loadedImagesCount,
-      playerContentSpoints,
-      playerStore.content?.images,
+      playerContentSceneMarkers,
+      playerStore.content,
       serverEpisodeHolesWithContentMeta,
       toonWork,
       version,
@@ -1220,12 +1164,12 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
 
         const applyScroll = () => {
           const playbackMarkers = toonWork.getMarkers?.() ?? [];
-          const spoints = usePlayerStore.getState().content?.spoints ?? [];
-          const currentMarkers = resolvePlaybackSceneMarkers(playbackMarkers, spoints);
+          const contentSceneMarkers = getPlaybackContentSceneMarkers(usePlayerStore.getState().content);
+          const currentMarkers = resolveTimelineSceneMarkers(playbackMarkers, contentSceneMarkers);
 
           if (currentMarkers.length === 0) {
             playerLogger.warn(
-              "[PlayerContent] handleSceneNavigate: 마커(spoints)가 없어 스크롤할 수 없습니다.",
+              "[PlayerContent] handleSceneNavigate: scene marker가 없어 이동할 수 없습니다.",
             );
             return;
           }
@@ -1260,8 +1204,8 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
             })();
             const preview = resolveRecordingPreviewForScene({
               startMs,
-              spoints,
-              images: usePlayerStore.getState().content?.images ?? [],
+              sceneMarkers: contentSceneMarkers,
+              images: getPlaybackContentImages(usePlayerStore.getState().content),
               version,
               contentList,
               markers: currentMarkers,
@@ -1279,7 +1223,7 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
 
           const targetScrollTop = resolveSceneNavigateTargetScrollTop({
             startMs,
-            spoints,
+            sceneMarkers: contentSceneMarkers,
             version,
             contentList,
             markers: currentMarkers,
@@ -1328,7 +1272,7 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
     // 서버 녹음 메타를 hole.uuid 기준으로 매핑 (API 실패 시 빈 맵)
     useEffect(() => {
       const content = usePlayerStore.getState().content;
-      if (!content?.tracks?.length) {
+      if (collectHolesFromContent(content).length === 0) {
         setServerEpisodeHoles([]);
         useRecordingStore.getState().setServerRecordings({}, {});
         return;
@@ -1441,7 +1385,7 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
     return (
       <>
         {/*프리로드 + 초기화 통합 로딩 오버레이*/}
-        {isLoading && !isInitLoadFinalOverlayMessage(loadingErrorMessage) ? (
+        {loadingState.shouldShowLoadingOverlay ? (
           <PlayerLoadingbar
             loading={true}
             progress={getLoadingProgress()}
@@ -1489,6 +1433,7 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
             getImageKey={getImageKey}
             handleImageLoad={handleImageLoad}
             handleClearTextImageLoad={handleClearTextImageLoad}
+            playbackTimeMs={playbackTimeMs}
             onImmersiveTap={handleImmersiveTap}
           />
           {immersiveChromeHidden ? (
@@ -1515,6 +1460,9 @@ const PlayerContent = forwardRef<PlayerContentRef, PlayerContentProps>(
           onEpisodeSelect={handleEpisodeFromList}
           handlePlayClick={handlePlayClick}
           handleControl={handleControlGuarded}
+          playbackReadiness={playbackReadiness}
+          runtimeLoadingCount={toonWork.loadingCount}
+          runtimeIsInitializing={toonWork.isInitializing}
           chromeHidden={immersiveChromeHidden}
           onListButtonClick={handleEpisodeListButtonClick}
         />

@@ -234,7 +234,8 @@ export function resolveRecordingPreviewImage(
   holeStartMs: number,
   content: {
     images: VogopangContentImage[];
-    spoints: Array<Partial<VogopangContentSpoint> & { time_ms?: number }>;
+    sceneMarkers?: RecordingPreviewMarker[];
+    spoints?: Array<Partial<VogopangContentSpoint> & { time_ms?: number }>;
   },
   version: RecordingPreviewContentVersion = "V1",
 ): { image: VogopangContentImage; index: number } | null {
@@ -243,7 +244,7 @@ export function resolveRecordingPreviewImage(
     return null;
   }
 
-  const markers = normalizePreviewMarkers(content.spoints);
+  const markers = normalizePreviewMarkers(content.sceneMarkers ?? content.spoints ?? []);
   const imageIndex = resolveRecordingPreviewImageIndex(
     holeStartMs,
     markers,
@@ -261,7 +262,8 @@ export function resolveRecordingPreviewThumbnailUrl(
   holeStartMs: number,
   content: {
     images: VogopangContentImage[];
-    spoints: Array<Partial<VogopangContentSpoint> & { time_ms?: number }>;
+    sceneMarkers?: RecordingPreviewMarker[];
+    spoints?: Array<Partial<VogopangContentSpoint> & { time_ms?: number }>;
   },
   version: RecordingPreviewContentVersion = "V1",
 ): string | null {
@@ -351,7 +353,8 @@ function resolveFallbackRecordingPreview(params: {
   holeStartMs: number;
   images: VogopangContentImage[];
   markers: RecordingPreviewMarker[];
-  spoints: Array<Partial<VogopangContentSpoint> & { time_ms?: number }>;
+  sceneMarkers: RecordingPreviewMarker[];
+  spoints?: Array<Partial<VogopangContentSpoint> & { time_ms?: number }>;
   version: RecordingPreviewContentVersion;
 }): RecordingPreviewResolution | null {
   const sortedImages = [...params.images].sort((a, b) => a.order - b.order);
@@ -360,7 +363,11 @@ function resolveFallbackRecordingPreview(params: {
   }
 
   const baseMarkers =
-    params.markers.length > 0 ? params.markers : normalizePreviewMarkers(params.spoints);
+    params.markers.length > 0
+      ? params.markers
+      : normalizePreviewMarkers(
+          params.sceneMarkers.length > 0 ? params.sceneMarkers : params.spoints ?? [],
+        );
   const index = resolveRecordingPreviewImageIndex(
     params.holeStartMs,
     baseMarkers,
@@ -380,7 +387,8 @@ function resolveFallbackRecordingPreview(params: {
 
 export function resolveRecordingPreviewThumbnail(params: {
   holeStartMs: number;
-  spoints: Array<Partial<VogopangContentSpoint> & { time_ms?: number }>;
+  sceneMarkers?: RecordingPreviewMarker[];
+  spoints?: Array<Partial<VogopangContentSpoint> & { time_ms?: number }>;
   images: VogopangContentImage[];
   contentList: HTMLElement | null;
   markers: RecordingPreviewMarker[];
@@ -391,6 +399,7 @@ export function resolveRecordingPreviewThumbnail(params: {
 }): RecordingPreviewResolution | null {
   const {
     holeStartMs,
+    sceneMarkers = [],
     spoints,
     images,
     contentList,
@@ -413,6 +422,7 @@ export function resolveRecordingPreviewThumbnail(params: {
     holeStartMs,
     images: sortedImages,
     markers,
+    sceneMarkers,
     spoints,
     version,
   });

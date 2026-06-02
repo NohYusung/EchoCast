@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PlayerControlType } from "@/app/player/types";
 import { playerLogger } from "@/app/player/_lib/playerLogger";
+import { resolvePlayerPlaybackReadiness } from "@/app/player/_lib/playerPlaybackReadiness";
 
 interface UsePlayerControlsParams {
   /** 이전/다음 화 네비용 현재 URL playerKey */
@@ -119,22 +120,22 @@ export function usePlayerControls(params: UsePlayerControlsParams) {
   // 재생 버튼 클릭 핸들러 (리소스 준비 상태 확인)
   const handlePlayClick = useCallback((options: any = {}) => {
     // 리소스 준비 상태 확인
-    const initializationComplete = !toonWork.isInitializing;
-    const allResourcesLoaded = toonWork.loadingCount === 0;
-    const isReady =
-      initializationComplete &&
-      allResourcesLoaded &&
-      !playerStore.loading;
+    const readiness = resolvePlayerPlaybackReadiness({
+      isInitializing: toonWork.isInitializing,
+      resourceLoadingCount: toonWork.loadingCount,
+      playerStoreLoading: playerStore.loading,
+    });
 
       playerLogger.log("[PlayerContent] 재생 버튼 클릭 - 리소스 체크:", {
-        initializationComplete,
-        allResourcesLoaded,
+        initializationComplete: !toonWork.isInitializing,
+        allResourcesLoaded: toonWork.loadingCount === 0,
         loadedImagesRendered: `${loadedImagesCount}/${totalImagesRef.current}`,
         playerStoreLoading: playerStore.loading,
-        isReady,
+        isReady: readiness.isReady,
+        blockedReason: readiness.reason,
       });
 
-    if (isReady) {
+    if (readiness.isReady) {
       // 리소스가 준비되었으면 바로 재생
       playerLogger.log("[PlayerContent] 리소스 준비 완료 - 재생 시작");
       handleControl(PlayerControlType.play, options);
