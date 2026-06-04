@@ -1,0 +1,110 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+  color: #172033;
+  font-family:
+    Arial,
+    "Apple SD Gothic Neo",
+    sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 20px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.toolbar nav {
+  display: flex;
+  gap: 10px;
+}
+
+.toolbar a,
+.toolbar span {
+  border: 1px solid #cfd6e4;
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: #ffffff;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.eyebrow {
+  color: #59657a;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.panel {
+  border: 1px solid #dce2ec;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.panel h2 {
+  margin-bottom: 12px;
+  font-size: 18px;
+}
+
+.panel ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.clip {
+  min-height: 96px;
+  border-radius: 6px;
+  border: 1px solid #cfd6e4;
+  background: #ffffff;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.clip-visual {
+  border-color: #2f80ed;
+}
+
+.clip-cue {
+  border-color: #27ae60;
+}
+
+.clip-effect {
+  border-color: #f2994a;
+}
