@@ -5,12 +5,17 @@
   "scripts": {
     "build": "next build --webpack",
     "dev": "next dev --webpack",
+    "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts"
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
   }
 }

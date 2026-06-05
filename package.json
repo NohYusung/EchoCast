@@ -11,7 +11,8 @@
     "dev:front": "npm run dev --workspace @test-player/front",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run build --workspace @test-player/front && npm run test:e2e --workspace @test-player/front"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
@@ -19,5 +20,8 @@
     "@types/react-dom": "^19.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "class-transformer": "^0.5.1"
   }
 }

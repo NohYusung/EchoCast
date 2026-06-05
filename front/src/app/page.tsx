@@ -6,8 +6,8 @@ export default function HomePage() {
       <section className="toolbar">
         <h1>test-player</h1>
         <nav>
-          <Link href="/studio/products/product-100/episodes/sample-player">
-            Studio
+          <Link href="/direction/screen/product-100/sample-player">
+            Direction
           </Link>
           <Link href="/player/sample-player">Player</Link>
         </nav>
