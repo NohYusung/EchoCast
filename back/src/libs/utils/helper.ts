@@ -1,4 +1,3 @@
-import { DddAggregate } from "@libs/ddd";
 import { customAlphabet } from "nanoid";
 import { FindOptionsWhere } from "typeorm";
 import * as crypto from "crypto";

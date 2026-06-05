@@ -1,11 +1,5 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  PrimaryColumn,
-  UpdateDateColumn,
-} from "typeorm";
-import type { CharacterDraft } from "../../player/domain/player-draft.types";
+import { DddAggregate } from "../../../libs/ddd";
+import { Column, Entity, PrimaryColumn } from "typeorm";
 
 export type CharacterRole =
   | "starring"
@@ -15,7 +9,7 @@ export type CharacterRole =
   | "unknown";
 
 @Entity("characters")
-export class CharacterEntity implements CharacterDraft {
+export class Character extends DddAggregate {
   @PrimaryColumn({ type: "varchar" })
   id!: string;
 
@@ -25,18 +19,6 @@ export class CharacterEntity implements CharacterDraft {
   @Column({ type: "varchar" })
   name!: string;
 
-  @Column({ type: "varchar", default: "#64748b" })
-  color!: string;
-
   @Column({ type: "varchar", default: "unknown" })
   role!: CharacterRole;
-
-  @Column({ type: "varchar", nullable: true })
-  defaultTtsVoiceId?: string;
-
-  @CreateDateColumn()
-  createdAt!: Date;
-
-  @UpdateDateColumn()
-  updatedAt!: Date;
 }

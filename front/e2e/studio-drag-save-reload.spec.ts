@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createSamplePlayerDraft } from "../src/app/_lib/player/sampleDraft";
 
-const apiBaseUrl = "http://127.0.0.1:4103";
+const apiBaseUrl = "http://127.0.0.1:4100";
 
 async function dragClipByPixels(
   page: Page,
@@ -106,4 +106,26 @@ test("direction screen mirrors the dubright screen-direction workbench structure
   await expect(page.locator(".work-space-checkboxes")).toContainText("마커 표시");
   await expect(page.locator(".bottom-btn-box")).toContainText("임시 저장");
   await expect(page.locator(".bottom-btn-box")).toContainText("연출 완료");
+});
+
+test("studio uses the new dubright timeline production-tool layout", async ({
+  page,
+  request,
+}) => {
+  const resetResponse = await request.put(
+    `${apiBaseUrl}/episodes/sample-player/player-draft`,
+    {
+      data: createSamplePlayerDraft(),
+    },
+  );
+  expect(resetResponse.ok()).toBe(true);
+
+  await page.goto("/studio/products/product-100/episodes/sample-player");
+
+  await expect(page.locator(".dub-studio-app")).toBeVisible();
+  await expect(page.locator(".dub-left-preview")).toBeVisible();
+  await expect(page.locator(".dub-editor")).toBeVisible();
+  await expect(page.locator(".dub-scale-row")).toContainText("Time line scale");
+  await expect(page.locator(".dub-track-head").first()).toBeVisible();
+  await expect(page.locator(".dub-bottom-bar")).toContainText("임시 저장");
 });

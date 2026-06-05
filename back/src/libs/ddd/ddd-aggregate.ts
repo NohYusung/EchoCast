@@ -7,8 +7,9 @@ import {
   DeleteDateColumn,
 } from "typeorm";
 import { DddEvent } from "./ddd-event";
-import { stripUndefined } from "@libs/utils/helper";
+import { stripUndefined } from "../utils/helper";
 import { plainToInstance } from "class-transformer";
+import { isDeepStrictEqual } from "util";
 
 @Entity()
 @Index(["eventStatus", "createdAt"])
@@ -18,17 +19,17 @@ export abstract class DddAggregate {
   @CreateDateColumn()
   readonly createdAt: Date;
 
-  @Column({ select: false, nullable: true })
+  @Column({ type: "varchar", select: false, nullable: true })
   private createdBy?: string;
 
   @UpdateDateColumn()
   readonly updatedAt!: Date;
 
-  /*
-  AGENT
-  - select: false 가 무슨뜻인지 이 위치에 주석 설명 추가. 
-  */
-  @Column({ select: false, nullable: true })
+  /**
+   * TypeORM `select: false`는 기본 조회 결과에서 이 컬럼을 제외한다.
+   * 감사 추적용 trace 값은 명시적으로 선택한 쿼리에서만 읽히게 한다.
+   */
+  @Column({ type: "varchar", select: false, nullable: true })
   private updatedBy?: string;
 
   @DeleteDateColumn()
@@ -58,7 +59,7 @@ export abstract class DddAggregate {
       (acc: { [key: string]: any }, prop) => {
         const originValue = this[prop as keyof typeof this];
         const changedValue = changed[prop];
-        acc[prop] = !isEqual(originValue, changedValue)
+        acc[prop] = !isDeepStrictEqual(originValue, changedValue)
           ? changedValue
           : undefined;
         return acc;

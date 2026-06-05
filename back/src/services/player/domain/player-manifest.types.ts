@@ -2,7 +2,7 @@ import type {
   MediaKind,
   TimelineItemKind,
   TrackKind,
-} from "./player-draft.types";
+} from "./player-contract.types";
 
 export interface TimelineTrackManifest {
   id: string;

@@ -20,15 +20,15 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "env PORT=4103 npm run start:dev --workspace @test-player/back",
-      cwd: workspaceRoot,
-      url: "http://127.0.0.1:4103/health",
+      command: "node --import tsx src/main.ts",
+      cwd: path.join(workspaceRoot, "back"),
+      url: "http://127.0.0.1:4100/health",
       timeout: 30_000,
       reuseExistingServer: !process.env.CI,
     },
     {
       command:
-        "env NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:4103 npm run start --workspace @test-player/front -- -p 3003",
+        "env NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:4100 npm run start --workspace @test-player/front -- -p 3003",
       cwd: workspaceRoot,
       url: "http://127.0.0.1:3003/studio/products/product-100/episodes/sample-player",
       timeout: 30_000,

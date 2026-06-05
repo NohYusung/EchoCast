@@ -1,15 +1,41 @@
-/*
-AGENT
-- 성우 녹음 전 cue에 채워 넣을 TTS 음성 메타 정보를 관리하는 엔티티다.
-- CueEntity.ttsVoiceId와 CharacterEntity.defaultTtsVoiceId가 참조한다.
-- player manifest에서는 cue.ttsVoiceId와 cue.ttsUrl이 모두 있을 때 TTS 항목을 생성한다.
-- test-player rules 기준으로 domain/<domain>.entity.ts는 도메인당 하나만 둔다.
-- 기초 칼럼 구성은 id, provider, voiceName, voiceKey, languageCode, fileUrl, metadata 이다.
-- id: varchar primary key. 현재 player draft 계약은 string id를 사용한다.
-- provider: TTS 제공자 또는 내부 fixture provider 값.
-- voiceName: 사용자와 manifest에 노출되는 음성 이름.
-- voiceKey: provider 안에서 TTS API 호출에 쓰는 실제 음성 키. 현재 저장 로직은 voiceName을 기본값으로 사용한다.
-- languageCode: ko-KR 같은 음성 언어 코드.
-- fileUrl: 음성 preview/default sample URL. cue별 생성 음원은 CueEntity.ttsUrl에 둔다.
-- metadata: provider별 pitch, rate, style 같은 확장 설정을 simple-json으로 보관한다.
-*/
+import { DddAggregate } from "../../../libs/ddd";
+import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn } from "typeorm";
+import { Script } from "../../scripts/domain/script.entity";
+
+@Entity("tts_voices")
+export class TtsVoice extends DddAggregate {
+  @PrimaryColumn({ type: "varchar" })
+  id!: string;
+
+  @Column({ type: "varchar" })
+  provider!: string;
+
+  @Column({ type: "varchar" })
+  voiceName!: string;
+
+  @Column({ type: "varchar" })
+  voiceKey!: string;
+
+  @Column({ type: "varchar", comment: "TTS 음성 언어 코드" })
+  languageCode!: string;
+
+  @Column({ type: "varchar", comment: "TTS 음성 데이터 URL", nullable: true })
+  fileUrl?: string;
+
+  @OneToOne(() => Script, { nullable: false })
+  @JoinColumn({ name: "scriptId" })
+  script!: Script;
+
+  @Column({ type: "varchar", comment: "스크립트 id" })
+  scriptId!: string;
+
+  /**
+   * provider별 TTS 음성 생성/재생 옵션처럼 고정 컬럼으로 분리하지 않은 부가 정보를 보관한다.
+   */
+  @Column({
+    type: "simple-json",
+    nullable: true,
+    comment: "provider별 TTS 음성 부가 정보 JSON",
+  })
+  metadata?: Record<string, unknown>;
+}

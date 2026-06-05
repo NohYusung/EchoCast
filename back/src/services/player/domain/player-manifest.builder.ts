@@ -1,4 +1,4 @@
-import type { PlayerDraft } from "./player-draft.types";
+import type { PlayerDraft } from "./player-contract.types";
 import type {
   PlayerManifest,
   RecordManifest,

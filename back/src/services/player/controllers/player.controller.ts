@@ -1,10 +1,21 @@
 import { Body, Controller, Get, Inject, Param, Post, Put } from "@nestjs/common";
 import { PlayerService } from "../player.service";
-import type { PlayerDraft } from "../domain/player-draft.types";
+import type { PlayerDraft } from "../domain/player-contract.types";
+import { ProductService } from "../../products/applications/product.service";
 
 @Controller()
 export class PlayerController {
-  constructor(@Inject(PlayerService) private readonly playerService: PlayerService) {}
+  constructor(
+    @Inject(PlayerService)
+    private readonly playerService: PlayerService,
+    @Inject(ProductService)
+    private readonly productService: ProductService,
+  ) {}
+
+  @Get("/health")
+  getHealth() {
+    return { status: "ok" };
+  }
 
   @Get("/player/manifest/:episodeId")
   getManifest(@Param("episodeId") episodeId: string) {
@@ -32,7 +43,7 @@ export class PlayerController {
       coverImageUrl?: string;
     },
   ) {
-    return this.playerService.createProduct(body);
+    return this.productService.createProduct(body);
   }
 
   @Post("/products/:productId/episodes")

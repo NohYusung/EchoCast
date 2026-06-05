@@ -1,9 +1,10 @@
+import { DddAggregate } from "../../../libs/ddd";
 import { Column, Entity, PrimaryGeneratedColumn } from "typeorm";
 
 export type MediaType = "audio" | "video" | "image";
 
 @Entity("medias")
-export class MediaEntity {
+export class Media extends DddAggregate {
   @PrimaryGeneratedColumn()
   id!: number;
 

@@ -1,4 +1,0 @@
-# test-player 프로젝트 로컬 Codex 설정.
-# custom agent는 .codex/agents/*.toml에서 불러온다.
-# repo-local skill은 .agents/skills/*/SKILL.md에서 불러온다.
-# 현재 파일은 설정 위치를 명확히 남기기 위한 문서용 placeholder다.

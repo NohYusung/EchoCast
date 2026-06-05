@@ -1,14 +1,8 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  PrimaryColumn,
-  UpdateDateColumn,
-} from "typeorm";
-import type { CueDraft } from "../../player/domain/player-draft.types";
+import { DddAggregate } from "../../../libs/ddd";
+import { Column, Entity, PrimaryColumn } from "typeorm";
 
 @Entity("cues")
-export class CueEntity implements CueDraft {
+export class Cue extends DddAggregate {
   @PrimaryColumn({ type: "varchar" })
   id!: string;
 
@@ -38,10 +32,4 @@ export class CueEntity implements CueDraft {
 
   @Column({ type: "real", default: 1 })
   volume!: number;
-
-  @CreateDateColumn()
-  createdAt!: Date;
-
-  @UpdateDateColumn()
-  updatedAt!: Date;
 }

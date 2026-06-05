@@ -4,6 +4,7 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
+    "resolvePackageJsonExports": false,
     "rootDir": "src",
     "outDir": "dist",
     "types": ["node"],

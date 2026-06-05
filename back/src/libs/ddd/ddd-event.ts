@@ -15,13 +15,13 @@ export class DddEvent {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Column()
+  @Column({ type: "varchar" })
   traceId!: string;
 
-  @Column()
+  @Column({ type: "varchar" })
   eventType!: string;
 
-  @Column()
+  @Column({ type: "text" })
   payload!: string;
 
   @Column({
@@ -31,10 +31,10 @@ export class DddEvent {
   })
   eventStatus!: DddEventStatus;
 
-  @Column({ nullable: true, comment: "예약 실행 시각" })
+  @Column({ type: "datetime", nullable: true, comment: "예약 실행 시각" })
   scheduledAt?: Date;
 
-  @Column()
+  @Column({ type: "datetime" })
   private occurredAt!: Date;
 
   @CreateDateColumn()

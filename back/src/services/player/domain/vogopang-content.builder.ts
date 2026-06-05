@@ -1,4 +1,4 @@
-import type { PlayerDraft, RecordDraft } from "./player-draft.types";
+import type { PlayerDraft, RecordDraft } from "./player-contract.types";
 import type {
   VogopangContent,
   VogopangContentAudioTrack,

@@ -1,7 +1,8 @@
+import { DddAggregate } from "../../../libs/ddd";
 import { Column, Entity, PrimaryColumn } from "typeorm";
 
 @Entity("scripts")
-export class ScriptEntity {
+export class Script extends DddAggregate {
   @PrimaryColumn({ type: "varchar" })
   id!: string;
 

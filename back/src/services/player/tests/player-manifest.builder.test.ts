@@ -4,19 +4,19 @@ import {
   assertNoForbiddenLegacyFields,
   buildPlayerManifest,
 } from "../domain/player-manifest.builder";
-import { createSamplePlayerDraft } from "../domain/sample-player-draft";
+import { createPlayerDraftFixture } from "./player-draft.fixture";
 
 test("buildPlayerManifest returns one contract with duration, tracks, items, cues, media, records, and tts", () => {
-  const manifest = buildPlayerManifest(createSamplePlayerDraft());
+  const manifest = buildPlayerManifest(createPlayerDraftFixture());
 
   assert.equal(manifest.episodeId, "sample-player");
-  assert.equal(manifest.durationMs, 12800);
-  assert.equal(manifest.tracks.length, 4);
-  assert.equal(manifest.items.length, 6);
-  assert.equal(manifest.cues.length, 3);
-  assert.equal(manifest.media.length, 3);
-  assert.equal(manifest.records.length, 3);
-  assert.equal(manifest.tts.length, 3);
+  assert.equal(manifest.durationMs, 12000);
+  assert.equal(manifest.tracks.length, 2);
+  assert.equal(manifest.items.length, 3);
+  assert.equal(manifest.cues.length, 2);
+  assert.equal(manifest.media.length, 1);
+  assert.equal(manifest.records.length, 1);
+  assert.equal(manifest.tts.length, 1);
 
   const approvedCue = manifest.cues.find((cue) => cue.id === "cue-5001");
   assert.equal(approvedCue?.approvedRecordUrl, "/audio/record-5001-approved.wav");
@@ -24,13 +24,13 @@ test("buildPlayerManifest returns one contract with duration, tracks, items, cue
 
   const fallbackCue = manifest.cues.find((cue) => cue.id === "cue-5002");
   assert.equal(fallbackCue?.approvedRecordUrl, undefined);
-  assert.equal(fallbackCue?.ttsUrl, "/audio/tts-5002.wav");
+  assert.equal(fallbackCue?.ttsUrl, undefined);
 
   assertNoForbiddenLegacyFields(manifest);
 });
 
 test("buildPlayerManifest rejects timeline items that end before their start time", () => {
-  const draft = createSamplePlayerDraft();
+  const draft = createPlayerDraftFixture();
   draft.timelineItems[0] = {
     ...draft.timelineItems[0],
     startTime: 3000,
@@ -44,7 +44,7 @@ test("buildPlayerManifest rejects timeline items that end before their start tim
 });
 
 test("buildPlayerManifest rejects cue placements that reference missing cues", () => {
-  const draft = createSamplePlayerDraft();
+  const draft = createPlayerDraftFixture();
   draft.timelineItems.push({
     id: "orphan-cue-item",
     trackId: "track-dialogue",

@@ -3,8 +3,9 @@ import { test } from "node:test";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { AppModule } from "../../../app.module";
+import { createPlayerDraftFixture } from "./player-draft.fixture";
 
-test("GET /player/manifest/:episodeId returns the sample player manifest contract", async () => {
+test("GET /player/manifest/:episodeId returns a registered player manifest contract", async () => {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
   }).compile();
@@ -12,12 +13,17 @@ test("GET /player/manifest/:episodeId returns the sample player manifest contrac
   await app.init();
 
   try {
+    await request(app.getHttpServer())
+      .put("/episodes/sample-player/player-draft")
+      .send(createPlayerDraftFixture())
+      .expect(200);
+
     const response = await request(app.getHttpServer())
       .get("/player/manifest/sample-player")
       .expect(200);
 
     assert.equal(response.body.episodeId, "sample-player");
-    assert.equal(response.body.durationMs, 12800);
+    assert.equal(response.body.durationMs, 12000);
     assert.equal(JSON.stringify(response.body).includes("spoints"), false);
     assert.equal(JSON.stringify(response.body).includes("positionRatio"), false);
   } finally {
@@ -33,6 +39,11 @@ test("PUT /episodes/:episodeId/player-draft persists an independent draft and up
   await app.init();
 
   try {
+    await request(app.getHttpServer())
+      .put("/episodes/sample-player/player-draft")
+      .send(createPlayerDraftFixture())
+      .expect(200);
+
     const draftResponse = await request(app.getHttpServer())
       .get("/episodes/sample-player/player-draft")
       .expect(200);
