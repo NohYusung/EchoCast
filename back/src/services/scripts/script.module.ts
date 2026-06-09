@@ -1,10 +1,10 @@
-import { Module } from "@nestjs/common";
-import { ScriptRepository } from "./repository/script.repository";
+import { Module } from '@nestjs/common';
+import { ScriptRepository } from './repository/script.repository';
 
 @Module({
-  imports: [],
-  controllers: [],
-  providers: [ScriptRepository],
-  exports: [ScriptRepository],
+    imports: [],
+    controllers: [],
+    providers: [ScriptRepository],
+    exports: [ScriptRepository],
 })
 export class ScriptModule {}

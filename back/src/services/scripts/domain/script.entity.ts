@@ -1,14 +1,27 @@
-import { DddAggregate } from "../../../libs/ddd";
-import { Column, Entity, PrimaryColumn } from "typeorm";
+import { DddAggregate } from '../../../libs/ddd';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-@Entity("scripts")
+type Ctor = {
+    script: string;
+    characterId: string;
+};
+
+@Entity('scripts')
 export class Script extends DddAggregate {
-  @PrimaryColumn({ type: "varchar" })
-  id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
-  @Column({ type: "text" })
-  script!: string;
+    @Column({ type: 'text', comment: '스크립트 본문' })
+    script!: string;
 
-  @Column({ type: "varchar" })
-  characterId!: string;
+    @Column({ comment: '캐릭터 id' })
+    characterId!: string;
+
+    constructor(args?: Ctor) {
+        super();
+        if (args) {
+            this.script = args.script;
+            this.characterId = args.characterId;
+        }
+    }
 }

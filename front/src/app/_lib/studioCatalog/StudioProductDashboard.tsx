@@ -1,0 +1,711 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import type { FormEvent } from 'react';
+import { StudioCatalogIcon } from './StudioCatalogIcon';
+import { productStatusLabels, studioProducts, type StudioProduct, type StudioProductStatus } from './studioCatalogMock';
+
+type ProductFilter = 'all' | StudioProductStatus;
+type ProductSort = 'recent' | 'name' | 'episodes';
+type ProductListItem = {
+    id: number;
+    title: string;
+    coverImageUrl?: string;
+};
+type ProductListResponse = {
+    data: {
+        items: ProductListItem[];
+        total: number;
+    };
+};
+
+const genreOptions = ['로맨스', '판타지', '액션', '스릴러', '드라마', '코미디', '일상', '공포', '무협', 'SF'];
+const dayOptions = ['월', '화', '수', '목', '금', '토', '일'];
+const visibilityOptions = ['비공개', '팀 공유', '공개'] as const;
+
+const statusOrder: ProductFilter[] = ['all', 'live', 'done', 'draft'];
+const productApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100';
+
+export function StudioProductDashboard() {
+    const [products, setProducts] = useState<StudioProduct[]>(() => studioProducts);
+    const [filter, setFilter] = useState<ProductFilter>('all');
+    const [sort, setSort] = useState<ProductSort>('recent');
+    const [query, setQuery] = useState('');
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [title, setTitle] = useState('');
+    const [logline, setLogline] = useState('');
+    const [synopsis, setSynopsis] = useState('');
+    const [rating, setRating] = useState('15+');
+    const [ratio, setRatio] = useState('1080x2400');
+    const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+    const [selectedDays, setSelectedDays] = useState<string[]>([]);
+    const [visibility, setVisibility] = useState<(typeof visibilityOptions)[number]>('비공개');
+    const [titleTouched, setTitleTouched] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let ignore = false;
+
+        listProducts()
+            .then((listedProducts) => {
+                if (!ignore) {
+                    setProducts(listedProducts);
+                }
+            })
+            .catch(() => {
+                if (!ignore) {
+                    setProducts(studioProducts);
+                }
+            });
+
+        return () => {
+            ignore = true;
+        };
+    }, []);
+
+    const counts = useMemo(() => {
+        return products.reduce(
+            (acc, product) => {
+                acc.all += 1;
+                acc[product.status] += 1;
+                acc.episodes += product.episodeCount;
+                return acc;
+            },
+            { all: 0, live: 0, done: 0, draft: 0, episodes: 0 }
+        );
+    }, [products]);
+
+    const visibleProducts = useMemo(() => {
+        const normalizedQuery = query.trim().toLowerCase();
+        const filteredProducts = products.filter((product) => {
+            if (filter !== 'all' && product.status !== filter) return false;
+            if (!normalizedQuery) return true;
+
+            return `${product.title} ${product.genres.join(' ')}`.toLowerCase().includes(normalizedQuery);
+        });
+
+        return [...filteredProducts].sort((a, b) => {
+            if (sort === 'name') return a.title.localeCompare(b.title, 'ko');
+            if (sort === 'episodes') return b.episodeCount - a.episodeCount;
+
+            return Number(b.legacyId) - Number(a.legacyId);
+        });
+    }, [filter, products, query, sort]);
+
+    const previewTitle = title.trim();
+    const previewCover = gradientFor(previewTitle || '무제');
+    const showTitleError = titleTouched && !previewTitle;
+
+    const toggleGenre = (genre: string) => {
+        setSelectedGenres((current) => {
+            if (current.includes(genre)) return current.filter((item) => item !== genre);
+            if (current.length >= 3) return current;
+
+            return [...current, genre];
+        });
+    };
+
+    const toggleDay = (day: string) => {
+        setSelectedDays((current) =>
+            current.includes(day) ? current.filter((item) => item !== day) : orderDays([...current, day])
+        );
+    };
+
+    const openCreateModal = () => {
+        setSubmitError(null);
+        setIsModalOpen(true);
+    };
+
+    const closeModal = () => {
+        if (isSubmitting) return;
+
+        setIsModalOpen(false);
+        setTitleTouched(false);
+        setSubmitError(null);
+    };
+
+    const submitProduct = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setTitleTouched(true);
+        setSubmitError(null);
+
+        if (!previewTitle) return;
+
+        setIsSubmitting(true);
+
+        try {
+            await createProduct({ title: previewTitle });
+            const listedProducts = await listProducts();
+            setProducts(listedProducts);
+        } catch {
+            setSubmitError('작품 등록에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
+            setIsSubmitting(false);
+            return;
+        }
+
+        resetForm();
+        setFilter('all');
+        setQuery('');
+        setIsModalOpen(false);
+        setIsSubmitting(false);
+    };
+
+    const saveDraft = () => {
+        if (isSubmitting) return;
+
+        setTitleTouched(true);
+        setSubmitError(null);
+        if (!previewTitle) return;
+
+        const nextProduct: StudioProduct = {
+            id: `mock-product-${products.length + 1}`,
+            legacyId: String(products.length + 1),
+            title: previewTitle,
+            status: 'draft',
+            genres: selectedGenres,
+            episodeCount: 0,
+            rating,
+            days: selectedDays,
+            updatedAtLabel: '방금 전',
+            progress: 5,
+            cover: previewCover,
+            logline,
+        };
+
+        setProducts((current) => [...current, nextProduct]);
+        resetForm();
+        setFilter('all');
+        setQuery('');
+        setIsModalOpen(false);
+    };
+
+    const resetForm = () => {
+        setTitle('');
+        setLogline('');
+        setSynopsis('');
+        setRating('15+');
+        setRatio('1080x2400');
+        setSelectedGenres([]);
+        setSelectedDays([]);
+        setVisibility('비공개');
+        setTitleTouched(false);
+    };
+
+    return (
+        <main className="tp-catalog" data-testid="studio-product-dashboard">
+            <Topbar
+                buttonLabel="새 작품 등록"
+                onPrimaryClick={openCreateModal}
+                searchLabel="작품 검색"
+                searchPlaceholder="작품 검색..."
+                searchValue={query}
+                setSearchValue={setQuery}
+                title="내 작품"
+            />
+            <div className="tp-catalog-body">
+                <StudioRail active="products" />
+                <section className="tp-catalog-content">
+                    <div className="tp-catalog-inner">
+                        <div className="tp-page-head">
+                            <div>
+                                <h1>내 작품</h1>
+                                <p>작품을 등록하고 에피소드 단위로 영상을 제작하세요.</p>
+                            </div>
+                            <span className="tp-count">
+                                작품 {counts.all} · 에피소드 {counts.episodes}
+                            </span>
+                        </div>
+
+                        <section className="tp-stats">
+                            <StatCard
+                                icon="panel"
+                                label="등록 작품"
+                                value={counts.all}
+                                detail={`연재중 ${counts.live} · 완결 ${counts.done} · 임시저장 ${counts.draft}`}
+                                tone="blue"
+                            />
+                            <StatCard
+                                icon="asset"
+                                label="총 에피소드"
+                                value={counts.episodes}
+                                detail="이번 주 신규 3편"
+                                tone="teal"
+                            />
+                            <StatCard icon="mic" label="보이스 클립" value={372} detail="승인 대기 12개" tone="amber" />
+                            <StatCard
+                                icon="check"
+                                label="완료율"
+                                value={78}
+                                suffix="%"
+                                detail="평균 제작 진행률"
+                                tone="violet"
+                            />
+                        </section>
+
+                        <div className="tp-toolbar">
+                            <div className="tp-tabs" role="tablist" aria-label="작품 상태 필터">
+                                {statusOrder.map((status) => (
+                                    <button
+                                        aria-selected={filter === status}
+                                        className={filter === status ? 'on' : ''}
+                                        key={status}
+                                        onClick={() => setFilter(status)}
+                                        role="tab"
+                                        type="button"
+                                    >
+                                        {status === 'all' ? '전체' : productStatusLabels[status]}
+                                        <span>{status === 'all' ? counts.all : counts[status]}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <label className="tp-sort">
+                                <StudioCatalogIcon name="chart" />
+                                <select onChange={(event) => setSort(event.target.value as ProductSort)} value={sort}>
+                                    <option value="recent">최근 수정순</option>
+                                    <option value="name">이름순</option>
+                                    <option value="episodes">에피소드 많은순</option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <div className="tp-product-grid">
+                            {visibleProducts.map((product) => (
+                                <Link
+                                    className="tp-product-card"
+                                    data-testid={`product-card-${product.id}`}
+                                    href={`/studio/products/${product.id}/episodes`}
+                                    key={product.id}
+                                >
+                                    <div className="tp-product-cover" style={{ background: product.cover }}>
+                                        <span className={`tp-status ${product.status}`}>
+                                            {productStatusLabels[product.status]}
+                                        </span>
+                                        <span className="tp-rating">{product.rating}</span>
+                                        <strong>{product.title}</strong>
+                                    </div>
+                                    <div className="tp-product-card-body">
+                                        <div className="tp-tag-row">
+                                            {product.genres.length ? (
+                                                product.genres.map((genre) => <span key={genre}>{genre}</span>)
+                                            ) : (
+                                                <span className="muted">장르 미설정</span>
+                                            )}
+                                        </div>
+                                        <div className="tp-card-meta">
+                                            <span>
+                                                <StudioCatalogIcon name="asset" /> EP {product.episodeCount}
+                                            </span>
+                                            <small>{product.updatedAtLabel}</small>
+                                        </div>
+                                        <div className="tp-progress">
+                                            <i style={{ width: `${product.progress}%` }} />
+                                        </div>
+                                    </div>
+                                </Link>
+                            ))}
+                            {filter === 'all' && !query ? (
+                                <button className="tp-product-card tp-add-card" onClick={openCreateModal} type="button">
+                                    <span className="tp-plus-box">
+                                        <StudioCatalogIcon name="plus" />
+                                    </span>
+                                    <strong>새 작품 등록</strong>
+                                    <small>표지·장르·시놉시스를 입력해 새 작품을 만드세요.</small>
+                                </button>
+                            ) : null}
+                        </div>
+
+                        {visibleProducts.length === 0 ? (
+                            <div className="tp-empty">
+                                <StudioCatalogIcon name="search" />
+                                <p>검색 결과가 없습니다.</p>
+                            </div>
+                        ) : null}
+                    </div>
+                </section>
+            </div>
+
+            {isModalOpen ? (
+                <div className="tp-modal-overlay" role="presentation">
+                    <div aria-modal="true" className="tp-product-modal" role="dialog">
+                        <div className="tp-modal-head">
+                            <span>
+                                <StudioCatalogIcon name="plus" />
+                            </span>
+                            <div>
+                                <h2>새 작품 등록</h2>
+                                <p>작품 정보를 입력하면 첫 에피소드 작업 공간이 함께 생성됩니다.</p>
+                            </div>
+                            <button aria-label="닫기" disabled={isSubmitting} onClick={closeModal} type="button">
+                                <StudioCatalogIcon name="close" />
+                            </button>
+                        </div>
+
+                        <form className="tp-modal-grid" onSubmit={submitProduct}>
+                            <div className="tp-form-col">
+                                <label className="tp-dropzone">
+                                    <span>
+                                        <StudioCatalogIcon name="download" />
+                                    </span>
+                                    <strong>클릭하여 업로드</strong>
+                                    <small>지금은 mock 미리보기만 표시합니다.</small>
+                                </label>
+
+                                <label className="tp-field">
+                                    작품명 <b>*</b>
+                                    <input
+                                        className={showTitleError ? 'error' : ''}
+                                        maxLength={40}
+                                        onBlur={() => setTitleTouched(true)}
+                                        onChange={(event) => setTitle(event.target.value)}
+                                        placeholder="예: 학원의 비밀"
+                                        value={title}
+                                    />
+                                    {showTitleError ? (
+                                        <small className="tp-error">작품명을 입력해 주세요.</small>
+                                    ) : null}
+                                </label>
+
+                                <label className="tp-field">
+                                    한 줄 소개 <span>{logline.length}/60</span>
+                                    <input
+                                        maxLength={60}
+                                        onChange={(event) => setLogline(event.target.value)}
+                                        placeholder="작품을 한 문장으로 소개해 주세요."
+                                        value={logline}
+                                    />
+                                </label>
+
+                                <div className="tp-field">
+                                    장르 <span>최대 3개</span>
+                                    <div className="tp-chip-row">
+                                        {genreOptions.map((genre) => (
+                                            <button
+                                                className={selectedGenres.includes(genre) ? 'on' : ''}
+                                                key={genre}
+                                                onClick={() => toggleGenre(genre)}
+                                                type="button"
+                                            >
+                                                {genre}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="tp-field">
+                                    연재 요일
+                                    <div className="tp-days">
+                                        {dayOptions.map((day) => (
+                                            <button
+                                                className={selectedDays.includes(day) ? 'on' : ''}
+                                                key={day}
+                                                onClick={() => toggleDay(day)}
+                                                type="button"
+                                            >
+                                                {day}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="tp-two-col">
+                                    <label className="tp-field">
+                                        연령 등급
+                                        <select onChange={(event) => setRating(event.target.value)} value={rating}>
+                                            <option value="전체">전체 이용가</option>
+                                            <option value="12+">12세 이용가</option>
+                                            <option value="15+">15세 이용가</option>
+                                            <option value="19+">19세 이용가</option>
+                                        </select>
+                                    </label>
+                                    <label className="tp-field">
+                                        기본 화면비
+                                        <select onChange={(event) => setRatio(event.target.value)} value={ratio}>
+                                            <option value="1080x2400">세로 9:20</option>
+                                            <option value="1080x1920">세로 9:16</option>
+                                            <option value="1080x1350">세로 4:5</option>
+                                            <option value="1920x1080">가로 16:9</option>
+                                        </select>
+                                    </label>
+                                </div>
+
+                                <label className="tp-field">
+                                    시놉시스 <span>{synopsis.length}/500</span>
+                                    <textarea
+                                        maxLength={500}
+                                        onChange={(event) => setSynopsis(event.target.value)}
+                                        placeholder="작품의 줄거리와 세계관을 자유롭게 작성해 주세요."
+                                        value={synopsis}
+                                    />
+                                </label>
+
+                                <div className="tp-radio-grid">
+                                    {visibilityOptions.map((option) => (
+                                        <button
+                                            className={visibility === option ? 'on' : ''}
+                                            key={option}
+                                            onClick={() => setVisibility(option)}
+                                            type="button"
+                                        >
+                                            <span />
+                                            <strong>{option}</strong>
+                                            <small>
+                                                {option === '비공개'
+                                                    ? '나만 볼 수 있어요'
+                                                    : option === '팀 공유'
+                                                      ? '초대 멤버에게 공개'
+                                                      : '링크로 열람'}
+                                            </small>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <aside className="tp-preview-col">
+                                <p>미리보기</p>
+                                <div className="tp-preview-card">
+                                    <div className="tp-preview-cover" style={{ background: previewCover }}>
+                                        <span>임시저장</span>
+                                        <strong>{previewTitle || '작품명 미입력'}</strong>
+                                    </div>
+                                    <div className="tp-preview-body">
+                                        <p>{logline || '한 줄 소개가 여기에 표시됩니다.'}</p>
+                                        <div className="tp-tag-row">
+                                            {selectedGenres.length ? (
+                                                selectedGenres.map((genre) => <span key={genre}>{genre}</span>)
+                                            ) : (
+                                                <span className="muted">장르 미설정</span>
+                                            )}
+                                        </div>
+                                        <dl>
+                                            <div>
+                                                <dt>연재 요일</dt>
+                                                <dd>{selectedDays.length ? selectedDays.join(' · ') : '미설정'}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>연령 등급</dt>
+                                                <dd>{rating}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>화면비</dt>
+                                                <dd>{ratio}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>공개 범위</dt>
+                                                <dd>{visibility}</dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+                                </div>
+                            </aside>
+
+                            <div className="tp-modal-foot">
+                                <span
+                                    className={submitError ? 'tp-modal-foot-error' : undefined}
+                                    role={submitError ? 'alert' : undefined}
+                                >
+                                    {submitError ?? '등록 시 EP.01 작업 공간이 자동 생성됩니다.'}
+                                </span>
+                                <div>
+                                    <button
+                                        className="tp-btn ghost"
+                                        disabled={isSubmitting}
+                                        onClick={saveDraft}
+                                        type="button"
+                                    >
+                                        임시저장
+                                    </button>
+                                    <button className="tp-btn primary" disabled={isSubmitting} type="submit">
+                                        {isSubmitting ? (
+                                            '등록 중'
+                                        ) : (
+                                            <>
+                                                <StudioCatalogIcon name="check" /> 작품 등록
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            ) : null}
+        </main>
+    );
+}
+
+async function listProducts() {
+    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products`, {
+        cache: 'no-store',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Product list failed: ${response.status}`);
+    }
+
+    const result = (await response.json()) as ProductListResponse;
+    return result.data.items.map(toStudioProduct);
+}
+
+async function createProduct({ title }: { title: string }) {
+    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products`, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify({ title }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Product create failed: ${response.status}`);
+    }
+}
+
+function toStudioProduct(product: ProductListItem): StudioProduct {
+    const id = String(product.id);
+
+    return {
+        id,
+        legacyId: id,
+        title: product.title,
+        status: 'live',
+        genres: [],
+        episodeCount: 0,
+        rating: '15+',
+        days: [],
+        updatedAtLabel: '방금 전',
+        progress: 0,
+        cover: product.coverImageUrl ? `center / cover no-repeat url(${JSON.stringify(product.coverImageUrl)})` : gradientFor(product.title),
+        logline: '',
+    };
+}
+
+function Topbar({
+    buttonLabel,
+    onPrimaryClick,
+    searchLabel,
+    searchPlaceholder,
+    searchValue,
+    setSearchValue,
+    title,
+}: {
+    buttonLabel: string;
+    onPrimaryClick: () => void;
+    searchLabel: string;
+    searchPlaceholder: string;
+    searchValue: string;
+    setSearchValue: (value: string) => void;
+    title: string;
+}) {
+    return (
+        <header className="tp-topbar">
+            <Link className="tp-brand" href="/studio/products">
+                <span>
+                    <StudioCatalogIcon name="asset" />
+                </span>
+                Tooned
+            </Link>
+            <div className="tp-crumb">
+                <span>/</span>
+                <strong>{title}</strong>
+            </div>
+            <div className="tp-spacer" />
+            <label className="tp-topsearch">
+                <span className="sr-only">{searchLabel}</span>
+                <StudioCatalogIcon name="search" />
+                <input
+                    onChange={(event) => setSearchValue(event.target.value)}
+                    placeholder={searchPlaceholder}
+                    value={searchValue}
+                />
+                <kbd>/</kbd>
+            </label>
+            <button className="tp-new-btn" onClick={onPrimaryClick} type="button">
+                <StudioCatalogIcon name="plus" />
+                {buttonLabel}
+            </button>
+            <div className="tp-avatar">TP</div>
+        </header>
+    );
+}
+
+function StudioRail({ active }: { active: 'products' | 'stats' }) {
+    return (
+        <nav className="tp-rail" aria-label="studio catalog">
+            <Link className={active === 'products' ? 'active' : ''} href="/studio/products">
+                <StudioCatalogIcon name="panel" />
+                <span>작품</span>
+            </Link>
+            <button className={active === 'stats' ? 'active' : ''} type="button">
+                <StudioCatalogIcon name="chart" />
+                <span>통계</span>
+            </button>
+            <button type="button">
+                <StudioCatalogIcon name="image" />
+                <span>에셋</span>
+            </button>
+            <button type="button">
+                <StudioCatalogIcon name="users" />
+                <span>멤버</span>
+            </button>
+            <span className="tp-rail-spacer" />
+            <button type="button">
+                <StudioCatalogIcon name="trash" />
+                <span>휴지통</span>
+            </button>
+            <button type="button">
+                <StudioCatalogIcon name="settings" />
+                <span>설정</span>
+            </button>
+        </nav>
+    );
+}
+
+function StatCard({
+    detail,
+    icon,
+    label,
+    suffix = '',
+    tone,
+    value,
+}: {
+    detail: string;
+    icon: 'asset' | 'check' | 'mic' | 'panel';
+    label: string;
+    suffix?: string;
+    tone: 'amber' | 'blue' | 'teal' | 'violet';
+    value: number;
+}) {
+    return (
+        <article className={`tp-stat ${tone}`}>
+            <span>
+                <StudioCatalogIcon name={icon} /> {label}
+            </span>
+            <strong>
+                {value}
+                <small>{suffix}</small>
+            </strong>
+            <p>{detail}</p>
+        </article>
+    );
+}
+
+function orderDays(days: string[]) {
+    return dayOptions.filter((day) => days.includes(day));
+}
+
+function gradientFor(seed: string) {
+    const gradients = [
+        'linear-gradient(135deg,#3d5afe,#7b5bff)',
+        'linear-gradient(135deg,#0ea5b7,#2dd4bf)',
+        'linear-gradient(135deg,#f43f5e,#fb7185)',
+        'linear-gradient(135deg,#7c3aed,#a78bfa)',
+        'linear-gradient(135deg,#d97706,#fbbf24)',
+        'linear-gradient(135deg,#0f766e,#34d399)',
+    ];
+    let hash = 0;
+    for (const character of seed) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+
+    return gradients[hash % gradients.length]!;
+}

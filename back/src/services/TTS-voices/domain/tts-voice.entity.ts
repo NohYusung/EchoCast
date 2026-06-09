@@ -1,41 +1,64 @@
-import { DddAggregate } from "../../../libs/ddd";
-import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn } from "typeorm";
-import { Script } from "../../scripts/domain/script.entity";
+import { DddAggregate } from '../../../libs/ddd';
+import { Column, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Script } from '../../scripts/domain/script.entity';
 
-@Entity("tts_voices")
+type Ctor = {
+    provider: string;
+    voiceName: string;
+    voiceKey: string;
+    languageCode: string;
+    scriptId: string;
+    fileUrl?: string;
+    metadata?: Record<string, unknown>;
+};
+
+@Entity('tts_voices')
 export class TtsVoice extends DddAggregate {
-  @PrimaryColumn({ type: "varchar" })
-  id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
-  @Column({ type: "varchar" })
-  provider!: string;
+    @Column({ comment: 'TTS 제공자' })
+    provider!: string;
 
-  @Column({ type: "varchar" })
-  voiceName!: string;
+    @Column({ comment: 'TTS 음성 이름' })
+    voiceName!: string;
 
-  @Column({ type: "varchar" })
-  voiceKey!: string;
+    @Column({ comment: 'TTS 음성 키' })
+    voiceKey!: string;
 
-  @Column({ type: "varchar", comment: "TTS 음성 언어 코드" })
-  languageCode!: string;
+    @Column({ comment: 'TTS 음성 언어 코드' })
+    languageCode!: string;
 
-  @Column({ type: "varchar", comment: "TTS 음성 데이터 URL", nullable: true })
-  fileUrl?: string;
+    @Column({ comment: 'TTS 음성 데이터 URL', nullable: true })
+    fileUrl?: string;
 
-  @OneToOne(() => Script, { nullable: false })
-  @JoinColumn({ name: "scriptId" })
-  script!: Script;
+    @Column({ comment: '스크립트 id' })
+    scriptId!: string;
 
-  @Column({ type: "varchar", comment: "스크립트 id" })
-  scriptId!: string;
+    /**
+     * provider별 TTS 음성 생성/재생 옵션처럼 고정 컬럼으로 분리하지 않은 부가 정보를 보관한다.
+     */
+    @Column({
+        type: 'simple-json',
+        nullable: true,
+        comment: 'provider별 TTS 음성 부가 정보 JSON',
+    })
+    metadata?: Record<string, unknown>;
 
-  /**
-   * provider별 TTS 음성 생성/재생 옵션처럼 고정 컬럼으로 분리하지 않은 부가 정보를 보관한다.
-   */
-  @Column({
-    type: "simple-json",
-    nullable: true,
-    comment: "provider별 TTS 음성 부가 정보 JSON",
-  })
-  metadata?: Record<string, unknown>;
+    @OneToOne(() => Script, { nullable: false })
+    @JoinColumn({ name: 'scriptId' })
+    script!: Script;
+
+    constructor(args?: Ctor) {
+        super();
+        if (args) {
+            this.provider = args.provider;
+            this.voiceName = args.voiceName;
+            this.voiceKey = args.voiceKey;
+            this.languageCode = args.languageCode;
+            this.fileUrl = args.fileUrl;
+            this.scriptId = args.scriptId;
+            this.metadata = args.metadata;
+        }
+    }
 }

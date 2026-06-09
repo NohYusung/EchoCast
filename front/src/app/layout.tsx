@@ -1,10 +1,10 @@
-import type { ReactNode } from "react";
-import "./styles.css";
+import type { ReactNode } from 'react';
+import './styles.css';
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return (
-    <html lang="ko">
-      <body>{children}</body>
-    </html>
-  );
+    return (
+        <html lang="ko">
+            <body>{children}</body>
+        </html>
+    );
 }

@@ -1,24 +1,44 @@
-import { DddAggregate } from "../../../libs/ddd";
-import { Column, Entity, PrimaryColumn } from "typeorm";
-import type { TrackKind } from "../../player/domain/player-contract.types";
+import { DddAggregate } from '../../../libs/ddd';
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Episode } from '../../episodes/domain/episode.entity';
 
-@Entity("tracks")
+export type TrackType = 'scroll' | 'record' | 'audio' | 'effect';
+
+type Ctor = {
+    episodeId: number;
+    name: string;
+    type: TrackType;
+    isMuted?: boolean;
+};
+
+@Entity('tracks')
 export class Track extends DddAggregate {
-  @PrimaryColumn({ type: "varchar" })
-  id!: string;
+    @PrimaryGeneratedColumn()
+    id!: number;
 
-  @Column({ type: "varchar" })
-  episodeId!: string;
+    @Column({ comment: '에피소드 id' })
+    episodeId!: number;
 
-  @Column({ type: "varchar" })
-  name!: string;
+    @Column({ comment: '트랙 이름' })
+    name!: string;
 
-  @Column({ type: "varchar" })
-  kind!: TrackKind;
+    @Column({ comment: '트랙 종류' })
+    type!: TrackType;
 
-  @Column({ type: "integer" })
-  layerId!: number;
+    @Column({ type: 'boolean', comment: '트랙 음소거 여부', default: false })
+    isMuted!: boolean;
 
-  @Column({ type: "boolean", default: false })
-  isMuted!: boolean;
+    @ManyToOne(() => Episode, { nullable: false })
+    @JoinColumn({ name: 'episodeId' })
+    episode!: Episode;
+
+    constructor(args?: Ctor) {
+        super();
+        if (args) {
+            this.episodeId = args.episodeId;
+            this.name = args.name;
+            this.type = args.type;
+            this.isMuted = args.isMuted ?? false;
+        }
+    }
 }

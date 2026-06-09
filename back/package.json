@@ -1,23 +1,32 @@
 {
-  "name": "@test-player/back",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start:dev": "node --import tsx --watch src/main.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/**/*.test.ts"
-  },
-  "dependencies": {
-    "@nestjs/common": "^11.0.1",
-    "@nestjs/core": "^11.0.1",
-    "@nestjs/platform-express": "^11.0.1",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
-  },
-  "devDependencies": {
-    "@nestjs/testing": "^11.0.1",
-    "@types/supertest": "^6.0.2",
-    "supertest": "^7.0.0"
-  }
+    "name": "@test-player/back",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "build": "nest build",
+        "start": "nest start",
+        "start:dev": "nest start --watch",
+        "start:prod": "node dist/main",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test": "npm run build && node --test \"dist/services/products/**/*.test.js\" \"dist/services/characters/**/*.test.js\" \"dist/services/episodes/**/*.test.js\""
+    },
+    "dependencies": {
+        "@nestjs/common": "^11.0.1",
+        "@nestjs/config": "^4.0.4",
+        "@nestjs/core": "^11.0.1",
+        "@nestjs/platform-express": "^11.0.1",
+        "@nestjs/typeorm": "^11.0.1",
+        "mysql2": "^3.22.5",
+        "reflect-metadata": "^0.2.2",
+        "rxjs": "^7.8.1",
+        "sql.js": "^1.14.1",
+        "typeorm": "^0.3.30"
+    },
+    "devDependencies": {
+        "@nestjs/cli": "^11.0.0",
+        "@nestjs/schematics": "^11.0.0",
+        "@nestjs/testing": "^11.0.1",
+        "@types/supertest": "^6.0.2",
+        "supertest": "^7.0.0"
+    }
 }
