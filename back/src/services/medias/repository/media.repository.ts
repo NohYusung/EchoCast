@@ -11,6 +11,7 @@ export class MediaRepository extends DddRepository<Media> {
     async find(
         conditions: {
             id?: number;
+            episodeId?: number;
             mediaType?: MediaType;
             mediaUrl?: string;
         },
@@ -19,6 +20,7 @@ export class MediaRepository extends DddRepository<Media> {
         return this.entityManager.find(this.entityClass, {
             where: stripUndefined<Media>({
                 id: conditions.id,
+                episodeId: conditions.episodeId,
                 mediaType: conditions.mediaType,
                 mediaUrl: conditions.mediaUrl,
             }),
@@ -26,10 +28,11 @@ export class MediaRepository extends DddRepository<Media> {
         });
     }
 
-    async count(conditions: { id?: number; mediaType?: MediaType; mediaUrl?: string }) {
+    async count(conditions: { id?: number; episodeId?: number; mediaType?: MediaType; mediaUrl?: string }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Media>({
                 id: conditions.id,
+                episodeId: conditions.episodeId,
                 mediaType: conditions.mediaType,
                 mediaUrl: conditions.mediaUrl,
             }),

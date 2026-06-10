@@ -1,8 +1,10 @@
 import { DddAggregate } from '../../../libs/ddd';
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
+import { Scroll } from '../../scrolls/domain/scroll.entity';
 
-export type TrackType = 'scroll' | 'record' | 'audio' | 'effect';
+export type TrackType = 'scroll' | 'record' | 'audio' | 'effect' | 'bgm' | 'scrolls';
 
 type Ctor = {
     episodeId: number;
@@ -31,6 +33,12 @@ export class Track extends DddAggregate {
     @ManyToOne(() => Episode, { nullable: false })
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
+
+    @OneToMany(() => Cue, (cue) => cue.track)
+    cues!: Cue[];
+
+    @OneToMany(() => Scroll, (scroll) => scroll.track)
+    scrolls!: Scroll[];
 
     constructor(args?: Ctor) {
         super();

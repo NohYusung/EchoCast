@@ -1,0 +1,76 @@
+import { Exclude, Expose, Type } from 'class-transformer';
+import type { TrackType } from '../../domain/track.entity';
+
+@Exclude()
+export class TrackCueResponseDto {
+    @Expose()
+    id!: number;
+
+    @Expose()
+    scriptId!: number;
+
+    @Expose()
+    characterId!: number;
+
+    @Expose()
+    trackId!: number;
+
+    @Expose()
+    startTime!: number;
+
+    @Expose()
+    endTime!: number;
+
+    @Expose()
+    ttsVoiceId?: number;
+
+    @Expose()
+    volume!: number;
+}
+
+@Exclude()
+export class TrackScrollResponseDto {
+    @Expose()
+    id!: number;
+
+    @Expose()
+    trackId!: number;
+
+    @Expose()
+    startTime!: number;
+
+    @Expose()
+    endTime!: number;
+
+    @Expose()
+    startPosition!: number;
+
+    @Expose()
+    endPosition!: number;
+}
+
+@Exclude()
+export class TrackResponseDto {
+    @Expose()
+    id!: number;
+
+    @Expose()
+    episodeId!: number;
+
+    @Expose()
+    name!: string;
+
+    @Expose()
+    type!: TrackType;
+
+    @Expose()
+    isMuted!: boolean;
+
+    @Expose()
+    @Type(() => TrackCueResponseDto)
+    cues!: TrackCueResponseDto[];
+
+    @Expose()
+    @Type(() => TrackScrollResponseDto)
+    scrolls!: TrackScrollResponseDto[];
+}
