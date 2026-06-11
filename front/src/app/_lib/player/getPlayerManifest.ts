@@ -1,6 +1,10 @@
 import { sampleManifest } from './sampleManifest';
 import type { PlayerManifest } from './playerManifest.types';
 
+interface PlayerManifestResponse {
+    data?: PlayerManifest;
+}
+
 function fallbackManifest(episodeId: string): PlayerManifest {
     return {
         ...sampleManifest,
@@ -17,7 +21,8 @@ export async function getPlayerManifest(episodeId: string): Promise<PlayerManife
             cache: 'no-store',
         });
         if (!response.ok) return fallbackManifest(episodeId);
-        return (await response.json()) as PlayerManifest;
+        const result = (await response.json()) as PlayerManifestResponse;
+        return result.data ?? fallbackManifest(episodeId);
     } catch {
         return fallbackManifest(episodeId);
     }

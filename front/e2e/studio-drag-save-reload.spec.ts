@@ -3,6 +3,26 @@ import { createSamplePlayerDraft } from "../src/app/_lib/player/sampleDraft";
 
 const apiBaseUrl = "http://127.0.0.1:4100";
 
+test("studio keeps the playhead in place when selecting a cue clip", async ({
+  page,
+}) => {
+  await page.goto("/studio/products/1/episodes/1");
+
+  const playhead = page.locator(".odx-playhead");
+  const cueClip = page.locator('[data-testid^="odx-clip-cue-"]').first();
+
+  await expect(playhead).toBeVisible();
+  await expect(cueClip).toBeVisible();
+
+  const beforePlayhead = await playhead.getAttribute("aria-valuenow");
+  expect(beforePlayhead).not.toBeNull();
+
+  await cueClip.click();
+
+  await expect(cueClip).toHaveClass(/is-selected/);
+  await expect(playhead).toHaveAttribute("aria-valuenow", beforePlayhead!);
+});
+
 async function dragClipByPixels(
   page: Page,
   testId: string,

@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 import { StudioCatalogIcon } from './StudioCatalogIcon';
-import { productStatusLabels, studioProducts, type StudioProduct, type StudioProductStatus } from './studioCatalogMock';
+import { productStatusLabels, type StudioProduct, type StudioProductStatus } from './studioCatalogMock';
 
 type ProductFilter = 'all' | StudioProductStatus;
 type ProductSort = 'recent' | 'name' | 'episodes';
@@ -19,16 +19,29 @@ type ProductListResponse = {
         total: number;
     };
 };
+type ProductCreateRequest = {
+    title: string;
+    coverImageUrl?: string;
+};
+type FileUploadUrlItem = {
+    publicUrl: string;
+    mimetype: string;
+    presignedUrl: string;
+};
+type FileUploadUrlsResponse = {
+    data: FileUploadUrlItem[];
+};
 
 const genreOptions = ['로맨스', '판타지', '액션', '스릴러', '드라마', '코미디', '일상', '공포', '무협', 'SF'];
-const dayOptions = ['월', '화', '수', '목', '금', '토', '일'];
 const visibilityOptions = ['비공개', '팀 공유', '공개'] as const;
 
 const statusOrder: ProductFilter[] = ['all', 'live', 'done', 'draft'];
 const productApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100';
 
 export function StudioProductDashboard() {
-    const [products, setProducts] = useState<StudioProduct[]>(() => studioProducts);
+    const [products, setProducts] = useState<StudioProduct[]>([]);
+    const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+    const [productsError, setProductsError] = useState<string | null>(null);
     const [filter, setFilter] = useState<ProductFilter>('all');
     const [sort, setSort] = useState<ProductSort>('recent');
     const [query, setQuery] = useState('');
@@ -39,14 +52,18 @@ export function StudioProductDashboard() {
     const [rating, setRating] = useState('15+');
     const [ratio, setRatio] = useState('1080x2400');
     const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-    const [selectedDays, setSelectedDays] = useState<string[]>([]);
     const [visibility, setVisibility] = useState<(typeof visibilityOptions)[number]>('비공개');
+    const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
+    const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
     const [titleTouched, setTitleTouched] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
 
     useEffect(() => {
         let ignore = false;
+
+        setIsLoadingProducts(true);
+        setProductsError(null);
 
         listProducts()
             .then((listedProducts) => {
@@ -56,7 +73,13 @@ export function StudioProductDashboard() {
             })
             .catch(() => {
                 if (!ignore) {
-                    setProducts(studioProducts);
+                    setProducts([]);
+                    setProductsError('작품 목록을 불러오지 못했습니다. 백엔드 API 상태를 확인해 주세요.');
+                }
+            })
+            .finally(() => {
+                if (!ignore) {
+                    setIsLoadingProducts(false);
                 }
             });
 
@@ -64,6 +87,20 @@ export function StudioProductDashboard() {
             ignore = true;
         };
     }, []);
+
+    useEffect(() => {
+        if (!coverImageFile) {
+            setCoverPreviewUrl(null);
+            return undefined;
+        }
+
+        const objectUrl = URL.createObjectURL(coverImageFile);
+        setCoverPreviewUrl(objectUrl);
+
+        return () => {
+            URL.revokeObjectURL(objectUrl);
+        };
+    }, [coverImageFile]);
 
     const counts = useMemo(() => {
         return products.reduce(
@@ -75,6 +112,12 @@ export function StudioProductDashboard() {
             },
             { all: 0, live: 0, done: 0, draft: 0, episodes: 0 }
         );
+    }, [products]);
+
+    const averageProgress = useMemo(() => {
+        if (products.length === 0) return 0;
+
+        return Math.round(products.reduce((sum, product) => sum + product.progress, 0) / products.length);
     }, [products]);
 
     const visibleProducts = useMemo(() => {
@@ -95,7 +138,7 @@ export function StudioProductDashboard() {
     }, [filter, products, query, sort]);
 
     const previewTitle = title.trim();
-    const previewCover = gradientFor(previewTitle || '무제');
+    const previewCover = coverPreviewUrl ? toCoverBackground(coverPreviewUrl) : gradientFor(previewTitle || '무제');
     const showTitleError = titleTouched && !previewTitle;
 
     const toggleGenre = (genre: string) => {
@@ -105,12 +148,6 @@ export function StudioProductDashboard() {
 
             return [...current, genre];
         });
-    };
-
-    const toggleDay = (day: string) => {
-        setSelectedDays((current) =>
-            current.includes(day) ? current.filter((item) => item !== day) : orderDays([...current, day])
-        );
     };
 
     const openCreateModal = () => {
@@ -126,17 +163,55 @@ export function StudioProductDashboard() {
         setSubmitError(null);
     };
 
+    const handleCoverImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0] ?? null;
+
+        setSubmitError(null);
+
+        if (!file) {
+            setCoverImageFile(null);
+            return;
+        }
+
+        if (!file.type.startsWith('image/')) {
+            setCoverImageFile(null);
+            setSubmitError('표지는 이미지 파일만 등록할 수 있습니다.');
+            event.target.value = '';
+            return;
+        }
+
+        setCoverImageFile(file);
+    };
+
     const submitProduct = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setTitleTouched(true);
         setSubmitError(null);
 
         if (!previewTitle) return;
+        if (coverImageFile && !coverImageFile.type.startsWith('image/')) {
+            setSubmitError('표지는 이미지 파일만 등록할 수 있습니다.');
+            return;
+        }
 
         setIsSubmitting(true);
 
         try {
-            await createProduct({ title: previewTitle });
+            let coverImageUrl: string | undefined;
+
+            if (coverImageFile) {
+                const key = getProductCoverUploadKey(coverImageFile);
+                const [uploadUrl] = await getFileUploadUrls(productApiBaseUrl, [key]);
+
+                if (!uploadUrl) {
+                    throw new Error('File upload URL response is empty');
+                }
+
+                await uploadFileToPresignedUrl(uploadUrl.presignedUrl, coverImageFile);
+                coverImageUrl = uploadUrl.publicUrl;
+            }
+
+            await createProduct({ title: previewTitle, coverImageUrl });
             const listedProducts = await listProducts();
             setProducts(listedProducts);
         } catch {
@@ -152,35 +227,6 @@ export function StudioProductDashboard() {
         setIsSubmitting(false);
     };
 
-    const saveDraft = () => {
-        if (isSubmitting) return;
-
-        setTitleTouched(true);
-        setSubmitError(null);
-        if (!previewTitle) return;
-
-        const nextProduct: StudioProduct = {
-            id: `mock-product-${products.length + 1}`,
-            legacyId: String(products.length + 1),
-            title: previewTitle,
-            status: 'draft',
-            genres: selectedGenres,
-            episodeCount: 0,
-            rating,
-            days: selectedDays,
-            updatedAtLabel: '방금 전',
-            progress: 5,
-            cover: previewCover,
-            logline,
-        };
-
-        setProducts((current) => [...current, nextProduct]);
-        resetForm();
-        setFilter('all');
-        setQuery('');
-        setIsModalOpen(false);
-    };
-
     const resetForm = () => {
         setTitle('');
         setLogline('');
@@ -188,8 +234,8 @@ export function StudioProductDashboard() {
         setRating('15+');
         setRatio('1080x2400');
         setSelectedGenres([]);
-        setSelectedDays([]);
         setVisibility('비공개');
+        setCoverImageFile(null);
         setTitleTouched(false);
     };
 
@@ -230,16 +276,16 @@ export function StudioProductDashboard() {
                                 icon="asset"
                                 label="총 에피소드"
                                 value={counts.episodes}
-                                detail="이번 주 신규 3편"
+                                detail="API 응답 기준"
                                 tone="teal"
                             />
-                            <StatCard icon="mic" label="보이스 클립" value={372} detail="승인 대기 12개" tone="amber" />
+                            <StatCard icon="mic" label="보이스 클립" value={0} detail="백엔드 응답 없음" tone="amber" />
                             <StatCard
                                 icon="check"
                                 label="완료율"
-                                value={78}
+                                value={averageProgress}
                                 suffix="%"
-                                detail="평균 제작 진행률"
+                                detail="등록 작품 평균"
                                 tone="violet"
                             />
                         </section>
@@ -270,58 +316,80 @@ export function StudioProductDashboard() {
                             </label>
                         </div>
 
-                        <div className="tp-product-grid">
-                            {visibleProducts.map((product) => (
-                                <Link
-                                    className="tp-product-card"
-                                    data-testid={`product-card-${product.id}`}
-                                    href={`/studio/products/${product.id}/episodes`}
-                                    key={product.id}
-                                >
-                                    <div className="tp-product-cover" style={{ background: product.cover }}>
-                                        <span className={`tp-status ${product.status}`}>
-                                            {productStatusLabels[product.status]}
-                                        </span>
-                                        <span className="tp-rating">{product.rating}</span>
-                                        <strong>{product.title}</strong>
-                                    </div>
-                                    <div className="tp-product-card-body">
-                                        <div className="tp-tag-row">
-                                            {product.genres.length ? (
-                                                product.genres.map((genre) => <span key={genre}>{genre}</span>)
-                                            ) : (
-                                                <span className="muted">장르 미설정</span>
-                                            )}
-                                        </div>
-                                        <div className="tp-card-meta">
-                                            <span>
-                                                <StudioCatalogIcon name="asset" /> EP {product.episodeCount}
-                                            </span>
-                                            <small>{product.updatedAtLabel}</small>
-                                        </div>
-                                        <div className="tp-progress">
-                                            <i style={{ width: `${product.progress}%` }} />
-                                        </div>
-                                    </div>
-                                </Link>
-                            ))}
-                            {filter === 'all' && !query ? (
-                                <button className="tp-product-card tp-add-card" onClick={openCreateModal} type="button">
-                                    <span className="tp-plus-box">
-                                        <StudioCatalogIcon name="plus" />
-                                    </span>
-                                    <strong>새 작품 등록</strong>
-                                    <small>표지·장르·시놉시스를 입력해 새 작품을 만드세요.</small>
-                                </button>
-                            ) : null}
-                        </div>
-
-                        {visibleProducts.length === 0 ? (
+                        {isLoadingProducts ? (
                             <div className="tp-empty">
                                 <StudioCatalogIcon name="search" />
-                                <p>검색 결과가 없습니다.</p>
+                                <p>작품 목록을 불러오는 중입니다.</p>
                             </div>
-                        ) : null}
+                        ) : productsError ? (
+                            <div className="tp-empty">
+                                <StudioCatalogIcon name="search" />
+                                <p>{productsError}</p>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="tp-product-grid">
+                                    {visibleProducts.map((product) => (
+                                        <Link
+                                            className="tp-product-card"
+                                            data-testid={`product-card-${product.id}`}
+                                            href={`/studio/products/${product.id}/episodes`}
+                                            key={product.id}
+                                        >
+                                            <div className="tp-product-cover" style={{ background: product.cover }}>
+                                                <span className={`tp-status ${product.status}`}>
+                                                    {productStatusLabels[product.status]}
+                                                </span>
+                                                <span className="tp-rating">{product.rating}</span>
+                                                <strong>{product.title}</strong>
+                                            </div>
+                                            <div className="tp-product-card-body">
+                                                <div className="tp-tag-row">
+                                                    {product.genres.length ? (
+                                                        product.genres.map((genre) => <span key={genre}>{genre}</span>)
+                                                    ) : (
+                                                        <span className="muted">장르 미설정</span>
+                                                    )}
+                                                </div>
+                                                <div className="tp-card-meta">
+                                                    <span>
+                                                        <StudioCatalogIcon name="asset" /> EP {product.episodeCount}
+                                                    </span>
+                                                    <small>{product.updatedAtLabel}</small>
+                                                </div>
+                                                <div className="tp-progress">
+                                                    <i style={{ width: `${product.progress}%` }} />
+                                                </div>
+                                            </div>
+                                        </Link>
+                                    ))}
+                                    {filter === 'all' && !query ? (
+                                        <button
+                                            className="tp-product-card tp-add-card"
+                                            onClick={openCreateModal}
+                                            type="button"
+                                        >
+                                            <span className="tp-plus-box">
+                                                <StudioCatalogIcon name="plus" />
+                                            </span>
+                                            <strong>새 작품 등록</strong>
+                                            <small>표지·장르·시놉시스를 입력해 새 작품을 만드세요.</small>
+                                        </button>
+                                    ) : null}
+                                </div>
+
+                                {visibleProducts.length === 0 ? (
+                                    <div className="tp-empty">
+                                        <StudioCatalogIcon name="search" />
+                                        <p>
+                                            {query.trim() || filter !== 'all'
+                                                ? '검색 결과가 없습니다.'
+                                                : '등록된 작품이 없습니다.'}
+                                        </p>
+                                    </div>
+                                ) : null}
+                            </>
+                        )}
                     </div>
                 </section>
             </div>
@@ -344,12 +412,20 @@ export function StudioProductDashboard() {
 
                         <form className="tp-modal-grid" onSubmit={submitProduct}>
                             <div className="tp-form-col">
-                                <label className="tp-dropzone">
+                                <label className={`tp-dropzone ${coverImageFile ? 'has-file' : ''}`}>
+                                    <input
+                                        accept="image/*"
+                                        disabled={isSubmitting}
+                                        onChange={handleCoverImageChange}
+                                        type="file"
+                                    />
                                     <span>
                                         <StudioCatalogIcon name="download" />
                                     </span>
-                                    <strong>클릭하여 업로드</strong>
-                                    <small>지금은 mock 미리보기만 표시합니다.</small>
+                                    <strong>{coverImageFile ? coverImageFile.name : '클릭하여 업로드'}</strong>
+                                    <small>
+                                        {coverImageFile ? '등록 시 표지로 업로드됩니다.' : '작품 표지 이미지 파일을 선택하세요.'}
+                                    </small>
                                 </label>
 
                                 <label className="tp-field">
@@ -388,22 +464,6 @@ export function StudioProductDashboard() {
                                                 type="button"
                                             >
                                                 {genre}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="tp-field">
-                                    연재 요일
-                                    <div className="tp-days">
-                                        {dayOptions.map((day) => (
-                                            <button
-                                                className={selectedDays.includes(day) ? 'on' : ''}
-                                                key={day}
-                                                onClick={() => toggleDay(day)}
-                                                type="button"
-                                            >
-                                                {day}
                                             </button>
                                         ))}
                                     </div>
@@ -466,7 +526,7 @@ export function StudioProductDashboard() {
                                 <p>미리보기</p>
                                 <div className="tp-preview-card">
                                     <div className="tp-preview-cover" style={{ background: previewCover }}>
-                                        <span>임시저장</span>
+                                        <span>등록 예정</span>
                                         <strong>{previewTitle || '작품명 미입력'}</strong>
                                     </div>
                                     <div className="tp-preview-body">
@@ -479,10 +539,6 @@ export function StudioProductDashboard() {
                                             )}
                                         </div>
                                         <dl>
-                                            <div>
-                                                <dt>연재 요일</dt>
-                                                <dd>{selectedDays.length ? selectedDays.join(' · ') : '미설정'}</dd>
-                                            </div>
                                             <div>
                                                 <dt>연령 등급</dt>
                                                 <dd>{rating}</dd>
@@ -508,14 +564,6 @@ export function StudioProductDashboard() {
                                     {submitError ?? '등록 시 EP.01 작업 공간이 자동 생성됩니다.'}
                                 </span>
                                 <div>
-                                    <button
-                                        className="tp-btn ghost"
-                                        disabled={isSubmitting}
-                                        onClick={saveDraft}
-                                        type="button"
-                                    >
-                                        임시저장
-                                    </button>
                                     <button className="tp-btn primary" disabled={isSubmitting} type="submit">
                                         {isSubmitting ? (
                                             '등록 중'
@@ -548,17 +596,45 @@ async function listProducts() {
     return result.data.items.map(toStudioProduct);
 }
 
-async function createProduct({ title }: { title: string }) {
+async function createProduct(product: ProductCreateRequest) {
     const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products`, {
         method: 'POST',
         headers: {
             'content-type': 'application/json',
         },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify(product),
     });
 
     if (!response.ok) {
         throw new Error(`Product create failed: ${response.status}`);
+    }
+}
+
+async function getFileUploadUrls(apiBaseUrl: string, keys: string[]) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/files/uploadUrls`, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify({ keys }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`File upload URL request failed: ${response.status}`);
+    }
+
+    const result = (await response.json()) as FileUploadUrlsResponse;
+    return result.data;
+}
+
+async function uploadFileToPresignedUrl(presignedUrl: string, file: File) {
+    const response = await fetch(presignedUrl, {
+        method: 'PUT',
+        body: file,
+    });
+
+    if (!response.ok) {
+        throw new Error(`File upload failed: ${response.status}`);
     }
 }
 
@@ -573,12 +649,22 @@ function toStudioProduct(product: ProductListItem): StudioProduct {
         genres: [],
         episodeCount: 0,
         rating: '15+',
-        days: [],
         updatedAtLabel: '방금 전',
         progress: 0,
-        cover: product.coverImageUrl ? `center / cover no-repeat url(${JSON.stringify(product.coverImageUrl)})` : gradientFor(product.title),
+        cover: product.coverImageUrl ? toCoverBackground(product.coverImageUrl) : gradientFor(product.title),
         logline: '',
     };
+}
+
+function getProductCoverUploadKey(file: File) {
+    const extension = file.name.split('.').filter(Boolean).pop()?.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    const safeExtension = extension || 'png';
+
+    return `products/covers/${Date.now()}-${crypto.randomUUID()}.${safeExtension}`;
+}
+
+function toCoverBackground(imageUrl: string) {
+    return `center / cover no-repeat url(${JSON.stringify(imageUrl)})`;
 }
 
 function Topbar({
@@ -689,10 +775,6 @@ function StatCard({
             <p>{detail}</p>
         </article>
     );
-}
-
-function orderDays(days: string[]) {
-    return dayOptions.filter((day) => days.includes(day));
 }
 
 function gradientFor(seed: string) {

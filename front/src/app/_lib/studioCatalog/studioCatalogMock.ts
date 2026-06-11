@@ -10,7 +10,6 @@ export interface StudioProduct {
     genres: string[];
     episodeCount: number;
     rating: string;
-    days: string[];
     updatedAtLabel: string;
     progress: number;
     cover: string;
@@ -39,7 +38,6 @@ export const studioProducts: StudioProduct[] = [
         genres: ['스릴러', '드라마'],
         episodeCount: 7,
         rating: '15+',
-        days: ['수', '토'],
         updatedAtLabel: '2시간 전',
         progress: 62,
         cover: 'linear-gradient(135deg,#1d4ed8,#38bdf8)',
@@ -53,7 +51,6 @@ export const studioProducts: StudioProduct[] = [
         genres: ['로맨스', '코미디'],
         episodeCount: 14,
         rating: '전체',
-        days: ['월', '목'],
         updatedAtLabel: '어제',
         progress: 88,
         cover: 'linear-gradient(135deg,#f43f5e,#fb7185)',
@@ -67,7 +64,6 @@ export const studioProducts: StudioProduct[] = [
         genres: ['판타지', '액션', '무협'],
         episodeCount: 20,
         rating: '15+',
-        days: [],
         updatedAtLabel: '3주 전',
         progress: 100,
         cover: 'linear-gradient(135deg,#0f766e,#34d399)',
@@ -81,7 +77,6 @@ export const studioProducts: StudioProduct[] = [
         genres: ['SF'],
         episodeCount: 0,
         rating: '15+',
-        days: [],
         updatedAtLabel: '5일 전',
         progress: 8,
         cover: 'linear-gradient(135deg,#7c3aed,#a78bfa)',

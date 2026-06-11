@@ -13,6 +13,6 @@ export default async function DirectionScreenPage({
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
     return (
-        <StudioEditor apiBaseUrl={apiBaseUrl} episodeId={episodeId} initialDraft={draft} initialManifest={manifest} />
+        <StudioEditor apiBaseUrl={apiBaseUrl} episodeId={episodeId} productId={productId} initialDraft={draft} initialManifest={manifest} />
     );
 }

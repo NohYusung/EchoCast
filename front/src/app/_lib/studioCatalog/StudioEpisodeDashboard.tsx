@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 import { StudioCatalogIcon } from './StudioCatalogIcon';
 import {
     buildMockEpisodes,
@@ -11,10 +11,42 @@ import {
     resolveStudioProduct,
     type StudioEpisode,
     type StudioEpisodeStatus,
+    type StudioProduct,
+    type StudioProductStatus,
 } from './studioCatalogMock';
 
 type EpisodeFilter = 'all' | 'published' | 'editing' | 'draft';
-type EpisodeTemplate = 'blank' | 'prev' | 'import';
+type CharacterRole = 'starring' | 'supporting' | 'minor' | 'narrator' | 'unknown';
+type CharacterListItem = {
+    id: number;
+    productId: number;
+    name: string;
+    role: CharacterRole;
+    imageUrl?: string;
+};
+type CharacterListResponse = {
+    data: {
+        items: CharacterListItem[];
+        total: number;
+    };
+};
+type CharacterCreateRequest = {
+    name: string;
+    role: CharacterRole;
+    imageUrl?: string;
+};
+type ProductUpdateRequest = {
+    coverImageUrl?: string;
+};
+type FileUploadUrlItem = {
+    publicUrl: string;
+    mimetype: string;
+    presignedUrl: string;
+};
+type FileUploadUrlsResponse = {
+    data: FileUploadUrlItem[];
+};
+type ProductSettingsDraft = Pick<StudioProduct, 'title' | 'status' | 'rating' | 'genres' | 'cover' | 'logline'>;
 type EpisodeCreateRequest = {
     productId: string;
     episodeNumber: number;
@@ -26,11 +58,8 @@ type ProductListItem = {
     title: string;
     coverImageUrl?: string;
 };
-type ProductListResponse = {
-    data: {
-        items: ProductListItem[];
-        total: number;
-    };
+type ProductRetrieveResponse = {
+    data: ProductListItem;
 };
 type EpisodeListItem = {
     id: number;
@@ -52,20 +81,60 @@ const filterLabels: Record<EpisodeFilter, string> = {
     editing: '작업중',
     draft: '임시저장',
 };
+const productStatusOptions: StudioProductStatus[] = ['live', 'done', 'draft'];
+const genreOptions = ['로맨스', '판타지', '스릴러', '드라마', '액션', '일상', '코미디', '공포', '학원', '무협', 'SF', 'BL'];
+const ratingOptions = ['전체', '12+', '15+', '19+'];
+const characterRoleOptions: CharacterRole[] = ['starring', 'supporting', 'minor', 'narrator', 'unknown'];
+const characterRoleLabels: Record<CharacterRole, string> = {
+    starring: '주연',
+    supporting: '조연',
+    minor: '단역',
+    narrator: '나레이션',
+    unknown: '역할 미정',
+};
+const coverOptions = [
+    'linear-gradient(135deg,#1d4ed8,#38bdf8)',
+    'linear-gradient(135deg,#7c2d12,#f59e0b)',
+    'linear-gradient(135deg,#134e4a,#10b981)',
+    'linear-gradient(135deg,#4c1d95,#a78bfa)',
+    'linear-gradient(135deg,#831843,#f472b6)',
+    'linear-gradient(135deg,#0f172a,#334155)',
+    'linear-gradient(135deg,#b91c1c,#fb7185)',
+    'linear-gradient(135deg,#1e293b,#0ea5e9)',
+];
+const characterAvatarColors = ['#5b9bff', '#f472b6', '#34d399', '#fbbf24', '#a78bfa', '#2dd4bf'];
 const productApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100';
 
 export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     const [product, setProduct] = useState(() => resolveStudioProduct(productId));
     const [episodes, setEpisodes] = useState<StudioEpisode[]>(() => buildMockEpisodes(resolveStudioProduct(productId)));
+    const [characters, setCharacters] = useState<CharacterListItem[]>([]);
     const [filter, setFilter] = useState<EpisodeFilter>('all');
     const [query, setQuery] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isCharacterModalOpen, setIsCharacterModalOpen] = useState(false);
+    const [isCharacterCreateModalOpen, setIsCharacterCreateModalOpen] = useState(false);
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [newEpisodeNumber, setNewEpisodeNumber] = useState('');
     const [newTitle, setNewTitle] = useState('');
-    const [newMemo, setNewMemo] = useState('');
-    const [template, setTemplate] = useState<EpisodeTemplate>('blank');
+    const [newSubTitle, setNewSubTitle] = useState('');
+    const [newCharacterName, setNewCharacterName] = useState('');
+    const [newCharacterRole, setNewCharacterRole] = useState<CharacterRole>('unknown');
+    const [newCharacterImageFile, setNewCharacterImageFile] = useState<File | null>(null);
+    const [settingsCoverImageFile, setSettingsCoverImageFile] = useState<File | null>(null);
+    const [settingsCoverImagePreviewUrl, setSettingsCoverImagePreviewUrl] = useState<string | null>(null);
+    const [settingsDraft, setSettingsDraft] = useState<ProductSettingsDraft>(() => toProductSettingsDraft(resolveStudioProduct(productId)));
+    const [episodeNumberTouched, setEpisodeNumberTouched] = useState(false);
     const [titleTouched, setTitleTouched] = useState(false);
+    const [characterNameTouched, setCharacterNameTouched] = useState(false);
+    const [settingsTitleTouched, setSettingsTitleTouched] = useState(false);
+    const [settingsMessage, setSettingsMessage] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isCharacterLoading, setIsCharacterLoading] = useState(false);
+    const [isCharacterSubmitting, setIsCharacterSubmitting] = useState(false);
+    const [isSettingsSubmitting, setIsSettingsSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const [characterError, setCharacterError] = useState<string | null>(null);
 
     useEffect(() => {
         let ignore = false;
@@ -73,6 +142,11 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
 
         setProduct(fallbackProduct);
         setEpisodes(buildMockEpisodes(fallbackProduct));
+        setCharacters([]);
+        setCharacterError(null);
+        setSettingsDraft(toProductSettingsDraft(fallbackProduct));
+        setSettingsCoverImageFile(null);
+        setSettingsCoverImagePreviewUrl(null);
 
         if (!productId) {
             return () => {
@@ -80,11 +154,10 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
             };
         }
 
-        listProducts()
-            .then((items) => {
-                const listedProduct = items.find((item) => String(item.id) === productId);
-                if (!ignore && listedProduct) {
-                    setProduct(toStudioProduct(listedProduct, fallbackProduct));
+        retrieveProduct(resolveProductApiId(productId, fallbackProduct))
+            .then((retrievedProduct) => {
+                if (!ignore) {
+                    setProduct(toStudioProduct(retrievedProduct, fallbackProduct));
                 }
             })
             .catch(() => undefined);
@@ -97,10 +170,37 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
             })
             .catch(() => undefined);
 
+        setIsCharacterLoading(true);
+        listCharacters(resolveProductApiId(productId, fallbackProduct))
+            .then((items) => {
+                if (!ignore) {
+                    setCharacters(items);
+                    setCharacterError(null);
+                }
+            })
+            .catch(() => {
+                if (!ignore) {
+                    setCharacterError('캐릭터 목록을 불러오지 못했습니다. 백엔드 API 상태를 확인해 주세요.');
+                }
+            })
+            .finally(() => {
+                if (!ignore) {
+                    setIsCharacterLoading(false);
+                }
+            });
+
         return () => {
             ignore = true;
         };
     }, [productId]);
+
+    useEffect(() => {
+        return () => {
+            if (settingsCoverImagePreviewUrl) {
+                URL.revokeObjectURL(settingsCoverImagePreviewUrl);
+            }
+        };
+    }, [settingsCoverImagePreviewUrl]);
 
     const statusCounts = useMemo(() => {
         return episodes.reduce(
@@ -129,10 +229,16 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     }, [episodes, filter, query]);
 
     const latestEpisode = episodes[0];
+    const parsedEpisodeNumber = Number(newEpisodeNumber);
+    const isValidEpisodeNumber = Number.isInteger(parsedEpisodeNumber) && parsedEpisodeNumber > 0;
+    const showEpisodeNumberError = episodeNumberTouched && !isValidEpisodeNumber;
     const showTitleError = titleTouched && !newTitle.trim();
+    const showCharacterNameError = characterNameTouched && !newCharacterName.trim();
+    const showSettingsTitleError = settingsTitleTouched && !settingsDraft.title.trim();
 
     const openCreateModal = () => {
         setSubmitError(null);
+        setNewEpisodeNumber((current) => current || String(getNextEpisodeNumber(episodes)));
         setIsModalOpen(true);
     };
 
@@ -145,21 +251,21 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
 
     const createEpisode = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        setEpisodeNumberTouched(true);
         setTitleTouched(true);
         setSubmitError(null);
 
         const title = newTitle.trim();
-        if (!title) return;
+        if (!title || !isValidEpisodeNumber) return;
 
         setIsSubmitting(true);
 
-        const nextEpisodeNumber = Math.max(0, ...episodes.map((episode) => episode.episodeNumber)) + 1;
-        const subTitle = newMemo.trim() || undefined;
+        const subTitle = newSubTitle.trim() || undefined;
 
         try {
             await createEpisodeApi({
                 productId: productId ?? product.id,
-                episodeNumber: nextEpisodeNumber,
+                episodeNumber: parsedEpisodeNumber,
                 title,
                 subTitle,
             });
@@ -172,12 +278,236 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
         }
 
         setIsModalOpen(false);
+        setNewEpisodeNumber('');
         setNewTitle('');
-        setNewMemo('');
-        setTemplate('blank');
+        setNewSubTitle('');
+        setEpisodeNumberTouched(false);
         setTitleTouched(false);
         setFilter('all');
         setIsSubmitting(false);
+    };
+
+    const openCharacterModal = () => {
+        setIsCharacterModalOpen(true);
+        setCharacterError(null);
+        setIsCharacterLoading(true);
+        listCharacters(resolveProductApiId(productId, product))
+            .then((items) => {
+                setCharacters(items);
+            })
+            .catch(() => {
+                setCharacterError('캐릭터 목록을 불러오지 못했습니다. 백엔드 API 상태를 확인해 주세요.');
+            })
+            .finally(() => {
+                setIsCharacterLoading(false);
+            });
+    };
+
+    const closeCharacterModal = () => {
+        if (isCharacterSubmitting) return;
+
+        setCharacterError(null);
+        setIsCharacterModalOpen(false);
+        setIsCharacterCreateModalOpen(false);
+    };
+
+    const openCharacterCreateModal = () => {
+        setCharacterError(null);
+        setNewCharacterName('');
+        setNewCharacterRole('unknown');
+        setNewCharacterImageFile(null);
+        setCharacterNameTouched(false);
+        setIsCharacterCreateModalOpen(true);
+    };
+
+    const closeCharacterCreateModal = () => {
+        if (isCharacterSubmitting) return;
+
+        setCharacterError(null);
+        setNewCharacterName('');
+        setNewCharacterRole('unknown');
+        setNewCharacterImageFile(null);
+        setCharacterNameTouched(false);
+        setIsCharacterCreateModalOpen(false);
+    };
+
+    const createCharacter = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setCharacterNameTouched(true);
+        setCharacterError(null);
+
+        const name = newCharacterName.trim();
+        if (!name) return;
+        if (newCharacterImageFile && !newCharacterImageFile.type.startsWith('image/')) {
+            setCharacterError('캐릭터 이미지는 이미지 파일만 등록할 수 있습니다.');
+            return;
+        }
+
+        setIsCharacterSubmitting(true);
+
+        try {
+            const apiProductId = resolveProductApiId(productId, product);
+            let imageUrl: string | undefined;
+
+            if (newCharacterImageFile) {
+                const key = getCharacterImageUploadKey(apiProductId, newCharacterImageFile);
+                const [uploadUrl] = await getFileUploadUrls(productApiBaseUrl, [key]);
+
+                if (!uploadUrl) {
+                    throw new Error('File upload URL response is empty');
+                }
+
+                await uploadFileToPresignedUrl(uploadUrl.presignedUrl, newCharacterImageFile);
+                imageUrl = uploadUrl.publicUrl;
+            }
+
+            await createCharacterApi(apiProductId, {
+                name,
+                role: newCharacterRole,
+                imageUrl,
+            });
+
+            const listedCharacters = await listCharacters(apiProductId);
+            setCharacters(listedCharacters);
+            setNewCharacterName('');
+            setNewCharacterRole('unknown');
+            setNewCharacterImageFile(null);
+            setCharacterNameTouched(false);
+            setIsCharacterCreateModalOpen(false);
+        } catch {
+            setCharacterError('캐릭터 등록에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
+        } finally {
+            setIsCharacterSubmitting(false);
+        }
+    };
+
+    const resetSettingsCoverImage = () => {
+        setSettingsCoverImageFile(null);
+        setSettingsCoverImagePreviewUrl(null);
+    };
+
+    const selectSettingsCoverImage = (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.currentTarget.files?.[0] ?? null;
+        event.currentTarget.value = '';
+
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            resetSettingsCoverImage();
+            setSettingsDraft((current) => ({
+                ...current,
+                cover: product.cover,
+            }));
+            setSettingsMessage('작품 이미지는 이미지 파일만 등록할 수 있습니다.');
+            return;
+        }
+
+        const previewUrl = URL.createObjectURL(file);
+        setSettingsMessage('');
+        setSettingsCoverImageFile(file);
+        setSettingsCoverImagePreviewUrl(previewUrl);
+        setSettingsDraft((current) => ({
+            ...current,
+            cover: toCoverBackground(previewUrl),
+        }));
+    };
+
+    const clearSettingsCoverImage = () => {
+        resetSettingsCoverImage();
+        setSettingsMessage('');
+        setSettingsDraft((current) => ({
+            ...current,
+            cover: product.cover,
+        }));
+    };
+
+    const openSettingsModal = () => {
+        resetSettingsCoverImage();
+        setSettingsDraft(toProductSettingsDraft(product));
+        setSettingsTitleTouched(false);
+        setSettingsMessage('');
+        setIsSettingsModalOpen(true);
+    };
+
+    const closeSettingsModal = () => {
+        if (isSettingsSubmitting) return;
+
+        resetSettingsCoverImage();
+        setSettingsMessage('');
+        setIsSettingsModalOpen(false);
+    };
+
+    const toggleSettingsGenre = (genre: string) => {
+        setSettingsDraft((current) => {
+            if (current.genres.includes(genre)) {
+                return {
+                    ...current,
+                    genres: current.genres.filter((item) => item !== genre),
+                };
+            }
+
+            if (current.genres.length >= 3) {
+                return current;
+            }
+
+            return {
+                ...current,
+                genres: [...current.genres, genre],
+            };
+        });
+    };
+
+    const saveProductSettings = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setSettingsTitleTouched(true);
+        setSettingsMessage('');
+
+        const title = settingsDraft.title.trim();
+        if (!title) return;
+        if (settingsCoverImageFile && !settingsCoverImageFile.type.startsWith('image/')) {
+            setSettingsMessage('작품 이미지는 이미지 파일만 등록할 수 있습니다.');
+            return;
+        }
+
+        setIsSettingsSubmitting(true);
+
+        try {
+            const apiProductId = resolveProductApiId(productId, product);
+            let uploadedCoverImageUrl: string | undefined;
+
+            if (settingsCoverImageFile) {
+                const key = getProductCoverUploadKey(apiProductId, settingsCoverImageFile);
+                const [uploadUrl] = await getFileUploadUrls(productApiBaseUrl, [key]);
+
+                if (!uploadUrl) {
+                    throw new Error('File upload URL response is empty');
+                }
+
+                await uploadFileToPresignedUrl(uploadUrl.presignedUrl, settingsCoverImageFile);
+                uploadedCoverImageUrl = uploadUrl.publicUrl;
+                await updateProductApi(apiProductId, {
+                    coverImageUrl: uploadedCoverImageUrl,
+                });
+            }
+
+            setProduct((current) => ({
+                ...current,
+                title,
+                status: settingsDraft.status,
+                rating: settingsDraft.rating,
+                genres: [...settingsDraft.genres],
+                cover: uploadedCoverImageUrl ? toCoverBackground(uploadedCoverImageUrl) : settingsDraft.cover,
+                logline: settingsDraft.logline.trim(),
+                updatedAtLabel: '방금',
+            }));
+            resetSettingsCoverImage();
+            setIsSettingsModalOpen(false);
+            setSettingsMessage('');
+        } catch {
+            setSettingsMessage('작품 설정 저장에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
+        } finally {
+            setIsSettingsSubmitting(false);
+        }
     };
 
     return (
@@ -241,7 +571,6 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                 </div>
                                 <dl className="tp-metrics">
                                     <div><dt>에피소드</dt><dd>{episodes.length}<small>편</small></dd></div>
-                                    <div><dt>연재 요일</dt><dd>{product.days.length ? product.days.join(' · ') : '비정기'}</dd></div>
                                     <div><dt>총 보이스 클립</dt><dd>{statusCounts.voiceCount}</dd></div>
                                     <div><dt>최근 작업</dt><dd>{latestEpisode?.updatedAtLabel ?? product.updatedAtLabel}</dd></div>
                                 </dl>
@@ -251,17 +580,16 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                             <StudioCatalogIcon name="play" />
                                             이어서 작업하기
                                         </Link>
-                                    ) : (
-                                        <button className="tp-btn primary" onClick={openCreateModal} type="button">
-                                            <StudioCatalogIcon name="plus" />
-                                            첫 에피소드 만들기
-                                        </button>
-                                    )}
-                                    <button className="tp-btn ghost" onClick={openCreateModal} type="button">
+                                    ) : null}
+                                    <button className={latestEpisode ? 'tp-btn ghost' : 'tp-btn primary'} onClick={openCreateModal} type="button">
                                         <StudioCatalogIcon name="plus" />
                                         새 에피소드
                                     </button>
-                                    <button className="tp-btn ghost" type="button">
+                                    <button className="tp-btn ghost" onClick={openCharacterModal} type="button">
+                                        <StudioCatalogIcon name="users" />
+                                        캐릭터 관리
+                                    </button>
+                                    <button className="tp-btn ghost" onClick={openSettingsModal} type="button">
                                         <StudioCatalogIcon name="settings" />
                                         작품 설정
                                     </button>
@@ -358,6 +686,21 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                         </div>
                         <div className="tp-form-col">
                             <label className="tp-field">
+                                회차 번호 <b>*</b>
+                                <input
+                                    className={showEpisodeNumberError ? 'error' : ''}
+                                    inputMode="numeric"
+                                    min={1}
+                                    onBlur={() => setEpisodeNumberTouched(true)}
+                                    onChange={(event) => setNewEpisodeNumber(event.target.value)}
+                                    placeholder="예: 7"
+                                    step={1}
+                                    type="number"
+                                    value={newEpisodeNumber}
+                                />
+                                {showEpisodeNumberError ? <small className="tp-error">1 이상의 회차 번호를 입력해 주세요.</small> : null}
+                            </label>
+                            <label className="tp-field">
                                 에피소드 제목 <b>*</b>
                                 <input
                                     className={showTitleError ? 'error' : ''}
@@ -369,30 +712,13 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                 {showTitleError ? <small className="tp-error">에피소드 제목을 입력해 주세요.</small> : null}
                             </label>
                             <label className="tp-field">
-                                한 줄 메모
+                                에피소드 부제
                                 <input
-                                    onChange={(event) => setNewMemo(event.target.value)}
-                                    placeholder="이 화의 핵심 장면이나 메모"
-                                    value={newMemo}
+                                    onChange={(event) => setNewSubTitle(event.target.value)}
+                                    placeholder="예: 옥상에서의 대화"
+                                    value={newSubTitle}
                                 />
                             </label>
-                            <div className="tp-template-grid">
-                                {([
-                                    ['blank', '빈 캔버스', '웹툰 스트립부터 새로 업로드'],
-                                    ['prev', '이전 화 복제', '트랙·캐릭터 구성 그대로'],
-                                    ['import', '스트립 가져오기', '컷 이미지 묶음 불러오기'],
-                                ] as const).map(([value, label, description]) => (
-                                    <button
-                                        className={template === value ? 'on' : ''}
-                                        key={value}
-                                        onClick={() => setTemplate(value)}
-                                        type="button"
-                                    >
-                                        <strong>{label}</strong>
-                                        <small>{description}</small>
-                                    </button>
-                                ))}
-                            </div>
                         </div>
                         <div className="tp-modal-foot">
                             <span
@@ -404,7 +730,290 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                             <div>
                                 <button className="tp-btn ghost" disabled={isSubmitting} onClick={closeCreateModal} type="button">취소</button>
                                 <button className="tp-btn primary" disabled={isSubmitting} type="submit">
-                                    {isSubmitting ? '생성 중' : '만들고 편집기 열기'}
+                                    {isSubmitting ? '등록 중' : '등록'}
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            ) : null}
+
+            {isCharacterModalOpen ? (
+                <div className="tp-modal-overlay compact" role="presentation">
+                    <section aria-label="캐릭터 관리" aria-modal="true" className="tp-management-modal" role="dialog">
+                        <div className="tp-modal-head">
+                            <div>
+                                <h2>캐릭터 관리</h2>
+                                <p>{product.title}에 등록된 캐릭터를 조회하고 새 캐릭터를 등록합니다.</p>
+                            </div>
+                            <button aria-label="닫기" onClick={closeCharacterModal} type="button">
+                                <StudioCatalogIcon name="close" />
+                            </button>
+                        </div>
+                        <div className="tp-form-col tp-scroll-form">
+                            {characterError ? <p className="tp-character-message is-error" role="alert">{characterError}</p> : null}
+                            {isCharacterLoading ? (
+                                <div className="tp-character-empty">캐릭터 목록을 불러오는 중입니다.</div>
+                            ) : characters.length > 0 ? (
+                                <div className="tp-character-list">
+                                    {characters.map((character, index) => (
+                                        <article className="tp-character-card" key={character.id}>
+                                            <span
+                                                className={`tp-character-avatar ${character.imageUrl ? 'has-image' : ''}`}
+                                                style={
+                                                    character.imageUrl
+                                                        ? { backgroundImage: `url(${character.imageUrl})` }
+                                                        : { background: characterAvatarColors[index % characterAvatarColors.length] }
+                                                }
+                                            >
+                                                {character.imageUrl ? null : character.name.trim().charAt(0) || '?'}
+                                            </span>
+                                            <span className="tp-character-meta">
+                                                <strong>
+                                                    {character.name}
+                                                    <em>{characterRoleLabels[character.role]}</em>
+                                                </strong>
+                                                <small>캐릭터 ID {character.id}</small>
+                                            </span>
+                                            <span className="tp-character-stats">
+                                                <span><b>{character.productId}</b>작품</span>
+                                                <span><b>{character.id}</b>ID</span>
+                                            </span>
+                                        </article>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="tp-character-empty">이 작품에 등록된 캐릭터가 아직 없습니다.</div>
+                            )}
+                        </div>
+                        <div className="tp-modal-foot">
+                            <span />
+                            <div>
+                                <button className="tp-btn ghost" onClick={closeCharacterModal} type="button">닫기</button>
+                                <button className="tp-btn primary" onClick={openCharacterCreateModal} type="button">새 캐릭터 등록하기</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            ) : null}
+
+            {isCharacterCreateModalOpen ? (
+                <div className="tp-modal-overlay compact" role="presentation">
+                    <form aria-label="새 캐릭터" className="tp-episode-modal" onSubmit={createCharacter}>
+                        <div className="tp-modal-head">
+                            <div>
+                                <h2>새 캐릭터</h2>
+                                <p>{product.title}에 캐릭터 프로필을 등록합니다.</p>
+                            </div>
+                            <button aria-label="닫기" disabled={isCharacterSubmitting} onClick={closeCharacterCreateModal} type="button">
+                                <StudioCatalogIcon name="close" />
+                            </button>
+                        </div>
+                        <div className="tp-form-col">
+                            <label className="tp-field">
+                                캐릭터 이름 <b>*</b>
+                                <input
+                                    className={showCharacterNameError ? 'error' : ''}
+                                    disabled={isCharacterSubmitting}
+                                    onBlur={() => setCharacterNameTouched(true)}
+                                    onChange={(event) => setNewCharacterName(event.target.value)}
+                                    placeholder="예: 지후"
+                                    value={newCharacterName}
+                                />
+                                {showCharacterNameError ? <small className="tp-error">캐릭터 이름을 입력해 주세요.</small> : null}
+                            </label>
+                            <div className="tp-field">
+                                캐릭터 이미지
+                                <label className="tp-character-image-picker">
+                                    <span>{newCharacterImageFile ? newCharacterImageFile.name : '이미지 파일 선택'}</span>
+                                    <input
+                                        accept="image/*"
+                                        disabled={isCharacterSubmitting}
+                                        onChange={(event) => {
+                                            const file = event.currentTarget.files?.[0] ?? null;
+                                            event.currentTarget.value = '';
+
+                                            if (file && !file.type.startsWith('image/')) {
+                                                setCharacterError('캐릭터 이미지는 이미지 파일만 등록할 수 있습니다.');
+                                                setNewCharacterImageFile(null);
+                                                return;
+                                            }
+
+                                            setCharacterError(null);
+                                            setNewCharacterImageFile(file);
+                                        }}
+                                        type="file"
+                                    />
+                                </label>
+                                {newCharacterImageFile ? (
+                                    <button className="tp-character-image-clear" disabled={isCharacterSubmitting} onClick={() => setNewCharacterImageFile(null)} type="button">
+                                        선택 해제
+                                    </button>
+                                ) : null}
+                            </div>
+                            <div className="tp-field">
+                                역할
+                                <div className="tp-segment">
+                                    {characterRoleOptions.map((role) => (
+                                        <button
+                                            className={newCharacterRole === role ? 'on' : ''}
+                                            disabled={isCharacterSubmitting}
+                                            key={role}
+                                            onClick={() => setNewCharacterRole(role)}
+                                            type="button"
+                                        >
+                                            {characterRoleLabels[role]}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="tp-modal-foot">
+                            <span
+                                className={characterError ? 'tp-modal-foot-error' : undefined}
+                                role={characterError ? 'alert' : undefined}
+                            >
+                                {characterError ?? ''}
+                            </span>
+                            <div>
+                                <button className="tp-btn ghost" disabled={isCharacterSubmitting} onClick={closeCharacterCreateModal} type="button">취소</button>
+                                <button className="tp-btn primary" disabled={isCharacterSubmitting} type="submit">
+                                    {isCharacterSubmitting ? '등록 중' : '캐릭터 등록'}
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            ) : null}
+
+            {isSettingsModalOpen ? (
+                <div className="tp-modal-overlay compact" role="presentation">
+                    <form aria-label="작품 설정" aria-modal="true" className="tp-management-modal" onSubmit={saveProductSettings} role="dialog">
+                        <div className="tp-modal-head">
+                            <div>
+                                <h2>작품 설정</h2>
+                                <p>작품 상세 상단과 목록 카드에 표시되는 정보를 조정합니다.</p>
+                            </div>
+                            <button aria-label="닫기" disabled={isSettingsSubmitting} onClick={closeSettingsModal} type="button">
+                                <StudioCatalogIcon name="close" />
+                            </button>
+                        </div>
+                        <div className="tp-form-col tp-scroll-form">
+                            <label className="tp-field">
+                                작품 제목 <b>*</b>
+                                <input
+                                    className={showSettingsTitleError ? 'error' : ''}
+                                    disabled={isSettingsSubmitting}
+                                    onBlur={() => setSettingsTitleTouched(true)}
+                                    onChange={(event) => setSettingsDraft((current) => ({ ...current, title: event.target.value }))}
+                                    placeholder="작품 제목"
+                                    value={settingsDraft.title}
+                                />
+                                {showSettingsTitleError ? <small className="tp-error">작품 제목을 입력해 주세요.</small> : null}
+                            </label>
+                            <label className="tp-field">
+                                한 줄 소개 <span>작품 카드와 상세 상단에 표시돼요</span>
+                                <textarea
+                                    disabled={isSettingsSubmitting}
+                                    onChange={(event) => setSettingsDraft((current) => ({ ...current, logline: event.target.value }))}
+                                    placeholder="작품을 한 문장으로 소개해 주세요"
+                                    value={settingsDraft.logline}
+                                />
+                            </label>
+                            <div className="tp-field">
+                                연재 상태
+                                <div className="tp-segment status">
+                                    {productStatusOptions.map((status) => (
+                                        <button
+                                            className={settingsDraft.status === status ? 'on' : ''}
+                                            data-status={status}
+                                            disabled={isSettingsSubmitting}
+                                            key={status}
+                                            onClick={() => setSettingsDraft((current) => ({ ...current, status }))}
+                                            type="button"
+                                        >
+                                            {productStatusLabels[status]}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="tp-field">
+                                연령 등급
+                                <div className="tp-segment">
+                                    {ratingOptions.map((rating) => (
+                                        <button
+                                            className={settingsDraft.rating === rating ? 'on' : ''}
+                                            disabled={isSettingsSubmitting}
+                                            key={rating}
+                                            onClick={() => setSettingsDraft((current) => ({ ...current, rating }))}
+                                            type="button"
+                                        >
+                                            {rating}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="tp-field">
+                                장르 <span>최대 3개</span>
+                                <div className="tp-setting-chips">
+                                    {genreOptions.map((genre) => {
+                                        const isSelected = settingsDraft.genres.includes(genre);
+
+                                        return (
+                                            <button
+                                                className={isSelected ? 'on' : ''}
+                                                disabled={isSettingsSubmitting || (!isSelected && settingsDraft.genres.length >= 3)}
+                                                key={genre}
+                                                onClick={() => toggleSettingsGenre(genre)}
+                                                type="button"
+                                            >
+                                                {genre}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <div className="tp-field">
+                                작품 이미지
+                                <label className="tp-character-image-picker">
+                                    <span>{settingsCoverImageFile ? settingsCoverImageFile.name : '이미지 파일 선택'}</span>
+                                    <input accept="image/*" disabled={isSettingsSubmitting} onChange={selectSettingsCoverImage} type="file" />
+                                </label>
+                                {settingsCoverImageFile ? (
+                                    <button className="tp-character-image-clear" disabled={isSettingsSubmitting} onClick={clearSettingsCoverImage} type="button">
+                                        선택 해제
+                                    </button>
+                                ) : null}
+                            </div>
+                            <div className="tp-field">
+                                커버 색상
+                                <div className="tp-swatches">
+                                    {coverOptions.map((cover, index) => (
+                                        <button
+                                            aria-label={`커버 색상 ${index + 1}`}
+                                            className={settingsDraft.cover === cover ? 'on' : ''}
+                                            disabled={isSettingsSubmitting}
+                                            key={cover}
+                                            onClick={() => {
+                                                resetSettingsCoverImage();
+                                                setSettingsDraft((current) => ({ ...current, cover }));
+                                            }}
+                                            style={{ background: cover }}
+                                            type="button"
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="tp-modal-foot">
+                            <button className="tp-danger-text" disabled={isSettingsSubmitting} onClick={() => setSettingsMessage('작품 삭제 API 연결 전입니다.')} type="button">
+                                작품 삭제
+                            </button>
+                            <span role={settingsMessage ? 'status' : undefined}>{settingsMessage}</span>
+                            <div>
+                                <button className="tp-btn ghost" disabled={isSettingsSubmitting} onClick={closeSettingsModal} type="button">취소</button>
+                                <button className="tp-btn primary" disabled={isSettingsSubmitting} type="submit">
+                                    {isSettingsSubmitting ? '저장 중' : '변경사항 저장'}
                                 </button>
                             </div>
                         </div>
@@ -415,17 +1024,56 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     );
 }
 
-async function listProducts() {
-    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products`, {
+function toProductSettingsDraft(product: StudioProduct): ProductSettingsDraft {
+    return {
+        title: product.title,
+        status: product.status,
+        rating: product.rating,
+        genres: [...product.genres],
+        cover: product.cover,
+        logline: product.logline,
+    };
+}
+
+function getNextEpisodeNumber(episodes: StudioEpisode[]) {
+    return Math.max(0, ...episodes.map((episode) => episode.episodeNumber)) + 1;
+}
+
+function resolveProductApiId(productId: string | undefined, product: StudioProduct) {
+    if (productId && /^\d+$/.test(productId)) {
+        return productId;
+    }
+
+    return product.legacyId || product.id;
+}
+
+function getCharacterImageUploadKey(productId: string, file: File) {
+    const extension = file.name.split('.').filter(Boolean).pop()?.toLowerCase() || 'png';
+
+    return `products/${productId}/characters/images/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+}
+
+function getProductCoverUploadKey(productId: string, file: File) {
+    const extension = file.name.split('.').filter(Boolean).pop()?.toLowerCase() || 'png';
+
+    return `products/${productId}/covers/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+}
+
+function toCoverBackground(url: string) {
+    return `center / cover no-repeat url(${JSON.stringify(url)})`;
+}
+
+async function retrieveProduct(productId: string) {
+    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}`, {
         cache: 'no-store',
     });
 
     if (!response.ok) {
-        throw new Error(`Product list failed: ${response.status}`);
+        throw new Error(`Product retrieve failed: ${response.status}`);
     }
 
-    const result = (await response.json()) as ProductListResponse;
-    return result.data.items;
+    const result = (await response.json()) as ProductRetrieveResponse;
+    return result.data;
 }
 
 async function listEpisodes(productId: string) {
@@ -441,6 +1089,75 @@ async function listEpisodes(productId: string) {
     return result.data.items;
 }
 
+async function listCharacters(productId: string) {
+    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}/characters`, {
+        cache: 'no-store',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Character list failed: ${response.status}`);
+    }
+
+    const result = (await response.json()) as CharacterListResponse;
+    return result.data.items;
+}
+
+async function createCharacterApi(productId: string, character: CharacterCreateRequest) {
+    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}/characters`, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify(character),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Character create failed: ${response.status}`);
+    }
+}
+
+async function updateProductApi(productId: string, product: ProductUpdateRequest) {
+    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}`, {
+        method: 'PUT',
+        headers: {
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify(product),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Product update failed: ${response.status}`);
+    }
+}
+
+async function getFileUploadUrls(apiBaseUrl: string, keys: string[]) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/files/uploadUrls`, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify({ keys }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`File upload URL request failed: ${response.status}`);
+    }
+
+    const result = (await response.json()) as FileUploadUrlsResponse;
+    return result.data;
+}
+
+async function uploadFileToPresignedUrl(presignedUrl: string, file: File) {
+    const response = await fetch(presignedUrl, {
+        method: 'PUT',
+        body: file,
+    });
+
+    if (!response.ok) {
+        throw new Error(`File upload failed: ${response.status}`);
+    }
+}
+
 function toStudioProduct(product: ProductListItem, fallbackProduct: ReturnType<typeof resolveStudioProduct>) {
     const id = String(product.id);
 
@@ -449,7 +1166,7 @@ function toStudioProduct(product: ProductListItem, fallbackProduct: ReturnType<t
         id,
         legacyId: id,
         title: product.title,
-        cover: product.coverImageUrl ? `center / cover no-repeat url(${JSON.stringify(product.coverImageUrl)})` : fallbackProduct.cover,
+        cover: product.coverImageUrl ? toCoverBackground(product.coverImageUrl) : fallbackProduct.cover,
     };
 }
 
