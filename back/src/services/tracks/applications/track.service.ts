@@ -14,17 +14,20 @@ export class TrackService extends DddService {
         episodeId,
         name,
         type,
+        characterId,
         isMuted,
     }: {
         episodeId: number;
         name: string;
         type: TrackType;
+        characterId?: number;
         isMuted?: boolean;
     }) {
         const track = new Track({
             episodeId,
             name,
             type,
+            characterId,
             isMuted,
         });
 
@@ -34,6 +37,7 @@ export class TrackService extends DddService {
             episodeId: track.episodeId,
             name: track.name,
             type: track.type,
+            characterId: track.characterId,
             isMuted: track.isMuted,
         };
     }

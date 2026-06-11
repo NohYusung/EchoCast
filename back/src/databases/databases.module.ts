@@ -5,17 +5,19 @@ import { ConfigsService } from '../configs';
 import { ConfigsModule } from '../configs/configs.module';
 import entities from './entities';
 
+export function resolveTypeOrmOptions(configsService: Pick<ConfigsService, 'database'>) {
+    return {
+        ...configsService.database,
+        entities,
+    };
+}
+
 @Module({
     imports: [
         ConfigsModule,
         TypeOrmModule.forRootAsync({
             inject: [ConfigsService],
-            useFactory: (configsService: ConfigsService) => ({
-                ...configsService.database,
-                entities,
-                synchronize: configsService.isProduction() ? false : true,
-                logging: false,
-            }),
+            useFactory: resolveTypeOrmOptions,
         }),
     ],
     exports: [TypeOrmModule],

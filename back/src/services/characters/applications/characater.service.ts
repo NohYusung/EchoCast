@@ -9,11 +9,12 @@ export class CharacterService extends DddService {
         super();
     }
 
-    async create({ productId, name, role }: { productId: string; name: string; role?: CharacterRole }) {
+    async create({ productId, name, role, imageUrl }: { productId: number; name: string; role?: CharacterRole; imageUrl?: string }) {
         const character = new Character({
             productId,
             name,
             role,
+            imageUrl,
         });
 
         await this.characterRepository.save([character]);
@@ -22,6 +23,23 @@ export class CharacterService extends DddService {
             productId: character.productId,
             name: character.name,
             role: character.role,
+            imageUrl: character.imageUrl ?? undefined,
         };
+    }
+
+    async list({ productId }: { productId: number }) {
+        const [characters, total] = await Promise.all([
+            this.characterRepository.find({ productId }),
+            this.characterRepository.count({ productId }),
+        ]);
+        const items = characters.map((character) => ({
+            id: character.id,
+            productId: character.productId,
+            name: character.name,
+            role: character.role,
+            imageUrl: character.imageUrl ?? undefined,
+        }));
+
+        return { items, total };
     }
 }

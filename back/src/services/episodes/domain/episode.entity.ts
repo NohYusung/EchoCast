@@ -7,6 +7,7 @@ type Ctor = {
     episodeNumber: number;
     title: string;
     subTitle?: string;
+    thumbnailImageUrl?: string;
 };
 
 @Entity('episodes')
@@ -26,6 +27,9 @@ export class Episode extends DddAggregate {
     @Column({ comment: '에피소드 부제', nullable: true })
     subTitle?: string;
 
+    @Column({ comment: '에피소드 썸네일 이미지 URL', nullable: true })
+    thumbnailImageUrl?: string;
+
     @ManyToOne(() => Product, { nullable: false })
     @JoinColumn({ name: 'productId' })
     product!: Product;
@@ -37,6 +41,29 @@ export class Episode extends DddAggregate {
             this.episodeNumber = args.episodeNumber;
             this.title = args.title;
             this.subTitle = args.subTitle;
+            this.thumbnailImageUrl = args.thumbnailImageUrl;
         }
+    }
+
+    update({
+        episodeNumber,
+        title,
+        subTitle,
+        thumbnailImageUrl,
+    }: {
+        episodeNumber?: number;
+        title?: string;
+        subTitle?: string;
+        thumbnailImageUrl?: string;
+    }) {
+        Object.assign(
+            this,
+            this.stripUnchanged({
+                episodeNumber,
+                title,
+                subTitle,
+                thumbnailImageUrl,
+            })
+        );
     }
 }

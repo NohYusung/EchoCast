@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { DataSourceOptions } from 'typeorm';
-import type { ServerConfig } from './configuration';
+import type { AwsConfig, ServerConfig } from './configuration';
 
 @Injectable()
 export class ConfigsService {
@@ -18,7 +18,15 @@ export class ConfigsService {
         return this.configService.get<DataSourceOptions>('database')!;
     }
 
+    get aws(): AwsConfig | undefined {
+        return this.configService.get<AwsConfig>('aws');
+    }
+
     isProduction(): boolean {
         return process.env.NODE_ENV === 'production';
+    }
+
+    isLocal(): boolean {
+        return (process.env.NODE_ENV || 'local') === 'local';
     }
 }

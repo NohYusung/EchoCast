@@ -1,5 +1,6 @@
 import { DddAggregate } from '../../../libs/ddd';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Character } from '../../characters/domain/character.entity';
 import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
@@ -10,6 +11,7 @@ type Ctor = {
     episodeId: number;
     name: string;
     type: TrackType;
+    characterId?: number;
     isMuted?: boolean;
 };
 
@@ -27,8 +29,15 @@ export class Track extends DddAggregate {
     @Column({ comment: '트랙 종류' })
     type!: TrackType;
 
+    @Column({ comment: '캐릭터 id', nullable: true })
+    characterId?: number;
+
     @Column({ type: 'boolean', comment: '트랙 음소거 여부', default: false })
     isMuted!: boolean;
+
+    @ManyToOne(() => Character, { nullable: true })
+    @JoinColumn({ name: 'characterId' })
+    character?: Character;
 
     @ManyToOne(() => Episode, { nullable: false })
     @JoinColumn({ name: 'episodeId' })
@@ -46,6 +55,7 @@ export class Track extends DddAggregate {
             this.episodeId = args.episodeId;
             this.name = args.name;
             this.type = args.type;
+            this.characterId = args.characterId;
             this.isMuted = args.isMuted ?? false;
         }
     }

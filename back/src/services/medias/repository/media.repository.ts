@@ -12,8 +12,10 @@ export class MediaRepository extends DddRepository<Media> {
         conditions: {
             id?: number;
             episodeId?: number;
+            canvasId?: number;
             mediaType?: MediaType;
             mediaUrl?: string;
+            index?: number;
         },
         options?: TypeormRelationOptions<Media>
     ) {
@@ -21,21 +23,39 @@ export class MediaRepository extends DddRepository<Media> {
             where: stripUndefined<Media>({
                 id: conditions.id,
                 episodeId: conditions.episodeId,
+                canvasId: conditions.canvasId,
                 mediaType: conditions.mediaType,
                 mediaUrl: conditions.mediaUrl,
+                index: conditions.index,
             }),
             ...convertOptions(options),
         });
     }
 
-    async count(conditions: { id?: number; episodeId?: number; mediaType?: MediaType; mediaUrl?: string }) {
+    async count(conditions: { id?: number; episodeId?: number; canvasId?: number; mediaType?: MediaType; mediaUrl?: string; index?: number }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Media>({
                 id: conditions.id,
                 episodeId: conditions.episodeId,
+                canvasId: conditions.canvasId,
                 mediaType: conditions.mediaType,
                 mediaUrl: conditions.mediaUrl,
+                index: conditions.index,
             }),
         });
+    }
+
+    async findByEpisodeId(episodeId: number) {
+        return this.find({ episodeId }, { options: { sort: 'index', order: 'ASC' } });
+    }
+
+    async countByEpisodeId(episodeId: number) {
+        return this.count({ episodeId });
+    }
+
+    async findOneByEpisodeId({ episodeId, mediaId }: { episodeId: number; mediaId: number }) {
+        const [media] = await this.find({ id: mediaId, episodeId });
+
+        return media;
     }
 }

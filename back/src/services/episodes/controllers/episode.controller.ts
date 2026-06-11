@@ -1,6 +1,6 @@
-import { Body, Controller, Dependencies, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Dependencies, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
 import { EpisodeService } from '../applications/episode.service';
-import { EpisodeCreateDto } from './dto';
+import { EpisodeCreateDto, EpisodeUpdateDto } from './dto';
 
 @Dependencies(EpisodeService)
 @Controller()
@@ -13,12 +13,12 @@ export class EpisodeController {
     @Post('/products/:productId/episodes')
     async create(@Param('productId', ParseIntPipe) productId: number, @Body() body: EpisodeCreateDto) {
         // 1. Destructure body, params, query
-        const { episodeNumber, title, subTitle } = body;
+        const { episodeNumber, title, subTitle, thumbnailImageUrl } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.episodeService.create({ productId, episodeNumber, title, subTitle });
+        await this.episodeService.create({ productId, episodeNumber, title, subTitle, thumbnailImageUrl });
 
         // 4. Send response
         return { data: {} };
@@ -38,5 +38,45 @@ export class EpisodeController {
 
         // 4. Send response
         return { data };
+    }
+
+    /**
+     * 에피소드 상세 조회
+     */
+    @Get('/products/:productId/episodes/:episodeId')
+    async retrieve(
+        @Param('productId', ParseIntPipe) productId: number,
+        @Param('episodeId', ParseIntPipe) episodeId: number
+    ) {
+        // 1. Destructure body, params, query
+
+        // 2. Get context
+
+        // 3. Get result
+        const data = await this.episodeService.retrieve({ productId, episodeId });
+
+        // 4. Send response
+        return { data };
+    }
+
+    /**
+     * 에피소드 정보 수정
+     */
+    @Put('/products/:productId/episodes/:episodeId')
+    async update(
+        @Param('productId', ParseIntPipe) productId: number,
+        @Param('episodeId', ParseIntPipe) episodeId: number,
+        @Body() body: EpisodeUpdateDto
+    ) {
+        // 1. Destructure body, params, query
+        const { episodeNumber, title, subTitle, thumbnailImageUrl } = body;
+
+        // 2. Get context
+
+        // 3. Get result
+        await this.episodeService.update({ productId, episodeId, episodeNumber, title, subTitle, thumbnailImageUrl });
+
+        // 4. Send response
+        return { data: {} };
     }
 }

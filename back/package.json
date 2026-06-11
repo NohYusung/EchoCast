@@ -8,14 +8,17 @@
         "start:dev": "nest start --watch",
         "start:prod": "node dist/main",
         "typecheck": "tsc -p tsconfig.json --noEmit",
-        "test": "npm run build && node --test \"dist/services/products/**/*.test.js\" \"dist/services/characters/**/*.test.js\" \"dist/services/episodes/**/*.test.js\""
+        "test": "NODE_ENV=test npm run build && NODE_ENV=test node --test --test-concurrency=1 \"dist/databases/**/*.test.js\" \"dist/services/products/**/*.test.js\" \"dist/services/characters/**/*.test.js\" \"dist/services/episodes/**/*.test.js\" \"dist/services/tracks/**/*.test.js\" \"dist/services/cues/**/*.test.js\" \"dist/services/medias/**/*.test.js\" \"dist/services/canvases/**/*.test.js\" \"dist/services/records/**/*.test.js\" \"dist/services/players/**/*.test.js\" \"dist/services/audios/**/*.test.js\""
     },
     "dependencies": {
+        "@aws-sdk/client-s3": "^3.1065.0",
+        "@aws-sdk/s3-request-presigner": "^3.1065.0",
         "@nestjs/common": "^11.0.1",
         "@nestjs/config": "^4.0.4",
         "@nestjs/core": "^11.0.1",
         "@nestjs/platform-express": "^11.0.1",
         "@nestjs/typeorm": "^11.0.1",
+        "mime-types": "^3.0.2",
         "mysql2": "^3.22.5",
         "reflect-metadata": "^0.2.2",
         "rxjs": "^7.8.1",
@@ -26,6 +29,7 @@
         "@nestjs/cli": "^11.0.0",
         "@nestjs/schematics": "^11.0.0",
         "@nestjs/testing": "^11.0.1",
+        "@types/mime-types": "^3.0.1",
         "@types/supertest": "^6.0.2",
         "supertest": "^7.0.0"
     }

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { FindOperator } from 'typeorm';
 import { DddRepository } from '../../../libs/ddd';
 import { convertOptions, type TypeormRelationOptions } from '../../../libs/utils/typeorm';
 import { stripUndefined } from '../../../libs/utils/helper';
@@ -10,13 +11,12 @@ export class TtsVoiceRepository extends DddRepository<TtsVoice> {
 
     async find(
         conditions: {
-            id?: number;
+            id?: number | FindOperator<number>;
             provider?: string;
             voiceName?: string;
             voiceKey?: string;
             languageCode?: string;
             fileUrl?: string;
-            scriptId?: string;
         },
         options?: TypeormRelationOptions<TtsVoice>
     ) {
@@ -28,7 +28,6 @@ export class TtsVoiceRepository extends DddRepository<TtsVoice> {
                 voiceKey: conditions.voiceKey,
                 languageCode: conditions.languageCode,
                 fileUrl: conditions.fileUrl,
-                scriptId: conditions.scriptId,
             }),
             ...convertOptions(options),
         });
@@ -41,7 +40,6 @@ export class TtsVoiceRepository extends DddRepository<TtsVoice> {
         voiceKey?: string;
         languageCode?: string;
         fileUrl?: string;
-        scriptId?: string;
     }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<TtsVoice>({
@@ -51,7 +49,6 @@ export class TtsVoiceRepository extends DddRepository<TtsVoice> {
                 voiceKey: conditions.voiceKey,
                 languageCode: conditions.languageCode,
                 fileUrl: conditions.fileUrl,
-                scriptId: conditions.scriptId,
             }),
         });
     }

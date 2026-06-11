@@ -14,6 +14,7 @@ export class TrackRepository extends DddRepository<Track> {
             episodeId?: number;
             name?: string;
             type?: TrackType;
+            characterId?: number;
             isMuted?: boolean;
         },
         options?: TypeormRelationOptions<Track>
@@ -24,19 +25,28 @@ export class TrackRepository extends DddRepository<Track> {
                 episodeId: conditions.episodeId,
                 name: conditions.name,
                 type: conditions.type,
+                characterId: conditions.characterId,
                 isMuted: conditions.isMuted,
             }),
             ...convertOptions(options),
         });
     }
 
-    async count(conditions: { id?: number; episodeId?: number; name?: string; type?: TrackType; isMuted?: boolean }) {
+    async count(conditions: {
+        id?: number;
+        episodeId?: number;
+        name?: string;
+        type?: TrackType;
+        characterId?: number;
+        isMuted?: boolean;
+    }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Track>({
                 id: conditions.id,
                 episodeId: conditions.episodeId,
                 name: conditions.name,
                 type: conditions.type,
+                characterId: conditions.characterId,
                 isMuted: conditions.isMuted,
             }),
         });

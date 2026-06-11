@@ -7,7 +7,7 @@ export class TrackCueResponseDto {
     id!: number;
 
     @Expose()
-    scriptId!: number;
+    script!: string;
 
     @Expose()
     characterId!: number;
@@ -62,6 +62,9 @@ export class TrackResponseDto {
 
     @Expose()
     type!: TrackType;
+
+    @Expose()
+    characterId?: number;
 
     @Expose()
     isMuted!: boolean;

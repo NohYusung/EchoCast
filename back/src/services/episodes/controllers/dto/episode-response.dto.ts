@@ -16,4 +16,7 @@ export class EpisodeResponseDto {
 
     @Expose()
     subTitle?: string;
+
+    @Expose()
+    thumbnailImageUrl?: string;
 }

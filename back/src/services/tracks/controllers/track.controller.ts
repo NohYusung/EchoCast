@@ -13,12 +13,12 @@ export class TrackController {
     @Post('/episodes/:episodeId/tracks')
     async create(@Param('episodeId', ParseIntPipe) episodeId: number, @Body() body: TrackCreateDto) {
         // 1. Destructure body, params, query
-        const { name, type, isMuted } = body;
+        const { name, type, characterId, isMuted } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.trackService.create({ episodeId, name, type, isMuted });
+        await this.trackService.create({ episodeId, name, type, characterId, isMuted });
 
         // 4. Send response
         return { data: {} };

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { FindOperator } from 'typeorm';
 import { DddRepository } from '../../../libs/ddd';
 import { convertOptions, type TypeormRelationOptions } from '../../../libs/utils/typeorm';
 import { stripUndefined } from '../../../libs/utils/helper';
@@ -11,9 +12,9 @@ export class CueRepository extends DddRepository<Cue> {
     async find(
         conditions: {
             id?: number;
-            scriptId?: number;
+            script?: string;
             characterId?: number;
-            trackId?: number;
+            trackId?: number | FindOperator<number>;
             startTime?: number;
             endTime?: number;
             ttsVoiceId?: number;
@@ -23,7 +24,7 @@ export class CueRepository extends DddRepository<Cue> {
         return this.entityManager.find(this.entityClass, {
             where: stripUndefined<Cue>({
                 id: conditions.id,
-                scriptId: conditions.scriptId,
+                script: conditions.script,
                 characterId: conditions.characterId,
                 trackId: conditions.trackId,
                 startTime: conditions.startTime,
@@ -36,7 +37,7 @@ export class CueRepository extends DddRepository<Cue> {
 
     async count(conditions: {
         id?: number;
-        scriptId?: number;
+        script?: string;
         characterId?: number;
         trackId?: number;
         startTime?: number;
@@ -46,7 +47,7 @@ export class CueRepository extends DddRepository<Cue> {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Cue>({
                 id: conditions.id,
-                scriptId: conditions.scriptId,
+                script: conditions.script,
                 characterId: conditions.characterId,
                 trackId: conditions.trackId,
                 startTime: conditions.startTime,

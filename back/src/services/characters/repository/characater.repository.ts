@@ -11,7 +11,7 @@ export class CharacterRepository extends DddRepository<Character> {
     async find(
         conditions: {
             id?: number;
-            productId?: string;
+            productId?: number;
             name?: string;
             role?: CharacterRole;
         },
@@ -28,7 +28,7 @@ export class CharacterRepository extends DddRepository<Character> {
         });
     }
 
-    async count(conditions: { id?: number; productId?: string; name?: string; role?: CharacterRole }) {
+    async count(conditions: { id?: number; productId?: number; name?: string; role?: CharacterRole }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Character>({
                 id: conditions.id,

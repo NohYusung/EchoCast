@@ -12,6 +12,7 @@ export class ProductRepository extends DddRepository<Product> {
         conditions: {
             id?: number;
             title?: string;
+            subtitle?: string;
             coverImageUrl?: string;
         },
         options?: TypeormRelationOptions<Product>
@@ -20,17 +21,19 @@ export class ProductRepository extends DddRepository<Product> {
             where: stripUndefined<Product>({
                 id: conditions.id,
                 title: conditions.title,
+                subtitle: conditions.subtitle,
                 coverImageUrl: conditions.coverImageUrl,
             }),
             ...convertOptions(options),
         });
     }
 
-    async count(conditions: { id?: number; title?: string; coverImageUrl?: string }) {
+    async count(conditions: { id?: number; title?: string; subtitle?: string; coverImageUrl?: string }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Product>({
                 id: conditions.id,
                 title: conditions.title,
+                subtitle: conditions.subtitle,
                 coverImageUrl: conditions.coverImageUrl,
             }),
         });

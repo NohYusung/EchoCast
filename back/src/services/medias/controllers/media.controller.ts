@@ -1,4 +1,4 @@
-import { Body, Controller, Dependencies, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Dependencies, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { MediaService } from '../applications/media.service';
 import { MediaCreateDto } from './dto';
 
@@ -13,12 +13,12 @@ export class MediaController {
     @Post('/episodes/:episodeId/medias')
     async create(@Param('episodeId', ParseIntPipe) episodeId: number, @Body() body: MediaCreateDto) {
         // 1. Destructure body, params, query
-        const { mediaType, mediaUrl, index } = body;
+        const { canvasId, mediaType, mediaUrl, index } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.mediaService.create({ episodeId, mediaType, mediaUrl, index });
+        await this.mediaService.create({ episodeId, canvasId, mediaType, mediaUrl, index });
 
         // 4. Send response
         return { data: {} };
@@ -38,5 +38,24 @@ export class MediaController {
 
         // 4. Send response
         return { data };
+    }
+
+    /**
+     * 미디어 삭제
+     */
+    @Delete('/episodes/:episodeId/medias/:mediaId')
+    async delete(
+        @Param('episodeId', ParseIntPipe) episodeId: number,
+        @Param('mediaId', ParseIntPipe) mediaId: number
+    ) {
+        // 1. Destructure body, params, query
+
+        // 2. Get context
+
+        // 3. Get result
+        await this.mediaService.delete({ episodeId, mediaId });
+
+        // 4. Send response
+        return { data: {} };
     }
 }

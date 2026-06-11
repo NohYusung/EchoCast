@@ -1,11 +1,10 @@
 import { DddAggregate } from '../../../libs/ddd';
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Character } from '../../characters/domain/character.entity';
-import { Script } from '../../scripts/domain/script.entity';
 import { Track } from '../../tracks/domain/track.entity';
 
 type Ctor = {
-    scriptId: number;
+    script: string;
     characterId: number;
     trackId: number;
     startTime: number;
@@ -19,8 +18,8 @@ export class Cue extends DddAggregate {
     @PrimaryGeneratedColumn()
     id!: number;
 
-    @Column({ comment: '스크립트 id' })
-    scriptId!: number;
+    @Column({ comment: '큐 대사' })
+    script!: string;
 
     @Column({ comment: '캐릭터 id' })
     characterId!: number;
@@ -40,10 +39,6 @@ export class Cue extends DddAggregate {
     @Column({ type: 'real', comment: '큐 볼륨', default: 1 })
     volume!: number;
 
-    @ManyToOne(() => Script, { nullable: false })
-    @JoinColumn({ name: 'scriptId' })
-    script!: Script;
-
     @ManyToOne(() => Character, { nullable: false })
     @JoinColumn({ name: 'characterId' })
     character!: Character;
@@ -55,7 +50,7 @@ export class Cue extends DddAggregate {
     constructor(args?: Ctor) {
         super();
         if (args) {
-            this.scriptId = args.scriptId;
+            this.script = args.script;
             this.characterId = args.characterId;
             this.trackId = args.trackId;
             this.startTime = args.startTime;
@@ -63,5 +58,33 @@ export class Cue extends DddAggregate {
             this.ttsVoiceId = args.ttsVoiceId;
             this.volume = args.volume ?? 1;
         }
+    }
+
+    update({
+        script,
+        characterId,
+        startTime,
+        endTime,
+        ttsVoiceId,
+        volume,
+    }: {
+        script?: string;
+        characterId?: number;
+        startTime?: number;
+        endTime?: number;
+        ttsVoiceId?: number;
+        volume?: number;
+    }) {
+        Object.assign(
+            this,
+            this.stripUnchanged({
+                script,
+                characterId,
+                startTime,
+                endTime,
+                ttsVoiceId,
+                volume,
+            })
+        );
     }
 }

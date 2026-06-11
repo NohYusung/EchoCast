@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
 import { Media, type MediaType } from '../domain/media.entity';
 import { MediaRepository } from '../repository/media.repository';
@@ -11,26 +11,30 @@ export class MediaService extends DddService {
 
     async create({
         episodeId,
+        canvasId,
         mediaType,
         mediaUrl,
         index,
     }: {
         episodeId: number;
+        canvasId?: number;
         mediaType: MediaType;
         mediaUrl: string;
-        index: number;
+        index?: number;
     }) {
         const media = new Media({
             episodeId,
+            canvasId,
             mediaType,
             mediaUrl,
             index,
         });
-
         await this.mediaRepository.save([media]);
+
         return {
             id: media.id,
             episodeId: media.episodeId,
+            canvasId: media.canvasId ?? undefined,
             mediaType: media.mediaType,
             mediaUrl: media.mediaUrl,
             index: media.index,
@@ -39,17 +43,30 @@ export class MediaService extends DddService {
 
     async list({ episodeId }: { episodeId: number }) {
         const [medias, total] = await Promise.all([
-            this.mediaRepository.find({ episodeId }),
-            this.mediaRepository.count({ episodeId }),
+            this.mediaRepository.findByEpisodeId(episodeId),
+            this.mediaRepository.countByEpisodeId(episodeId),
         ]);
-        const items = medias.map((media) => ({
-            id: media.id,
-            episodeId: media.episodeId,
-            mediaType: media.mediaType,
-            mediaUrl: media.mediaUrl,
-            index: media.index,
-        }));
+        const items = medias.map((media) => {
+            return {
+                id: media.id,
+                episodeId: media.episodeId,
+                canvasId: media.canvasId ?? undefined,
+                mediaType: media.mediaType,
+                mediaUrl: media.mediaUrl,
+                index: media.index,
+            };
+        });
 
         return { items, total };
+    }
+
+    async delete({ episodeId, mediaId }: { episodeId: number; mediaId: number }) {
+        const media = await this.mediaRepository.findOneByEpisodeId({ episodeId, mediaId });
+
+        if (!media) {
+            throw new NotFoundException('Media not found.');
+        }
+
+        await this.mediaRepository.softRemove([media]);
     }
 }

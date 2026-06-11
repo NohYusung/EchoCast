@@ -4,9 +4,18 @@ export interface ServerConfig {
     port: number;
 }
 
+export interface AwsConfig {
+    bucketName: string;
+    region: string;
+    awsUrl: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+}
+
 export interface AppConfig {
     server: ServerConfig;
     database: DataSourceOptions;
+    aws?: AwsConfig;
 }
 
 type DatabaseMode = 'memory' | 'file' | 'mysql' | 'mariadb';
@@ -75,11 +84,40 @@ function resolveDatabaseConfig(env: Record<string, string | undefined>): DataSou
     };
 }
 
+function resolveAwsConfig(env: Record<string, string | undefined>): AwsConfig | undefined {
+    const hasAwsConfig = [
+        env.TEST_PLAYER_AWS_BUCKET_NAME,
+        env.TEST_PLAYER_AWS_REGION,
+        env.TEST_PLAYER_AWS_URL,
+        env.TEST_PLAYER_AWS_ACCESS_KEY_ID,
+        env.TEST_PLAYER_AWS_SECRET_ACCESS_KEY,
+    ].some((value) => value !== undefined && value !== '');
+
+    if (!hasAwsConfig) {
+        return undefined;
+    }
+
+    const accessKeyId = env.TEST_PLAYER_AWS_ACCESS_KEY_ID;
+    const secretAccessKey = env.TEST_PLAYER_AWS_SECRET_ACCESS_KEY;
+    if (Boolean(accessKeyId) !== Boolean(secretAccessKey)) {
+        throw new Error('TEST_PLAYER_AWS_ACCESS_KEY_ID와 TEST_PLAYER_AWS_SECRET_ACCESS_KEY는 함께 설정해야 합니다.');
+    }
+
+    return {
+        bucketName: requireEnv(env, 'TEST_PLAYER_AWS_BUCKET_NAME'),
+        region: requireEnv(env, 'TEST_PLAYER_AWS_REGION'),
+        awsUrl: requireEnv(env, 'TEST_PLAYER_AWS_URL'),
+        accessKeyId,
+        secretAccessKey,
+    };
+}
+
 export default function configuration(env: Record<string, string | undefined> = process.env): AppConfig {
     return {
         server: {
             port: parseNumberEnv(env, 'PORT', 4100),
         },
         database: resolveDatabaseConfig(env),
+        aws: resolveAwsConfig(env),
     };
 }

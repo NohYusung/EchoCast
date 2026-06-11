@@ -5,7 +5,7 @@ import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../app.module';
 
-test('POST /products/:productId/episodes creates an episode and GET /products/:productId/episodes returns items with total', async () => {
+test('POST /products/:productId/episodes creates an episode and PUT /products/:productId/episodes/:episodeId updates it', async () => {
     const moduleRef = await Test.createTestingModule({
         imports: [AppModule],
     }).compile();
@@ -25,6 +25,7 @@ test('POST /products/:productId/episodes creates an episode and GET /products/:p
 
         const episodeTitle = `1화 - 시작 ${Date.now()}`;
         const subTitle = '테스트 부제';
+        const thumbnailImageUrl = 'https://assets.example.com/episodes/1-thumbnail.png';
 
         const createResponse = await request(app.getHttpServer())
             .post(`/products/${product.id}/episodes`)
@@ -32,6 +33,7 @@ test('POST /products/:productId/episodes creates an episode and GET /products/:p
                 episodeNumber: 1,
                 title: episodeTitle,
                 subTitle,
+                thumbnailImageUrl,
             })
             .expect(201);
 
@@ -39,18 +41,66 @@ test('POST /products/:productId/episodes creates an episode and GET /products/:p
 
         const listResponse = await request(app.getHttpServer()).get(`/products/${product.id}/episodes`).expect(200);
 
+        const episode = listResponse.body.data.items[0];
+        assert.equal(typeof episode.id, 'number');
         assert.deepEqual(listResponse.body, {
             data: {
                 items: [
                     {
-                        id: 1,
+                        id: episode.id,
                         productId: product.id,
                         episodeNumber: 1,
                         title: episodeTitle,
                         subTitle,
+                        thumbnailImageUrl,
                     },
                 ],
                 total: 1,
+            },
+        });
+
+        const retrieveResponse = await request(app.getHttpServer())
+            .get(`/products/${product.id}/episodes/${episode.id}`)
+            .expect(200);
+
+        assert.deepEqual(retrieveResponse.body, {
+            data: {
+                id: episode.id,
+                productId: product.id,
+                episodeNumber: 1,
+                title: episodeTitle,
+                subTitle,
+                thumbnailImageUrl,
+            },
+        });
+
+        const updatedTitle = `1화 - 변경 ${Date.now()}`;
+        const updatedSubTitle = '수정된 테스트 부제';
+        const updatedThumbnailImageUrl = 'https://assets.example.com/episodes/1-thumbnail-updated.png';
+
+        const updateResponse = await request(app.getHttpServer())
+            .put(`/products/${product.id}/episodes/${episode.id}`)
+            .send({
+                title: updatedTitle,
+                subTitle: updatedSubTitle,
+                thumbnailImageUrl: updatedThumbnailImageUrl,
+            })
+            .expect(200);
+
+        assert.deepEqual(updateResponse.body, { data: {} });
+
+        const updatedRetrieveResponse = await request(app.getHttpServer())
+            .get(`/products/${product.id}/episodes/${episode.id}`)
+            .expect(200);
+
+        assert.deepEqual(updatedRetrieveResponse.body, {
+            data: {
+                id: episode.id,
+                productId: product.id,
+                episodeNumber: 1,
+                title: updatedTitle,
+                subTitle: updatedSubTitle,
+                thumbnailImageUrl: updatedThumbnailImageUrl,
             },
         });
     } finally {
