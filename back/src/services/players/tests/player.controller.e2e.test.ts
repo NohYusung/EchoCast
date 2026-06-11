@@ -51,6 +51,7 @@ test('GET player manifest endpoint exposes episode playback content without draf
             new Media({
                 episodeId: episode.id,
                 canvasId: canvas.id,
+                mediaName: 'api-visual.png',
                 mediaType: 'image',
                 mediaUrl: 'https://assets.example.com/api-visual.png',
                 index: 0,

@@ -149,3 +149,54 @@ test("studio uses the new dubright timeline production-tool layout", async ({
   await expect(page.locator(".dub-track-head").first()).toBeVisible();
   await expect(page.locator(".dub-bottom-bar")).toContainText("임시 저장");
 });
+
+test("studio loads the image composition tool from cut edit mode", async ({
+  page,
+}) => {
+  await page.route("**/episodes/1/canvases", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          items: [
+            {
+              id: 101,
+              episodeId: 1,
+              mediaId: 201,
+              mediaType: "image",
+              mediaUrl:
+                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%232563eb'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E01%3C/text%3E%3C/svg%3E",
+              index: 0,
+            },
+            {
+              id: 102,
+              episodeId: 1,
+              mediaId: 202,
+              mediaType: "image",
+              mediaUrl:
+                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%2316a34a'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E02%3C/text%3E%3C/svg%3E",
+              index: 1,
+            },
+          ],
+          total: 2,
+        },
+      }),
+    });
+  });
+
+  await page.goto("/studio/products/1/episodes/1");
+  await page.getByRole("button", { name: "컷 편집" }).click();
+
+  await expect(page.getByLabel("컷 편집 작업 영역")).toBeVisible();
+  await expect(page.getByText("컷 목록")).toBeVisible();
+  await expect(page.locator(".odx-cut-edit-stage")).toBeVisible();
+  await expect(page.locator(".odx-cut-edit-props")).toContainText("노출 시간");
+  await expect(page.locator(".odx-canvas")).toBeHidden();
+  await expect(page.getByLabel("이미지 편집 툴")).toBeVisible();
+  await expect(page.getByRole("button", { name: "이미지 01 레이어 선택" })).toBeVisible();
+  await expect(page.locator(".odx-body")).toHaveClass(/is-editing-cuts/);
+  await expect(page.locator(".odx-inspector")).toBeHidden();
+
+  await page.getByRole("button", { name: "이미지 조합 확정" }).click();
+  await expect(page.getByLabel("이미지 편집 툴")).toContainText("확정됨");
+});

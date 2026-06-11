@@ -13,12 +13,12 @@ export class MediaController {
     @Post('/episodes/:episodeId/medias')
     async create(@Param('episodeId', ParseIntPipe) episodeId: number, @Body() body: MediaCreateDto) {
         // 1. Destructure body, params, query
-        const { canvasId, mediaType, mediaUrl, index } = body;
+        const { canvasId, mediaName, mediaType, mediaUrl, index } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.mediaService.create({ episodeId, canvasId, mediaType, mediaUrl, index });
+        await this.mediaService.create({ episodeId, canvasId, mediaName, mediaType, mediaUrl, index });
 
         // 4. Send response
         return { data: {} };

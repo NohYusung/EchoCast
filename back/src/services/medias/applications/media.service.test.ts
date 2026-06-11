@@ -40,6 +40,7 @@ describe('MediaService', () => {
             const mediaService = new MediaService(mediaRepository);
             const createdMedia = await mediaService.create({
                 episodeId: episode.id,
+                mediaName: 'media.png',
                 mediaType: 'image',
                 mediaUrl: 'https://assets.example.com/media.png',
                 index: 0,
@@ -55,6 +56,7 @@ describe('MediaService', () => {
                         id: createdMedia.id,
                         episodeId: episode.id,
                         canvasId: undefined,
+                        mediaName: 'media.png',
                         mediaType: 'image',
                         mediaUrl: 'https://assets.example.com/media.png',
                         index: 0,

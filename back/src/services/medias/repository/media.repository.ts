@@ -13,6 +13,7 @@ export class MediaRepository extends DddRepository<Media> {
             id?: number;
             episodeId?: number;
             canvasId?: number;
+            mediaName?: string;
             mediaType?: MediaType;
             mediaUrl?: string;
             index?: number;
@@ -24,6 +25,7 @@ export class MediaRepository extends DddRepository<Media> {
                 id: conditions.id,
                 episodeId: conditions.episodeId,
                 canvasId: conditions.canvasId,
+                mediaName: conditions.mediaName,
                 mediaType: conditions.mediaType,
                 mediaUrl: conditions.mediaUrl,
                 index: conditions.index,
@@ -32,12 +34,21 @@ export class MediaRepository extends DddRepository<Media> {
         });
     }
 
-    async count(conditions: { id?: number; episodeId?: number; canvasId?: number; mediaType?: MediaType; mediaUrl?: string; index?: number }) {
+    async count(conditions: {
+        id?: number;
+        episodeId?: number;
+        canvasId?: number;
+        mediaName?: string;
+        mediaType?: MediaType;
+        mediaUrl?: string;
+        index?: number;
+    }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Media>({
                 id: conditions.id,
                 episodeId: conditions.episodeId,
                 canvasId: conditions.canvasId,
+                mediaName: conditions.mediaName,
                 mediaType: conditions.mediaType,
                 mediaUrl: conditions.mediaUrl,
                 index: conditions.index,

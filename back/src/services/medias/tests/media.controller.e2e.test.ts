@@ -38,14 +38,15 @@ test('DELETE /episodes/:episodeId/medias/:mediaId removes a registered media fro
         const mediaUrl = `https://assets.example.com/media-${Date.now()}.png`;
         await request(app.getHttpServer())
             .post(`/episodes/${episode.id}/medias`)
-            .send({ mediaType: 'image', mediaUrl, index: 0 })
+            .send({ mediaName: 'media.png', mediaType: 'image', mediaUrl, index: 0 })
             .expect(201);
 
         const beforeDeleteResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/medias`).expect(200);
         const media = beforeDeleteResponse.body.data.items.find(
-            (item: { id: number; mediaUrl: string }) => item.mediaUrl === mediaUrl
+            (item: { id: number; mediaName: string; mediaUrl: string }) => item.mediaUrl === mediaUrl
         );
         assert.ok(media);
+        assert.equal(media.mediaName, 'media.png');
 
         const deleteResponse = await request(app.getHttpServer())
             .delete(`/episodes/${episode.id}/medias/${media.id}`)

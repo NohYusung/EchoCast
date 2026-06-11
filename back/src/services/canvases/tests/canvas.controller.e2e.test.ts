@@ -38,7 +38,7 @@ test('GET /episodes/:episodeId/canvases does not treat standalone media as a can
         const mediaUrl = `https://assets.example.com/canvas-${Date.now()}.png`;
         await request(app.getHttpServer())
             .post(`/episodes/${episode.id}/medias`)
-            .send({ mediaType: 'image', mediaUrl, index: 0 })
+            .send({ mediaName: 'canvas.png', mediaType: 'image', mediaUrl, index: 0 })
             .expect(201);
 
         const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/canvases`).expect(200);

@@ -90,6 +90,7 @@ describe('PlayerService', () => {
                 new Media({
                     episodeId: episode.id,
                     canvasId: canvas.id,
+                    mediaName: 'visual.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/visual.png',
                     index: 0,

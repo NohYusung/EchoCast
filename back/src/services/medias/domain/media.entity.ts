@@ -8,6 +8,7 @@ export type MediaType = 'audio' | 'video' | 'image';
 type Ctor = {
     episodeId: number;
     canvasId?: number;
+    mediaName: string;
     mediaType: MediaType;
     mediaUrl: string;
     index?: number;
@@ -23,6 +24,9 @@ export class Media extends DddAggregate {
 
     @Column({ comment: '캔버스 id', nullable: true })
     canvasId?: number;
+
+    @Column({ comment: '미디어 파일명' })
+    mediaName!: string;
 
     @Column({ comment: '미디어 타입' })
     mediaType!: MediaType;
@@ -46,6 +50,7 @@ export class Media extends DddAggregate {
         if (args) {
             this.episodeId = args.episodeId;
             this.canvasId = args.canvasId;
+            this.mediaName = args.mediaName;
             this.mediaType = args.mediaType;
             this.mediaUrl = args.mediaUrl;
             this.index = args.index;

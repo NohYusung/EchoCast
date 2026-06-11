@@ -12,12 +12,14 @@ export class MediaService extends DddService {
     async create({
         episodeId,
         canvasId,
+        mediaName,
         mediaType,
         mediaUrl,
         index,
     }: {
         episodeId: number;
         canvasId?: number;
+        mediaName: string;
         mediaType: MediaType;
         mediaUrl: string;
         index?: number;
@@ -25,6 +27,7 @@ export class MediaService extends DddService {
         const media = new Media({
             episodeId,
             canvasId,
+            mediaName,
             mediaType,
             mediaUrl,
             index,
@@ -35,6 +38,7 @@ export class MediaService extends DddService {
             id: media.id,
             episodeId: media.episodeId,
             canvasId: media.canvasId ?? undefined,
+            mediaName: media.mediaName,
             mediaType: media.mediaType,
             mediaUrl: media.mediaUrl,
             index: media.index,
@@ -51,6 +55,7 @@ export class MediaService extends DddService {
                 id: media.id,
                 episodeId: media.episodeId,
                 canvasId: media.canvasId ?? undefined,
+                mediaName: media.mediaName,
                 mediaType: media.mediaType,
                 mediaUrl: media.mediaUrl,
                 index: media.index,

@@ -42,6 +42,7 @@ describe('CanvasService', () => {
                 new Media({
                     episodeId: episode.id,
                     canvasId: canvas.id,
+                    mediaName: 'canvas.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/canvas.png',
                     index: 0,

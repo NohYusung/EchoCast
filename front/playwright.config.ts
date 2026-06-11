@@ -20,9 +20,9 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "node --import tsx src/main.ts",
+      command: "npm run build && node dist/main.js",
       cwd: path.join(workspaceRoot, "back"),
-      url: "http://127.0.0.1:4100/health",
+      url: "http://127.0.0.1:4100/products",
       timeout: 30_000,
       reuseExistingServer: !process.env.CI,
     },
