@@ -10,10 +10,13 @@ export class TrackCueResponseDto {
     script!: string;
 
     @Expose()
-    characterId!: number;
+    characterId?: number;
 
     @Expose()
     trackId!: number;
+
+    @Expose()
+    audioId?: number;
 
     @Expose()
     startTime!: number;

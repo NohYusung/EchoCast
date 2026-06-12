@@ -1,6 +1,6 @@
 import type { PlayerManifest } from './playerManifest.types';
 
-export type PlaybackEventKind = 'record' | 'tts';
+export type PlaybackEventKind = 'audio' | 'record' | 'tts';
 
 export interface PlaybackEvent {
     id: string;
@@ -14,25 +14,29 @@ export interface PlaybackEvent {
 }
 
 export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
-    const approvedRecordByCueId = new Map(
-        manifest.records.filter((record) => record.status === 'approved').map((record) => [record.cueId, record])
-    );
+    const recordByCueId = new Map<string, PlayerManifest['records'][number]>();
+    for (const record of manifest.records) {
+        if (!recordByCueId.has(record.cueId)) {
+            recordByCueId.set(record.cueId, record);
+        }
+    }
     const ttsByCueId = new Map(manifest.tts.map((tts) => [tts.cueId, tts]));
+    const mediaById = new Map(manifest.media.map((media) => [media.id, media]));
 
-    return manifest.cues
+    const cuePlaybackEvents = manifest.cues
         .flatMap((cue): PlaybackEvent[] => {
-            const approvedRecord = approvedRecordByCueId.get(cue.id);
-            if (approvedRecord) {
+            const record = recordByCueId.get(cue.id);
+            if (record) {
                 return [
                     {
-                        id: `record-event-${approvedRecord.id}`,
+                        id: `record-event-${record.id}`,
                         cueId: cue.id,
                         kind: 'record',
-                        sourceId: approvedRecord.id,
-                        url: approvedRecord.audioUrl,
+                        sourceId: record.id,
+                        url: record.audioUrl,
                         startTime: cue.startTime,
-                        endTime: cue.startTime + approvedRecord.durationMs,
-                        volume: approvedRecord.volume * cue.volume,
+                        endTime: cue.startTime + (record.duration ?? Math.max(0, cue.endTime - cue.startTime)),
+                        volume: record.volume * cue.volume,
                     },
                 ];
             }
@@ -52,6 +56,28 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
                     volume: cue.volume,
                 },
             ];
-        })
-        .sort((a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id));
+        });
+    const audioPlaybackEvents = manifest.items.flatMap((item): PlaybackEvent[] => {
+        if ((item.kind !== 'audio' && item.kind !== 'effect') || !item.mediaId) return [];
+
+        const media = mediaById.get(item.mediaId);
+        if (!media || (media.kind !== 'audio' && media.kind !== 'effect')) return [];
+
+        return [
+            {
+                id: `audio-event-${item.id}`,
+                cueId: item.cueId ?? item.id,
+                kind: 'audio',
+                sourceId: item.mediaId,
+                url: media.url,
+                startTime: item.startTime,
+                endTime: item.endTime,
+                volume: item.volume,
+            },
+        ];
+    });
+
+    return [...cuePlaybackEvents, ...audioPlaybackEvents].sort(
+        (a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id)
+    );
 }

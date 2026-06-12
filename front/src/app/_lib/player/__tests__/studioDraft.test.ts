@@ -17,7 +17,7 @@ function createDraft(): PlayerDraft {
         characters: [],
         scripts: [],
         tracks: [],
-        timelineItems: [
+        items: [
             {
                 id: 'visual-strip-1',
                 trackId: 'track-visual',
@@ -67,9 +67,9 @@ test('applyTimelineItemTimings updates selected item timing without mutating the
         },
     ]);
 
-    assert.equal(draft.timelineItems[1].startTime, 0);
-    assert.equal(updated.timelineItems[1].startTime, 500);
-    assert.equal(updated.timelineItems[1].endTime, 2700);
+    assert.equal(draft.items[1].startTime, 0);
+    assert.equal(updated.items[1].startTime, 500);
+    assert.equal(updated.items[1].endTime, 2700);
 });
 
 test('applyTimelineItemTimings keeps cue timing in sync with cue timeline items', () => {
@@ -82,7 +82,7 @@ test('applyTimelineItemTimings keeps cue timing in sync with cue timeline items'
         },
     ]);
 
-    assert.equal(updated.timelineItems[1].startTime, 700);
+    assert.equal(updated.items[1].startTime, 700);
     assert.equal(updated.cues[0].startTime, 700);
     assert.equal(updated.cues[0].endTime, 2900);
 });
@@ -97,8 +97,8 @@ test('saveTimelineItemTimings fetches the current draft, applies edits, and send
         }
 
         const body = JSON.parse(String(init.body)) as PlayerDraft;
-        assert.equal(body.timelineItems[0].startTime, 1000);
-        assert.equal(body.timelineItems[0].endTime, 13000);
+        assert.equal(body.items[0].startTime, 1000);
+        assert.equal(body.items[0].endTime, 13000);
 
         return new Response(
             JSON.stringify({

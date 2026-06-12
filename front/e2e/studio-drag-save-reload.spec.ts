@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createSamplePlayerDraft } from "../src/app/_lib/player/sampleDraft";
 
 const apiBaseUrl = "http://127.0.0.1:4100";
@@ -23,23 +23,32 @@ test("studio keeps the playhead in place when selecting a cue clip", async ({
   await expect(playhead).toHaveAttribute("aria-valuenow", beforePlayhead!);
 });
 
-async function dragClipByPixels(
+async function dragLocatorByPixels(
   page: Page,
-  testId: string,
+  locator: Locator,
   deltaX: number,
+  deltaY: number,
 ) {
-  const clip = page.getByTestId(testId);
-  const box = await clip.boundingBox();
+  const box = await locator.boundingBox();
   if (!box) {
-    throw new Error(`clip ${testId} is not visible`);
+    throw new Error("target locator is not visible");
   }
 
   const startX = box.x + box.width / 2;
   const startY = box.y + box.height / 2;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
-  await page.mouse.move(startX + deltaX, startY, { steps: 6 });
+  await page.mouse.move(startX + deltaX, startY + deltaY, { steps: 6 });
   await page.mouse.up();
+}
+
+async function dragClipByPixels(
+  page: Page,
+  testId: string,
+  deltaX: number,
+) {
+  const clip = page.getByTestId(testId);
+  await dragLocatorByPixels(page, clip, deltaX, 0);
 }
 
 test("studio drags media and cue clips, saves the draft, and reloads the same timing", async ({
@@ -153,7 +162,62 @@ test("studio uses the new dubright timeline production-tool layout", async ({
 test("studio loads the image composition tool from cut edit mode", async ({
   page,
 }) => {
+  let canvasCreatePayload: unknown = null;
+  await page.route("**/episodes/1/medias", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          items: [
+            {
+              id: 201,
+              episodeId: 1,
+              mediaName: "이미지 01",
+              mediaType: "image",
+              mediaUrl:
+                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%232563eb'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E01%3C/text%3E%3C/svg%3E",
+              index: 0,
+            },
+            {
+              id: 202,
+              episodeId: 1,
+              mediaName: "이미지 02",
+              mediaType: "image",
+              mediaUrl:
+                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%2316a34a'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E02%3C/text%3E%3C/svg%3E",
+              index: 1,
+            },
+            {
+              id: 303,
+              episodeId: 1,
+              mediaName: "새 컷 이미지",
+              mediaType: "image",
+              mediaUrl:
+                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%23f97316'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E03%3C/text%3E%3C/svg%3E",
+              index: 2,
+            },
+          ],
+          total: 3,
+        },
+      }),
+    });
+  });
   await page.route("**/episodes/1/canvases", async (route) => {
+    if (route.request().method() === "POST") {
+      canvasCreatePayload = route.request().postDataJSON();
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            id: 901,
+            episodeId: 1,
+            medias: canvasCreatePayload,
+          },
+        }),
+      });
+      return;
+    }
+
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -163,40 +227,98 @@ test("studio loads the image composition tool from cut edit mode", async ({
               id: 101,
               episodeId: 1,
               mediaId: 201,
+              mediaName: "이미지 01",
               mediaType: "image",
               mediaUrl:
                 "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%232563eb'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E01%3C/text%3E%3C/svg%3E",
               index: 0,
-            },
-            {
-              id: 102,
-              episodeId: 1,
-              mediaId: 202,
-              mediaType: "image",
-              mediaUrl:
-                "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%2316a34a'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E02%3C/text%3E%3C/svg%3E",
-              index: 1,
+              medias: [
+                {
+                  mediaId: 201,
+                  mediaName: "이미지 01",
+                  mediaType: "image",
+                  mediaUrl:
+                    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%232563eb'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E01%3C/text%3E%3C/svg%3E",
+                  index: 0,
+                },
+                {
+                  mediaId: 202,
+                  mediaName: "이미지 02",
+                  mediaType: "image",
+                  mediaUrl:
+                    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 520'%3E%3Crect width='360' height='520' fill='%2316a34a'/%3E%3Ctext x='180' y='260' fill='white' font-size='36' text-anchor='middle'%3E02%3C/text%3E%3C/svg%3E",
+                  index: 1,
+                },
+              ],
             },
           ],
-          total: 2,
+          total: 1,
         },
       }),
     });
   });
 
   await page.goto("/studio/products/1/episodes/1");
+  await page.getByRole("button", { name: "미디어" }).click();
+  const droppedMedia = page.getByRole("button", { name: /새 컷 이미지/ });
+  await expect(droppedMedia).toHaveAttribute("draggable", "true");
+
   await page.getByRole("button", { name: "컷 편집" }).click();
 
   await expect(page.getByLabel("컷 편집 작업 영역")).toBeVisible();
-  await expect(page.getByText("컷 목록")).toBeVisible();
+  await expect(page.getByText("컷 목록", { exact: true })).toHaveCount(0);
   await expect(page.locator(".odx-cut-edit-stage")).toBeVisible();
   await expect(page.locator(".odx-cut-edit-props")).toContainText("노출 시간");
   await expect(page.locator(".odx-canvas")).toBeHidden();
+  await droppedMedia.dragTo(page.locator(".odx-cut-edit-viewport"));
+
+  const cutBlocks = page.locator(".odx-cut-edit-block");
+  await expect(cutBlocks).toHaveCount(3);
+  await expect(page.locator(".odx-cut-edit-strip")).toContainText("새 컷 이미지");
+  await dragLocatorByPixels(page, cutBlocks.nth(2), 0, -260);
+  await expect(cutBlocks.nth(1)).toContainText("새 컷 이미지");
   await expect(page.getByLabel("이미지 편집 툴")).toBeVisible();
   await expect(page.getByRole("button", { name: "이미지 01 레이어 선택" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "새 컷 이미지 레이어 선택" })).toBeVisible();
   await expect(page.locator(".odx-body")).toHaveClass(/is-editing-cuts/);
   await expect(page.locator(".odx-inspector")).toBeHidden();
 
   await page.getByRole("button", { name: "이미지 조합 확정" }).click();
+  await expect
+    .poll(() => canvasCreatePayload, { message: "canvas create payload" })
+    .toMatchObject({
+      medias: [
+        {
+          mediaId: 201,
+          mediaName: "이미지 01",
+          mediaType: "image",
+          index: 0,
+          x: 50,
+          y: 50,
+          scale: 1,
+          opacity: 1,
+        },
+        {
+          mediaId: 303,
+          mediaName: "새 컷 이미지",
+          mediaType: "image",
+          index: 1,
+          x: 50,
+          y: 50,
+          scale: 1,
+          opacity: 1,
+        },
+        {
+          mediaId: 202,
+          mediaName: "이미지 02",
+          mediaType: "image",
+          index: 2,
+          x: 50,
+          y: 50,
+          scale: 1,
+          opacity: 1,
+        },
+      ],
+    });
   await expect(page.getByLabel("이미지 편집 툴")).toContainText("확정됨");
 });

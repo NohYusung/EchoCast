@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { moveTimelineItemByPixels } from '../timelineDrag';
-import type { TimelineItemManifest } from '../playerManifest.types';
+import type { PlayerManifestItem } from '../playerManifest.types';
 
-const item: TimelineItemManifest = {
+const item: PlayerManifestItem = {
     id: 'cue-item-5002',
     trackId: 'track-dialogue',
     kind: 'cue',

@@ -12,7 +12,6 @@ export class AudioRepository extends DddRepository<Audio> {
         conditions: {
             id?: number;
             episodeId?: number;
-            cueId?: number;
             audioType?: AudioType;
             name?: string;
             audioUrl?: string;
@@ -24,7 +23,6 @@ export class AudioRepository extends DddRepository<Audio> {
             where: stripUndefined<Audio>({
                 id: conditions.id,
                 episodeId: conditions.episodeId,
-                cueId: conditions.cueId,
                 audioType: conditions.audioType,
                 name: conditions.name,
                 audioUrl: conditions.audioUrl,
@@ -37,7 +35,6 @@ export class AudioRepository extends DddRepository<Audio> {
     async count(conditions: {
         id?: number;
         episodeId?: number;
-        cueId?: number;
         audioType?: AudioType;
         name?: string;
         audioUrl?: string;
@@ -47,7 +44,6 @@ export class AudioRepository extends DddRepository<Audio> {
             where: stripUndefined<Audio>({
                 id: conditions.id,
                 episodeId: conditions.episodeId,
-                cueId: conditions.cueId,
                 audioType: conditions.audioType,
                 name: conditions.name,
                 audioUrl: conditions.audioUrl,
@@ -57,7 +53,7 @@ export class AudioRepository extends DddRepository<Audio> {
     }
 
     async findByEpisodeId(episodeId: number) {
-        return this.find({ episodeId }, { options: { sort: 'id', order: 'ASC' } });
+        return this.find({ episodeId }, { relations: { cue: true }, options: { sort: 'id', order: 'ASC' } });
     }
 
     async countByEpisodeId(episodeId: number) {

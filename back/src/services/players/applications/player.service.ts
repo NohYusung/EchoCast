@@ -1,8 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { checkInValue } from '../../../libs/utils/typeorm';
 import { DddService } from '../../../libs/ddd';
-import { TtsVoice } from '../../TTS-voices/domain/tts-voice.entity';
-import { TtsVoiceRepository } from '../../TTS-voices/repository/tts-voice.repository';
+import { AudioRepository } from '../../audios/repository/audio.repository';
 import { CanvasRepository } from '../../canvases/repository/canvas.repository';
 import { CharacterRepository } from '../../characters/repository/characater.repository';
 import { CueRepository } from '../../cues/repository/cue.repository';
@@ -12,13 +11,36 @@ import { RecordRepository } from '../../records/repository/record.repository';
 import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
 import type { TrackType } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
-type TimelineItemKind = 'visual' | 'audio' | 'effect' | 'cue';
 type PlayerTrackKind = 'visual' | 'dialogue' | 'audio' | 'effect';
 
+/*
+AGENT
+- 타입을 따로 빼서 관리하지 않음. 
+- 호출부에서 객체 형태로 바로 사용해. 
+*/
+type PlayerItem = {
+    id: string;
+    trackId: string;
+    kind: 'visual' | 'audio' | 'effect' | 'cue';
+    startTime: number;
+    endTime: number;
+    mediaId?: string;
+    cueId?: string;
+    layerId: number;
+    trimStartTime?: number;
+    trimEndTime?: number;
+    volume?: number;
+};
+
+/*
+AGENT
+- 타입을 따로 빼서 관리하지 않음. 
+- 호출부에서 객체 형태로 바로 사용해. 
+*/
 type PlayerDraft = {
     products: Array<{ id: string; title: string; coverImageUrl?: string }>;
     episodes: Array<{ id: string; productId: string; episodeNumber: number; title: string; subTitle?: string }>;
-    characters: Array<{ id: string; name: string; color: string; defaultTtsVoiceId?: string }>;
+    characters: Array<{ id: string; name: string; color: string }>;
     scripts: Array<{ id: string; episodeId: string; characterId: string; text: string; sortOrder: number }>;
     tracks: Array<{
         id: string;
@@ -28,19 +50,7 @@ type PlayerDraft = {
         layerId: number;
         isMuted: boolean;
     }>;
-    timelineItems: Array<{
-        id: string;
-        trackId: string;
-        kind: TimelineItemKind;
-        startTime: number;
-        endTime: number;
-        mediaId?: string;
-        cueId?: string;
-        layerId: number;
-        trimStartTime?: number;
-        trimEndTime?: number;
-        volume?: number;
-    }>;
+    items: PlayerItem[];
     media: Array<{
         id: string;
         episodeId: string;
@@ -50,13 +60,13 @@ type PlayerDraft = {
         naturalHeight?: number;
         durationMs?: number;
     }>;
-    ttsVoices: Array<{ id: string; provider: string; voiceName: string; languageCode: string }>;
     cues: Array<{
         id: string;
         episodeId: string;
         scriptId: string;
-        characterId: string;
+        characterId?: string;
         trackId: string;
+        audioId?: string;
         startTime: number;
         endTime: number;
         ttsVoiceId?: string;
@@ -67,24 +77,29 @@ type PlayerDraft = {
         id: string;
         cueId: string;
         artistId: string;
-        status: 'draft' | 'approved' | 'rejected';
         audioUrl: string;
-        durationMs: number;
+        duration?: number;
         volume: number;
     }>;
     screenEffects: Array<{ type: 'effect'; uuid: string; time_ms: number; params: Record<string, unknown> }>;
 };
 
+/*
+AGENT
+- 타입을 따로 빼서 관리하지 않음. 
+- 호출부에서 객체 형태로 바로 사용해. 
+*/
 type PlayerManifest = {
     episodeId: string;
     durationMs: number;
     tracks: Array<{ id: string; name: string; kind: PlayerTrackKind; layerId: number; isMuted: boolean }>;
-    items: Array<PlayerDraft['timelineItems'][number] & { volume: number }>;
+    items: Array<PlayerItem & { volume: number }>;
     cues: Array<{
         id: string;
         scriptId: string;
-        characterId: string;
+        characterId?: string;
         trackId: string;
+        audioId?: string;
         startTime: number;
         endTime: number;
         approvedRecordUrl?: string;
@@ -119,9 +134,9 @@ export class PlayerService extends DddService {
         private readonly trackRepository: TrackRepository,
         private readonly canvasRepository: CanvasRepository,
         private readonly cueRepository: CueRepository,
+        private readonly audioRepository: AudioRepository,
         private readonly scrollRepository: ScrollRepository,
-        private readonly recordRepository: RecordRepository,
-        private readonly ttsVoiceRepository: TtsVoiceRepository
+        private readonly recordRepository: RecordRepository
     ) {
         super();
     }
@@ -132,17 +147,33 @@ export class PlayerService extends DddService {
             throw new NotFoundException('Episode not found.');
         }
 
-        const [characters, tracks, canvases] = await Promise.all([
+        const [characters, tracks, canvases, audios] = await Promise.all([
             this.characterRepository.find({ productId: episode.productId }, { options: { sort: 'id', order: 'ASC' } }),
             this.trackRepository.find({ episodeId }, { options: { sort: 'id', order: 'ASC' } }),
             this.canvasRepository.find({ episodeId }, { relations: { medias: true } }),
+            this.audioRepository.find({ episodeId }, { options: { sort: 'id', order: 'ASC' } }),
         ]);
+        canvases.forEach((canvas) => {
+            canvas.medias = [...canvas.medias].sort(
+                (a, b) => (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
+            );
+        });
         canvases.sort((a, b) => {
             const [aMedia] = a.medias;
             const [bMedia] = b.medias;
 
-            return (aMedia?.index ?? Number.MAX_SAFE_INTEGER) - (bMedia?.index ?? Number.MAX_SAFE_INTEGER);
+            return (
+                (aMedia?.index ?? Number.MAX_SAFE_INTEGER) - (bMedia?.index ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
+            );
         });
+        const visualMediaItems = canvases
+            .flatMap((canvas) => canvas.medias.map((media) => ({ canvas, media })))
+            .sort(
+                (a, b) =>
+                    (a.media.index ?? Number.MAX_SAFE_INTEGER) - (b.media.index ?? Number.MAX_SAFE_INTEGER) ||
+                    a.canvas.id - b.canvas.id ||
+                    a.media.id - b.media.id
+            );
         const trackIds = tracks.map((track) => track.id);
         const [cues, scrolls] =
             trackIds.length > 0
@@ -160,49 +191,33 @@ export class PlayerService extends DddService {
         cues.sort((a, b) => a.startTime - b.startTime || a.id - b.id);
         scrolls.sort((a, b) => a.startTime - b.startTime || a.id - b.id);
         const cueIds = cues.map((cue) => cue.id);
-        const ttsVoiceIds = cues.flatMap((cue) => (cue.ttsVoiceId ? [cue.ttsVoiceId] : []));
-        const [records, ttsVoices]: [RecordEntity[], TtsVoice[]] = await Promise.all([
+        const records: RecordEntity[] =
             cueIds.length > 0
-                ? this.recordRepository.find(
+                ? await this.recordRepository.find(
                       { cueId: checkInValue(cueIds) },
                       { options: { sort: 'cueId', order: 'ASC' } }
                   )
-                : [],
-            ttsVoiceIds.length > 0
-                ? this.ttsVoiceRepository.find(
-                      { id: checkInValue(ttsVoiceIds) },
-                      { options: { sort: 'id', order: 'ASC' } }
-                  )
-                : [],
-        ]);
+                : [];
         records.sort((a, b) => a.cueId - b.cueId || a.id - b.id);
-        const ttsVoiceById = new Map<number, TtsVoice>(
-            ttsVoices.map((voice): [number, TtsVoice] => [voice.id, voice])
-        );
         const scripts = cues.map((cue, index) => ({
             id: toCueScriptId(cue.id),
             episodeId: toId(episode.id),
-            characterId: toId(cue.characterId),
+            characterId: cue.characterId ? toId(cue.characterId) : '',
             text: cue.script,
             sortOrder: index + 1,
         }));
-        const firstTtsVoiceByCharacterId = new Map<string, string>();
-        for (const cue of cues) {
-            if (!cue.ttsVoiceId || firstTtsVoiceByCharacterId.has(toId(cue.characterId))) continue;
-            firstTtsVoiceByCharacterId.set(toId(cue.characterId), toId(cue.ttsVoiceId));
-        }
 
-        const tracksDraft = tracks.map((track, index) => ({
+        const initialTracksDraft = tracks.map((track) => ({
             id: toId(track.id),
             episodeId: toId(episode.id),
             name: track.name,
             kind: toTrackKind(track.type),
-            layerId: index,
+            layerId: 0,
             isMuted: track.isMuted,
         }));
         const visualTrack =
-            tracksDraft.find((track) => track.kind === 'visual') ??
-            (canvases.length > 0
+            initialTracksDraft.find((track) => track.kind === 'visual') ??
+            (visualMediaItems.length > 0
                 ? {
                       id: `visual-${episode.id}`,
                       episodeId: toId(episode.id),
@@ -212,12 +227,22 @@ export class PlayerService extends DddService {
                       isMuted: false,
                   }
                 : undefined);
-        if (visualTrack && !tracksDraft.some((track) => track.id === visualTrack.id)) {
-            tracksDraft.unshift(visualTrack);
-        }
+        const tracksDraft = (
+            visualTrack
+                ? [visualTrack, ...initialTracksDraft.filter((track) => track.id !== visualTrack.id)]
+                : initialTracksDraft
+        ).map((track, index) => ({
+            ...track,
+            layerId: index,
+        }));
         const layerIdByTrackId = new Map(tracksDraft.map((track) => [track.id, track.layerId]));
+        const trackKindById = new Map(tracksDraft.map((track) => [track.id, track.kind]));
         const maxCueEndTime = Math.max(0, ...cues.map((cue) => cue.endTime));
         const fallbackVisualEndTime = Math.max(maxCueEndTime, 1);
+        const fallbackVisualDuration =
+            visualMediaItems.length > 0
+                ? Math.max(1, fallbackVisualEndTime / visualMediaItems.length)
+                : fallbackVisualEndTime;
 
         return {
             products: [
@@ -240,71 +265,77 @@ export class PlayerService extends DddService {
                 id: toId(character.id),
                 name: character.name,
                 color: '#64748b',
-                defaultTtsVoiceId: firstTtsVoiceByCharacterId.get(toId(character.id)),
             })),
             scripts,
             tracks: tracksDraft,
-            timelineItems: [
-                ...canvases.map((canvas, index) => {
+            items: [
+                ...visualMediaItems.map(({ canvas, media }, index) => {
                     const scroll = scrolls[index];
-                    const [media] = canvas.medias;
+                    const fallbackStartTime = Number((index * fallbackVisualDuration).toFixed(3));
+                    const fallbackEndTime = Number(((index + 1) * fallbackVisualDuration).toFixed(3));
+
                     return {
-                        id: `visual-${canvas.id}`,
+                        id: canvas.medias.length === 1 ? `visual-${canvas.id}` : `visual-${canvas.id}-${media.id}`,
                         trackId: visualTrack?.id ?? `visual-${episode.id}`,
                         kind: 'visual' as const,
-                        startTime: scroll?.startTime ?? 0,
-                        endTime: scroll?.endTime ?? fallbackVisualEndTime,
-                        mediaId: media ? toId(media.id) : undefined,
+                        startTime: scroll?.startTime ?? fallbackStartTime,
+                        endTime: scroll?.endTime ?? Math.max(fallbackEndTime, fallbackStartTime + 1),
+                        mediaId: toId(media.id),
                         layerId: index,
                     };
                 }),
                 ...cues.map((cue) => ({
                     id: `cue-${cue.id}`,
                     trackId: toId(cue.trackId),
-                    kind: 'cue' as const,
+                    kind:
+                        cue.audioId && trackKindById.get(toId(cue.trackId)) === 'effect'
+                            ? ('effect' as const)
+                            : cue.audioId
+                              ? ('audio' as const)
+                              : ('cue' as const),
                     startTime: cue.startTime,
                     endTime: cue.endTime,
                     cueId: toId(cue.id),
+                    mediaId: cue.audioId ? `audio-${toId(cue.audioId)}` : undefined,
                     layerId: layerIdByTrackId.get(toId(cue.trackId)) ?? 1,
                     volume: cue.volume,
                 })),
             ].sort((a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id)),
-            media: canvases.flatMap((canvas) =>
-                canvas.medias.map((media) => ({
-                    id: toId(media.id),
+            media: [
+                ...canvases.flatMap((canvas) =>
+                    canvas.medias.map((media) => ({
+                        id: toId(media.id),
+                        episodeId: toId(episode.id),
+                        kind: media.mediaType,
+                        url: media.mediaUrl,
+                    }))
+                ),
+                ...audios.map((audio) => ({
+                    id: `audio-${toId(audio.id)}`,
                     episodeId: toId(episode.id),
-                    kind: media.mediaType,
-                    url: media.mediaUrl,
-                }))
-            ),
-            ttsVoices: ttsVoices.map((voice) => ({
-                id: toId(voice.id),
-                provider: voice.provider,
-                voiceName: voice.voiceName,
-                languageCode: voice.languageCode,
+                    kind: audio.audioType === 'effect' ? ('effect' as const) : ('audio' as const),
+                    url: audio.audioUrl,
+                    durationMs: audio.duration,
+                })),
+            ],
+            cues: cues.map((cue) => ({
+                id: toId(cue.id),
+                episodeId: toId(episode.id),
+                scriptId: toCueScriptId(cue.id),
+                characterId: cue.characterId ? toId(cue.characterId) : undefined,
+                trackId: toId(cue.trackId),
+                audioId: cue.audioId ? toId(cue.audioId) : undefined,
+                startTime: cue.startTime,
+                endTime: cue.endTime,
+                ttsVoiceId: cue.ttsVoiceId ? toId(cue.ttsVoiceId) : undefined,
+                volume: cue.volume,
             })),
-            cues: cues.map((cue) => {
-                const ttsVoice = cue.ttsVoiceId ? ttsVoiceById.get(cue.ttsVoiceId) : undefined;
-                return {
-                    id: toId(cue.id),
-                    episodeId: toId(episode.id),
-                    scriptId: toCueScriptId(cue.id),
-                    characterId: toId(cue.characterId),
-                    trackId: toId(cue.trackId),
-                    startTime: cue.startTime,
-                    endTime: cue.endTime,
-                    ttsVoiceId: cue.ttsVoiceId ? toId(cue.ttsVoiceId) : undefined,
-                    ttsUrl: ttsVoice?.fileUrl,
-                    volume: cue.volume,
-                };
-            }),
             records: records.map((record) => ({
                 id: toId(record.id),
                 cueId: toId(record.cueId),
                 artistId: toId(record.artistId),
-                status: record.status,
                 audioUrl: record.audioUrl,
-                durationMs: record.durationMs,
+                duration: record.duration ?? undefined,
                 volume: record.volume,
             })),
             screenEffects: [],
@@ -316,28 +347,31 @@ export class PlayerService extends DddService {
     }
 
     toManifest(draft: PlayerDraft): PlayerManifest {
-        const approvedRecordByCueId = new Map(
-            draft.records.filter((record) => record.status === 'approved').map((record) => [record.cueId, record])
-        );
-        const ttsVoiceById = new Map(draft.ttsVoices.map((voice) => [voice.id, voice]));
+        const recordByCueId = new Map<string, PlayerDraft['records'][number]>();
+        for (const record of draft.records) {
+            if (!recordByCueId.has(record.cueId)) {
+                recordByCueId.set(record.cueId, record);
+            }
+        }
         const cues = draft.cues.map((cue) => ({
             id: cue.id,
             scriptId: cue.scriptId,
             characterId: cue.characterId,
             trackId: cue.trackId,
+            audioId: cue.audioId,
             startTime: cue.startTime,
             endTime: cue.endTime,
-            approvedRecordUrl: approvedRecordByCueId.get(cue.id)?.audioUrl,
+            approvedRecordUrl: recordByCueId.get(cue.id)?.audioUrl,
             ttsUrl: cue.ttsUrl,
             volume: cue.volume,
         }));
         const durationMs = Math.max(
             0,
-            ...draft.timelineItems.map((item) => item.endTime),
+            ...draft.items.map((item) => item.endTime),
             ...draft.cues.map((cue) => cue.endTime),
             ...draft.cues.map((cue) => {
-                const approvedRecord = approvedRecordByCueId.get(cue.id);
-                return approvedRecord ? cue.startTime + approvedRecord.durationMs : 0;
+                const record = recordByCueId.get(cue.id);
+                return record ? cue.startTime + (record.duration ?? cue.endTime - cue.startTime) : 0;
             })
         );
 
@@ -345,30 +379,14 @@ export class PlayerService extends DddService {
             episodeId: draft.episodes[0]?.id ?? '',
             durationMs,
             tracks: draft.tracks.map(({ episodeId: _episodeId, ...track }) => track),
-            items: draft.timelineItems.map((item) => ({
+            items: draft.items.map((item) => ({
                 ...item,
                 volume: item.volume ?? 1,
             })),
             cues,
             media: draft.media.map(({ episodeId: _episodeId, ...media }) => media),
             records: draft.records,
-            tts: draft.cues.flatMap((cue) => {
-                if (!cue.ttsVoiceId || !cue.ttsUrl) return [];
-
-                const voice = ttsVoiceById.get(cue.ttsVoiceId);
-                if (!voice) return [];
-
-                return [
-                    {
-                        id: `tts-${cue.id}`,
-                        cueId: cue.id,
-                        voiceId: cue.ttsVoiceId,
-                        provider: voice.provider,
-                        voiceName: voice.voiceName,
-                        audioUrl: cue.ttsUrl,
-                    },
-                ];
-            }),
+            tts: [],
         };
     }
 }

@@ -12,6 +12,7 @@ export type ImageCompositionLayer = {
     mediaId: number;
     label: string;
     mediaUrl: string;
+    sourceOrder: number;
     x: number;
     y: number;
     scale: number;
@@ -28,6 +29,17 @@ export type ImageCompositionDraft = {
 };
 
 export type ImageCompositionLayerPatch = Partial<Pick<ImageCompositionLayer, 'x' | 'y' | 'scale' | 'opacity' | 'isVisible'>>;
+export type ImageCompositionCanvasMedia = {
+    mediaId: number;
+    mediaName: string;
+    mediaType: 'image';
+    mediaUrl: string;
+    index: number;
+    x: number;
+    y: number;
+    scale: number;
+    opacity: number;
+};
 
 const MIN_POSITION = 0;
 const MAX_POSITION = 100;
@@ -49,6 +61,11 @@ export function syncImageCompositionDraft(
     current: ImageCompositionDraft = createEmptyImageCompositionDraft(),
 ): ImageCompositionDraft {
     const layerByClipId = new Map(current.layers.map((layer) => [layer.clipId, layer]));
+    const shouldUseSourceOrder = sources.some((source, index) => {
+        const existing = layerByClipId.get(source.clipId);
+
+        return existing ? (existing.sourceOrder ?? existing.zIndex) !== index : false;
+    });
     const layers = sources
         .map((source, index) => {
             const existing = layerByClipId.get(source.clipId);
@@ -59,18 +76,22 @@ export function syncImageCompositionDraft(
                 mediaId: source.mediaId,
                 label: source.label,
                 mediaUrl: source.mediaUrl,
+                sourceOrder: index,
                 x: existing?.x ?? 50,
                 y: existing?.y ?? 50,
                 scale: existing?.scale ?? 1,
                 opacity: existing?.opacity ?? 1,
-                zIndex: existing?.zIndex ?? index,
+                zIndex: shouldUseSourceOrder ? index : existing?.zIndex ?? index,
                 isVisible: existing?.isVisible ?? true,
             };
         })
         .sort((a, b) => a.zIndex - b.zIndex || a.clipId.localeCompare(b.clipId))
         .map((layer, index) => ({ ...layer, zIndex: index }));
     const sourceSignature = sources.map((source) => `${source.clipId}:${source.mediaUrl}`).join('|');
-    const currentSignature = current.layers.map((layer) => `${layer.clipId}:${layer.mediaUrl}`).join('|');
+    const currentSignature = [...current.layers]
+        .sort((a, b) => (a.sourceOrder ?? a.zIndex) - (b.sourceOrder ?? b.zIndex) || a.clipId.localeCompare(b.clipId))
+        .map((layer) => `${layer.clipId}:${layer.mediaUrl}`)
+        .join('|');
     const selectedLayerId = layers.some((layer) => layer.id === current.selectedLayerId)
         ? current.selectedLayerId
         : layers[0]?.id ?? '';
@@ -146,6 +167,23 @@ export function confirmImageCompositionDraft(draft: ImageCompositionDraft, confi
         status: 'confirmed',
         confirmedAt,
     };
+}
+
+export function toCanvasCreateMedias(draft: ImageCompositionDraft): ImageCompositionCanvasMedia[] {
+    return [...draft.layers]
+        .filter((layer) => layer.isVisible)
+        .sort((a, b) => a.zIndex - b.zIndex || a.clipId.localeCompare(b.clipId))
+        .map((layer, index) => ({
+            mediaId: layer.mediaId,
+            mediaName: layer.label,
+            mediaType: 'image',
+            mediaUrl: layer.mediaUrl,
+            index,
+            x: layer.x,
+            y: layer.y,
+            scale: layer.scale,
+            opacity: layer.opacity,
+        }));
 }
 
 function clampLayerValue(value: number, min: number, max: number) {

@@ -3,14 +3,11 @@ import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 't
 import { Artist } from '../../artists/domain/artist.entity';
 import { Cue } from '../../cues/domain/cue.entity';
 
-export type RecordStatus = 'draft' | 'approved' | 'rejected';
-
 type Ctor = {
     cueId: number;
     artistId: number;
-    status?: RecordStatus;
     audioUrl: string;
-    durationMs: number;
+    duration?: number;
     volume?: number;
 };
 
@@ -25,14 +22,11 @@ export class Record extends DddAggregate {
     @Column({ comment: '아티스트 id' })
     artistId!: number;
 
-    @Column({ comment: '녹음 상태', default: 'draft' })
-    status!: RecordStatus;
-
     @Column({ comment: '녹음 파일 URL' })
     audioUrl!: string;
 
-    @Column({ comment: '녹음 파일 길이(ms)' })
-    durationMs!: number;
+    @Column({ comment: '녹음 파일 길이(ms)', nullable: true })
+    duration?: number;
 
     @Column({ type: 'real', comment: '녹음 볼륨', default: 1 })
     volume!: number;
@@ -50,9 +44,8 @@ export class Record extends DddAggregate {
         if (args) {
             this.cueId = args.cueId;
             this.artistId = args.artistId;
-            this.status = args.status ?? 'draft';
             this.audioUrl = args.audioUrl;
-            this.durationMs = args.durationMs;
+            this.duration = args.duration;
             this.volume = args.volume ?? 1;
         }
     }

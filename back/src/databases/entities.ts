@@ -1,5 +1,4 @@
 import { DddEvent } from '../libs/ddd';
-import { TtsVoice } from '../services/TTS-voices/domain/tts-voice.entity';
 import { Artist } from '../services/artists/domain/artist.entity';
 import { Audio } from '../services/audios/domain/audio.entity';
 import { Canvas } from '../services/canvases/domain/canvas.entity';
@@ -12,4 +11,4 @@ import { Record } from '../services/records/domain/record.entity';
 import { Scroll } from '../services/scrolls/domain/scroll.entity';
 import { Track } from '../services/tracks/domain/track.entity';
 
-export default [DddEvent, Artist, Audio, Canvas, Character, Cue, Episode, Media, Product, Record, Scroll, Track, TtsVoice];
+export default [DddEvent, Artist, Audio, Canvas, Character, Cue, Episode, Media, Product, Record, Scroll, Track];

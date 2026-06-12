@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { Audio } from '../../audios/domain/audio.entity';
 import { Character } from '../../characters/domain/character.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
@@ -16,7 +17,7 @@ import { CueService } from './cue.service';
 async function createCueServiceDataSource() {
     const dataSource = new DataSource({
         type: 'sqljs',
-        entities: [Character, Cue, Episode, Product, Scroll, Track],
+        entities: [Audio, Character, Cue, Episode, Product, Scroll, Track],
         synchronize: true,
         logging: false,
     });
@@ -99,7 +100,7 @@ describe('CueService', () => {
         }
     });
 
-    it('throws BadRequestException when the target track has no character', async () => {
+    it('throws BadRequestException when the target record track has no character', async () => {
         const dataSource = await createCueServiceDataSource();
 
         try {
@@ -114,8 +115,8 @@ describe('CueService', () => {
             const track = await dataSource.manager.save(
                 new Track({
                     episodeId: episode.id,
-                    name: 'Cue service audio track',
-                    type: 'audio',
+                    name: 'Cue service record track',
+                    type: 'record',
                 })
             );
             const cueService = new CueService(new CueRepository(dataSource), new TrackRepository(dataSource));

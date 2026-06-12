@@ -61,9 +61,8 @@ test('POST /records creates a record for a cue and artist', async () => {
             .send({
                 cueId: cue.id,
                 artistId: artist.id,
-                status: 'approved',
                 audioUrl: 'https://assets.example.com/record-api.wav',
-                durationMs: 1200,
+                duration: 1200,
                 volume: 0.75,
             })
             .expect(201);
@@ -78,9 +77,8 @@ test('POST /records creates a record for a cue and artist', async () => {
         });
 
         assert.equal(storedRecords.length, 1);
-        assert.equal(storedRecords[0].status, 'approved');
         assert.equal(storedRecords[0].audioUrl, 'https://assets.example.com/record-api.wav');
-        assert.equal(storedRecords[0].durationMs, 1200);
+        assert.equal(storedRecords[0].duration, 1200);
         assert.equal(storedRecords[0].volume, 0.75);
     } finally {
         await app.close();

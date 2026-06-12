@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { DatabasesModule } from '../../databases';
-import { TtsVoiceRepository } from '../TTS-voices/repository/tts-voice.repository';
+import { AudioRepository } from '../audios/repository/audio.repository';
 import { CanvasRepository } from '../canvases/repository/canvas.repository';
 import { CharacterRepository } from '../characters/repository/characater.repository';
 import { CueRepository } from '../cues/repository/cue.repository';
@@ -42,6 +42,11 @@ import { PlayerController } from './controllers/player.controller';
             useFactory: (dataSource: DataSource) => new CueRepository(dataSource),
         },
         {
+            provide: AudioRepository,
+            inject: [DataSource],
+            useFactory: (dataSource: DataSource) => new AudioRepository(dataSource),
+        },
+        {
             provide: ScrollRepository,
             inject: [DataSource],
             useFactory: (dataSource: DataSource) => new ScrollRepository(dataSource),
@@ -52,11 +57,6 @@ import { PlayerController } from './controllers/player.controller';
             useFactory: (dataSource: DataSource) => new RecordRepository(dataSource),
         },
         {
-            provide: TtsVoiceRepository,
-            inject: [DataSource],
-            useFactory: (dataSource: DataSource) => new TtsVoiceRepository(dataSource),
-        },
-        {
             provide: PlayerService,
             inject: [
                 EpisodeRepository,
@@ -64,9 +64,9 @@ import { PlayerController } from './controllers/player.controller';
                 TrackRepository,
                 CanvasRepository,
                 CueRepository,
+                AudioRepository,
                 ScrollRepository,
                 RecordRepository,
-                TtsVoiceRepository,
             ],
             useFactory: (
                 episodeRepository: EpisodeRepository,
@@ -74,9 +74,9 @@ import { PlayerController } from './controllers/player.controller';
                 trackRepository: TrackRepository,
                 canvasRepository: CanvasRepository,
                 cueRepository: CueRepository,
+                audioRepository: AudioRepository,
                 scrollRepository: ScrollRepository,
-                recordRepository: RecordRepository,
-                ttsVoiceRepository: TtsVoiceRepository
+                recordRepository: RecordRepository
             ) =>
                 new PlayerService(
                     episodeRepository,
@@ -84,9 +84,9 @@ import { PlayerController } from './controllers/player.controller';
                     trackRepository,
                     canvasRepository,
                     cueRepository,
+                    audioRepository,
                     scrollRepository,
-                    recordRepository,
-                    ttsVoiceRepository
+                    recordRepository
                 ),
         },
     ],

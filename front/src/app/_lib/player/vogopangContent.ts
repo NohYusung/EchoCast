@@ -13,9 +13,12 @@ export function buildVogopangContent(draft: PlayerDraft): VogopangContent {
     const imageMedia = draft.media.filter((media) => media.kind === 'image');
     const scriptsById = new Map(draft.scripts.map((script) => [script.id, script]));
     const charactersById = new Map(draft.characters.map((character) => [character.id, character]));
-    const approvedRecordByCueId = new Map(
-        draft.records.filter((record) => record.status === 'approved').map((record) => [record.cueId, record])
-    );
+    const recordByCueId = new Map<string, PlayerDraft['records'][number]>();
+    for (const record of draft.records) {
+        if (!recordByCueId.has(record.cueId)) {
+            recordByCueId.set(record.cueId, record);
+        }
+    }
     const cues = [...draft.cues].sort((a, b) => a.startTime - b.startTime);
     const imageHeight = imageMedia.reduce((sum, media) => sum + (media.naturalHeight ?? 1200), 0);
     const markerHeight = Math.max(imageHeight, cues.length * 900, 1);
@@ -52,7 +55,7 @@ export function buildVogopangContent(draft: PlayerDraft): VogopangContent {
                 character_name: character.name,
                 holes: [],
             } satisfies VogopangContentTrack);
-        const approvedRecord = approvedRecordByCueId.get(cue.id);
+        const record = recordByCueId.get(cue.id);
         track.holes.push({
             uuid: cue.id,
             script_uuid: script.id,
@@ -61,7 +64,7 @@ export function buildVogopangContent(draft: PlayerDraft): VogopangContent {
             tts_uuid: cue.ttsVoiceId,
             script: script.text,
             index,
-            records: [resolveVogopangRecord({ cue, approvedRecord })],
+            records: [resolveVogopangRecord({ cue, record })],
         });
         trackByCharacterId.set(character.id, track);
     });
@@ -90,15 +93,15 @@ export function buildVogopangContent(draft: PlayerDraft): VogopangContent {
 
 function resolveVogopangRecord({
     cue,
-    approvedRecord,
+    record,
 }: {
     cue: PlayerDraft['cues'][number];
-    approvedRecord?: PlayerDraft['records'][number];
+    record?: PlayerDraft['records'][number];
 }): VogopangContentRecord {
-    if (approvedRecord) {
+    if (record) {
         return {
-            src: approvedRecord.audioUrl,
-            artist_no: Number(approvedRecord.artistId.replace(/\D/g, '')) || 0,
+            src: record.audioUrl,
+            artist_no: Number(record.artistId.replace(/\D/g, '')) || 0,
             margin: 0,
         };
     }
@@ -116,7 +119,7 @@ function buildAudioTracks(draft: PlayerDraft): VogopangContentAudioTrack[] {
     return draft.tracks
         .filter((track) => track.kind === 'audio' || track.kind === 'effect')
         .map((track) => {
-            const clips = draft.timelineItems
+            const clips = draft.items
                 .filter((item) => item.trackId === track.id && item.mediaId)
                 .map((item) => {
                     const media = mediaById.get(item.mediaId ?? '');

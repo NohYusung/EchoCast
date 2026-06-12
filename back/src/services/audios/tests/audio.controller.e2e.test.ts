@@ -38,61 +38,10 @@ test('POST /episodes/:episodeId/audios creates audio and GET /episodes/:episodeI
         );
         assert.ok(episode);
 
-        const characterName = `오디오 캐릭터 ${Date.now()}`;
-        await request(app.getHttpServer())
-            .post(`/products/${product.id}/characters`)
-            .send({
-                name: characterName,
-                role: 'starring',
-            })
-            .expect(201);
-
-        const charactersResponse = await request(app.getHttpServer())
-            .get(`/products/${product.id}/characters`)
-            .expect(200);
-        const character = charactersResponse.body.data.items.find(
-            (item: { id: number; name: string }) => item.name === characterName
-        );
-        assert.ok(character);
-
-        const trackName = `오디오 보이스 트랙 ${Date.now()}`;
-        await request(app.getHttpServer())
-            .post(`/episodes/${episode.id}/tracks`)
-            .send({
-                name: trackName,
-                type: 'record',
-                characterId: character.id,
-            })
-            .expect(201);
-
-        const tracksResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
-        const track = tracksResponse.body.data.items.find(
-            (item: { id: number; name: string }) => item.name === trackName
-        );
-        assert.ok(track);
-
-        await request(app.getHttpServer())
-            .post(`/tracks/${track.id}/cues`)
-            .send({
-                script: '오디오 테스트 큐',
-                startTime: 1000,
-                endTime: 4000,
-                volume: 0.85,
-            })
-            .expect(201);
-
-        const trackWithCueResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
-        const trackWithCue = trackWithCueResponse.body.data.items.find(
-            (item: { id: number; cues: Array<{ id: number }> }) => item.id === track.id
-        );
-        assert.ok(trackWithCue);
-        assert.equal(trackWithCue.cues.length, 1);
-
         const audioUrl = `https://assets.example.com/audios/impact-${Date.now()}.wav`;
         const createResponse = await request(app.getHttpServer())
             .post(`/episodes/${episode.id}/audios`)
             .send({
-                cueId: trackWithCue.cues[0].id,
                 audioType: 'effect',
                 name: 'impact.wav',
                 audioUrl,
@@ -101,6 +50,29 @@ test('POST /episodes/:episodeId/audios creates audio and GET /episodes/:episodeI
             .expect(201);
 
         assert.deepEqual(createResponse.body, { data: {} });
+
+        const initialListResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/audios`).expect(200);
+        const initialAudio = initialListResponse.body.data.items.find(
+            (item: { id: number; audioUrl: string; cueId?: number }) => item.audioUrl === audioUrl
+        );
+        assert.ok(initialAudio);
+        assert.equal(initialAudio.cueId, undefined);
+
+        const dropResponse = await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/audios/${initialAudio.id}/drop-to-track`)
+            .send({
+                trackName: 'Impact SFX',
+                trackType: 'effect',
+                startTime: 1200,
+                volume: 0.7,
+            })
+            .expect(201);
+
+        assert.equal(dropResponse.body.data.track.name, 'Impact SFX');
+        assert.equal(dropResponse.body.data.track.type, 'effect');
+        assert.equal(dropResponse.body.data.cue.audioId, initialAudio.id);
+        assert.equal(dropResponse.body.data.cue.startTime, 1200);
+        assert.equal(dropResponse.body.data.cue.endTime, 4200);
 
         const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/audios`).expect(200);
         const { items, total } = listResponse.body.data;
@@ -120,13 +92,20 @@ test('POST /episodes/:episodeId/audios creates audio and GET /episodes/:episodeI
                 }) =>
                     typeof item.id === 'number' &&
                     item.episodeId === episode.id &&
-                    item.cueId === trackWithCue.cues[0].id &&
+                    item.cueId === dropResponse.body.data.cue.id &&
                     item.audioType === 'effect' &&
                     item.name === 'impact.wav' &&
                     item.audioUrl === audioUrl &&
                     item.duration === 3000
             )
         );
+
+        const tracksResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
+        const track = tracksResponse.body.data.items.find(
+            (item: { id: number; name: string; cues: Array<{ audioId?: number }> }) =>
+                item.name === 'Impact SFX' && item.cues.some((cue) => cue.audioId === initialAudio.id)
+        );
+        assert.ok(track);
     } finally {
         await app.close();
     }

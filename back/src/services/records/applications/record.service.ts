@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
-import { Record, type RecordStatus } from '../domain/record.entity';
+import { Record } from '../domain/record.entity';
 import { RecordRepository } from '../repository/record.repository';
 
 @Injectable()
@@ -12,24 +12,21 @@ export class RecordService extends DddService {
     async create({
         cueId,
         artistId,
-        status,
         audioUrl,
-        durationMs,
+        duration,
         volume,
     }: {
         cueId: number;
         artistId: number;
-        status?: RecordStatus;
         audioUrl: string;
-        durationMs: number;
+        duration?: number;
         volume?: number;
     }) {
         const record = new Record({
             cueId,
             artistId,
-            status,
             audioUrl,
-            durationMs,
+            duration,
             volume,
         });
 
@@ -39,9 +36,8 @@ export class RecordService extends DddService {
             id: record.id,
             cueId: record.cueId,
             artistId: record.artistId,
-            status: record.status,
             audioUrl: record.audioUrl,
-            durationMs: record.durationMs,
+            duration: record.duration ?? undefined,
             volume: record.volume,
         };
     }

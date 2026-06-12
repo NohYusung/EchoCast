@@ -13,12 +13,12 @@ export class RecordController {
     @Post('/records')
     async create(@Body() body: RecordCreateDto) {
         // 1. Destructure body, params, query
-        const { cueId, artistId, status, audioUrl, durationMs, volume } = body;
+        const { cueId, artistId, audioUrl, duration, volume } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.recordService.create({ cueId, artistId, status, audioUrl, durationMs, volume });
+        await this.recordService.create({ cueId, artistId, audioUrl, duration, volume });
 
         // 4. Send response
         return { data: {} };

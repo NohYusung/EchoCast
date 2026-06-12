@@ -1,4 +1,4 @@
-import type { TimelineItemKind } from './playerManifest.types';
+import type { PlayerItemKind } from './playerManifest.types';
 
 export interface PlayerDraft {
     products: Array<{
@@ -34,10 +34,10 @@ export interface PlayerDraft {
         layerId: number;
         isMuted: boolean;
     }>;
-    timelineItems: Array<{
+    items: Array<{
         id: string;
         trackId: string;
-        kind: TimelineItemKind;
+        kind: PlayerItemKind;
         startTime: number;
         endTime: number;
         mediaId?: string;
@@ -78,9 +78,8 @@ export interface PlayerDraft {
         id: string;
         cueId: string;
         artistId: string;
-        status: 'draft' | 'approved' | 'rejected';
         audioUrl: string;
-        durationMs: number;
+        duration?: number;
         volume: number;
     }>;
     screenEffects?: Array<{

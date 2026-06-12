@@ -7,10 +7,10 @@ export default function HomePage() {
                 <h1>test-player</h1>
                 <nav>
                     <Link href="/studio/products">Products</Link>
-                    <Link href="/studio/products/product-100/episodes">Episodes</Link>
-                    <Link href="/studio/products/product-100/episodes/sample-player">Studio</Link>
-                    <Link href="/direction/screen/product-100/sample-player">Direction</Link>
-                    <Link href="/player/sample-player">Player</Link>
+                    <Link href="/studio/products/1/episodes">Episodes</Link>
+                    <Link href="/studio/products/1/episodes/1">Studio</Link>
+                    <Link href="/direction/screen/1/1">Direction</Link>
+                    <Link href="/player/1">Player</Link>
                 </nav>
             </section>
         </main>

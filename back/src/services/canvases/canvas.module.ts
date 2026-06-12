@@ -4,9 +4,11 @@ import { DatabasesModule } from '../../databases';
 import { CanvasService } from './applications/canvas.service';
 import { CanvasController } from './controllers/canvas.controller';
 import { CanvasRepository } from './repository/canvas.repository';
+import { MediaModule } from '../medias/media.module';
+import { MediaRepository } from '../medias/repository/media.repository';
 
 @Module({
-    imports: [DatabasesModule],
+    imports: [DatabasesModule, MediaModule],
     controllers: [CanvasController],
     providers: [
         {
@@ -16,8 +18,9 @@ import { CanvasRepository } from './repository/canvas.repository';
         },
         {
             provide: CanvasService,
-            inject: [CanvasRepository],
-            useFactory: (canvasRepository: CanvasRepository) => new CanvasService(canvasRepository),
+            inject: [CanvasRepository, MediaRepository],
+            useFactory: (canvasRepository: CanvasRepository, mediaRepository: MediaRepository) =>
+                new CanvasService(canvasRepository, mediaRepository),
         },
     ],
     exports: [CanvasRepository, CanvasService],

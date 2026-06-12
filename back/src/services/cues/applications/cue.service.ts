@@ -33,7 +33,7 @@ export class CueService extends DddService {
         if (!track) {
             throw new NotFoundException('Track not found.');
         }
-        if (!track.characterId) {
+        if (track.type === 'record' && !track.characterId) {
             throw new BadRequestException('Cue track must be linked to a character.');
         }
         if (!script.trim()) {
@@ -47,7 +47,7 @@ export class CueService extends DddService {
 
         const cue = new Cue({
             script: trimmedScript,
-            characterId: track.characterId,
+            characterId: track.characterId ?? undefined,
             trackId,
             startTime,
             endTime,
@@ -61,6 +61,7 @@ export class CueService extends DddService {
             script: cue.script,
             characterId: cue.characterId,
             trackId: cue.trackId,
+            audioId: cue.audioId,
             startTime: cue.startTime,
             endTime: cue.endTime,
             ttsVoiceId: cue.ttsVoiceId,
@@ -90,7 +91,7 @@ export class CueService extends DddService {
         if (!track) {
             throw new NotFoundException('Track not found.');
         }
-        if (!track.characterId) {
+        if (track.type === 'record' && !track.characterId) {
             throw new BadRequestException('Cue track must be linked to a character.');
         }
 
@@ -113,7 +114,7 @@ export class CueService extends DddService {
 
         cue.update({
             script: trimmedScript,
-            characterId: track.characterId,
+            characterId: track.characterId ?? undefined,
             startTime,
             endTime,
             ttsVoiceId,

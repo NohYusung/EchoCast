@@ -39,4 +39,9 @@ export class CharacterController {
         // 4. Send response
         return { data };
     }
+
+    /*
+    AGENT
+    - 캐릭터 삭제 api 추가. 
+    */
 }

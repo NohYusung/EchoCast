@@ -3,6 +3,11 @@ import { getPlayerDraft } from '../../../../../_lib/player/getPlayerDraft';
 import { getPlayerManifest } from '../../../../../_lib/player/getPlayerManifest';
 import { StudioEditor } from '../../../../../_lib/player/StudioEditor';
 
+/*
+AGENT
+- studio/products/:productId/episodes/:episodeId 화면은 episode retrieve, player draft, player manifest API 응답을 기준으로 초기화한다.
+- mock fallback이 필요하면 route가 아니라 각 fetch helper 내부에서만 처리한다.
+*/
 export default async function StudioPage({ params }: { params: Promise<{ productId: string; episodeId: string }> }) {
     const { productId, episodeId } = await params;
     const [manifest, draft, episode] = await Promise.all([

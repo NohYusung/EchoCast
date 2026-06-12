@@ -44,24 +44,23 @@ describe('Audio', () => {
                     characterId: character.id,
                 })
             );
+            const audio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'bgm',
+                    name: 'Opening BGM',
+                    audioUrl: 'https://assets.example.com/audio/opening-bgm.mp3',
+                    duration: 12000,
+                })
+            );
             const cue = await dataSource.manager.save(
                 new Cue({
                     script: 'Audio cue',
                     characterId: character.id,
                     trackId: track.id,
+                    audioId: audio.id,
                     startTime: 0,
                     endTime: 12000,
-                })
-            );
-
-            const audio = await dataSource.manager.save(
-                new Audio({
-                    episodeId: episode.id,
-                    cueId: cue.id,
-                    audioType: 'bgm',
-                    name: 'Opening BGM',
-                    audioUrl: 'https://assets.example.com/audio/opening-bgm.mp3',
-                    duration: 12000,
                 })
             );
 
@@ -71,13 +70,20 @@ describe('Audio', () => {
             });
 
             assert.equal(storedAudio.episodeId, episode.id);
-            assert.equal(storedAudio.cueId, cue.id);
             assert.equal(storedAudio.episode.id, episode.id);
             assert.equal(storedAudio.cue?.id, cue.id);
             assert.equal(storedAudio.audioType, 'bgm');
             assert.equal(storedAudio.name, 'Opening BGM');
             assert.equal(storedAudio.audioUrl, 'https://assets.example.com/audio/opening-bgm.mp3');
             assert.equal(storedAudio.duration, 12000);
+
+            const storedCue = await dataSource.manager.findOneOrFail(Cue, {
+                where: { id: cue.id },
+                relations: { audio: true },
+            });
+
+            assert.equal(storedCue.audioId, audio.id);
+            assert.equal(storedCue.audio?.id, audio.id);
 
             storedAudio.update({
                 name: 'Opening BGM updated',
@@ -94,7 +100,7 @@ describe('Audio', () => {
         }
     });
 
-    it('requires audio duration', async () => {
+    it('stores audio without duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [Audio, Character, Cue, Episode, Product, Scroll, Track],
@@ -113,16 +119,18 @@ describe('Audio', () => {
                 })
             );
 
-            await assert.rejects(() =>
-                dataSource.manager.save(
-                    new Audio({
-                        episodeId: episode.id,
-                        audioType: 'effect',
-                        name: 'impact.wav',
-                        audioUrl: 'https://assets.example.com/audio/impact.wav',
-                    } as any)
-                )
+            const audio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'effect',
+                    name: 'impact.wav',
+                    audioUrl: 'https://assets.example.com/audio/impact.wav',
+                } as any)
             );
+
+            const storedAudio = await dataSource.manager.findOneByOrFail(Audio, { id: audio.id });
+
+            assert.equal(storedAudio.duration, null);
         } finally {
             await dataSource.destroy();
         }

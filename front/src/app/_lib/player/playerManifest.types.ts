@@ -1,9 +1,9 @@
-export type TimelineItemKind = 'visual' | 'audio' | 'effect' | 'cue';
+export type PlayerItemKind = 'visual' | 'audio' | 'effect' | 'cue';
 
-export interface TimelineItemManifest {
+export interface PlayerManifestItem {
     id: string;
     trackId: string;
-    kind: TimelineItemKind;
+    kind: PlayerItemKind;
     startTime: number;
     endTime: number;
     mediaId?: string;
@@ -17,8 +17,9 @@ export interface TimelineItemManifest {
 export interface CueManifest {
     id: string;
     scriptId: string;
-    characterId: string;
+    characterId?: string;
     trackId: string;
+    audioId?: string;
     startTime: number;
     endTime: number;
     approvedRecordUrl?: string;
@@ -30,9 +31,8 @@ export interface RecordManifest {
     id: string;
     cueId: string;
     artistId: string;
-    status: 'draft' | 'approved' | 'rejected';
     audioUrl: string;
-    durationMs: number;
+    duration?: number;
     volume: number;
 }
 
@@ -55,7 +55,7 @@ export interface PlayerManifest {
         layerId: number;
         isMuted: boolean;
     }>;
-    items: TimelineItemManifest[];
+    items: PlayerManifestItem[];
     cues: CueManifest[];
     media: Array<{
         id: string;

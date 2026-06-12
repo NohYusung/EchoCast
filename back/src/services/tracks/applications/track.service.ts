@@ -44,7 +44,7 @@ export class TrackService extends DddService {
 
     async list({ episodeId }: { episodeId: number }) {
         const [tracks, total] = await Promise.all([
-            this.trackRepository.find({ episodeId }, { relations: { cues: true, scrolls: true } }),
+            this.trackRepository.find({ episodeId }, { relations: { cues: { audio: true }, scrolls: true } }),
             this.trackRepository.count({ episodeId }),
         ]);
         const items = tracks.map((track) => track.toInstance(TrackResponseDto));

@@ -15,6 +15,7 @@ export class CueRepository extends DddRepository<Cue> {
             script?: string;
             characterId?: number;
             trackId?: number | FindOperator<number>;
+            audioId?: number | FindOperator<number>;
             startTime?: number;
             endTime?: number;
             ttsVoiceId?: number;
@@ -27,6 +28,7 @@ export class CueRepository extends DddRepository<Cue> {
                 script: conditions.script,
                 characterId: conditions.characterId,
                 trackId: conditions.trackId,
+                audioId: conditions.audioId,
                 startTime: conditions.startTime,
                 endTime: conditions.endTime,
                 ttsVoiceId: conditions.ttsVoiceId,
@@ -40,6 +42,7 @@ export class CueRepository extends DddRepository<Cue> {
         script?: string;
         characterId?: number;
         trackId?: number;
+        audioId?: number;
         startTime?: number;
         endTime?: number;
         ttsVoiceId?: number;
@@ -50,6 +53,7 @@ export class CueRepository extends DddRepository<Cue> {
                 script: conditions.script,
                 characterId: conditions.characterId,
                 trackId: conditions.trackId,
+                audioId: conditions.audioId,
                 startTime: conditions.startTime,
                 endTime: conditions.endTime,
                 ttsVoiceId: conditions.ttsVoiceId,

@@ -2,9 +2,9 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { DataSource } from 'typeorm';
-import { TtsVoice } from '../../TTS-voices/domain/tts-voice.entity';
-import { TtsVoiceRepository } from '../../TTS-voices/repository/tts-voice.repository';
 import { Artist } from '../../artists/domain/artist.entity';
+import { Audio } from '../../audios/domain/audio.entity';
+import { AudioRepository } from '../../audios/repository/audio.repository';
 import { Canvas } from '../../canvases/domain/canvas.entity';
 import { CanvasRepository } from '../../canvases/repository/canvas.repository';
 import { Character } from '../../characters/domain/character.entity';
@@ -29,6 +29,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Artist,
+                Audio,
                 Canvas,
                 Character,
                 Cue,
@@ -38,7 +39,6 @@ describe('PlayerService', () => {
                 RecordEntity,
                 Scroll,
                 Track,
-                TtsVoice,
             ],
             synchronize: true,
             logging: false,
@@ -96,6 +96,16 @@ describe('PlayerService', () => {
                     index: 0,
                 })
             );
+            const secondMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    canvasId: canvas.id,
+                    mediaName: 'visual-2.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/visual-2.png',
+                    index: 1,
+                })
+            );
             await dataSource.manager.save(
                 new Scroll({
                     trackId: visualTrack.id,
@@ -105,15 +115,6 @@ describe('PlayerService', () => {
                     endPosition: 400,
                 })
             );
-            const ttsVoice = await dataSource.manager.save(
-                new TtsVoice({
-                    provider: 'test-player',
-                    voiceName: 'nari-ko',
-                    voiceKey: 'nari',
-                    languageCode: 'ko-KR',
-                    fileUrl: 'https://assets.example.com/tts.wav',
-                })
-            );
             const cue = await dataSource.manager.save(
                 new Cue({
                     script: '플레이어 테스트 대사',
@@ -121,7 +122,6 @@ describe('PlayerService', () => {
                     trackId: dialogueTrack.id,
                     startTime: 500,
                     endTime: 2500,
-                    ttsVoiceId: ttsVoice.id,
                     volume: 0.9,
                 })
             );
@@ -130,9 +130,8 @@ describe('PlayerService', () => {
                 new RecordEntity({
                     cueId: cue.id,
                     artistId: artist.id,
-                    status: 'approved',
                     audioUrl: 'https://assets.example.com/record.wav',
-                    durationMs: 1900,
+                    duration: 1900,
                     volume: 0.8,
                 })
             );
@@ -143,9 +142,9 @@ describe('PlayerService', () => {
                 new TrackRepository(dataSource),
                 new CanvasRepository(dataSource),
                 new CueRepository(dataSource),
+                new AudioRepository(dataSource),
                 new ScrollRepository(dataSource),
-                new RecordRepository(dataSource),
-                new TtsVoiceRepository(dataSource)
+                new RecordRepository(dataSource)
             );
 
             const draft = await playerService.getDraft({ episodeId: episode.id });
@@ -160,7 +159,13 @@ describe('PlayerService', () => {
             ]);
             assert.equal(draft.media[0].id, String(media.id));
             assert.equal(draft.media[0].kind, 'image');
-            assert.equal(draft.timelineItems.some((item) => item.kind === 'visual' && item.mediaId === String(media.id)), true);
+            assert.equal(draft.media.some((item) => item.id === String(secondMedia.id)), true);
+            assert.equal(Object.hasOwn(draft, 'items'), true);
+            assert.equal(draft.items.some((item) => item.kind === 'visual' && item.mediaId === String(media.id)), true);
+            assert.equal(
+                draft.items.some((item) => item.kind === 'visual' && item.mediaId === String(secondMedia.id)),
+                true
+            );
             assert.equal(draft.scripts[0].text, '플레이어 테스트 대사');
             assert.equal(draft.scripts[0].id, draft.cues[0].scriptId);
             assert.equal(draft.cues[0].id, String(cue.id));
@@ -169,7 +174,183 @@ describe('PlayerService', () => {
             assert.equal(manifest.episodeId, String(episode.id));
             assert.equal(manifest.durationMs, 3000);
             assert.equal(manifest.cues[0].approvedRecordUrl, 'https://assets.example.com/record.wav');
-            assert.equal(manifest.tts[0].audioUrl, 'https://assets.example.com/tts.wav');
+            assert.deepEqual(manifest.tts, []);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('assigns unique layer ids when a visual track is synthesized from canvases', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Artist,
+                Audio,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Synthetic visual product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Synthetic visual episode',
+                })
+            );
+            const character = await dataSource.manager.save(
+                new Character({
+                    productId: product.id,
+                    name: '나리',
+                    role: 'starring',
+                })
+            );
+            const dialogueTrack = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Dialogue',
+                    type: 'record',
+                    characterId: character.id,
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    canvasId: canvas.id,
+                    mediaName: 'synthetic-visual.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/synthetic-visual.png',
+                    index: 0,
+                })
+            );
+            const cue = await dataSource.manager.save(
+                new Cue({
+                    script: '합성 비주얼 트랙 테스트',
+                    characterId: character.id,
+                    trackId: dialogueTrack.id,
+                    startTime: 0,
+                    endTime: 1800,
+                })
+            );
+
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+            const visualTrack = manifest.tracks.find((track) => track.kind === 'visual');
+            const manifestDialogueTrack = manifest.tracks.find((track) => track.id === String(dialogueTrack.id));
+            const cueItem = manifest.items.find((item) => item.cueId === String(cue.id));
+
+            assert.ok(visualTrack);
+            assert.ok(manifestDialogueTrack);
+            assert.ok(cueItem);
+            assert.equal(visualTrack.layerId, 0);
+            assert.equal(manifestDialogueTrack.layerId, 1);
+            assert.equal(cueItem.layerId, 1);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('orders manifest visual media by canvas media index before assigning playback windows', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Artist,
+                Audio,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Visual order product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Visual order episode',
+                })
+            );
+            const firstCanvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const secondCanvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const firstMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    canvasId: firstCanvas.id,
+                    mediaName: 'first.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/first.png',
+                    index: 0,
+                })
+            );
+            const thirdMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    canvasId: firstCanvas.id,
+                    mediaName: 'third.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/third.png',
+                    index: 2,
+                })
+            );
+            const secondMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    canvasId: secondCanvas.id,
+                    mediaName: 'second.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/second.png',
+                    index: 1,
+                })
+            );
+
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+            const visualMediaIds = manifest.items.filter((item) => item.kind === 'visual').map((item) => item.mediaId);
+
+            assert.deepEqual(visualMediaIds, [String(firstMedia.id), String(secondMedia.id), String(thirdMedia.id)]);
         } finally {
             await dataSource.destroy();
         }

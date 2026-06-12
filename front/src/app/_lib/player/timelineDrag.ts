@@ -1,4 +1,4 @@
-import type { TimelineItemManifest } from './playerManifest.types';
+import type { PlayerManifestItem } from './playerManifest.types';
 
 export const timelineDragMsPerPixel = 20;
 
@@ -8,11 +8,11 @@ export function moveTimelineItemByPixels({
     durationMs,
     msPerPixel = timelineDragMsPerPixel,
 }: {
-    item: TimelineItemManifest;
+    item: PlayerManifestItem;
     deltaPixels: number;
     durationMs: number;
     msPerPixel?: number;
-}): TimelineItemManifest {
+}): PlayerManifestItem {
     const itemDuration = Math.max(item.endTime - item.startTime, 1);
     const deltaMs = Math.round(deltaPixels * msPerPixel);
     const maxStartTime = Math.max(durationMs - itemDuration, 0);

@@ -3,7 +3,7 @@ import type { FindOperator } from 'typeorm';
 import { DddRepository } from '../../../libs/ddd';
 import { stripUndefined } from '../../../libs/utils/helper';
 import { convertOptions, type TypeormRelationOptions } from '../../../libs/utils/typeorm';
-import { Record, type RecordStatus } from '../domain/record.entity';
+import { Record } from '../domain/record.entity';
 
 @Injectable()
 export class RecordRepository extends DddRepository<Record> {
@@ -14,9 +14,8 @@ export class RecordRepository extends DddRepository<Record> {
             id?: number;
             cueId?: number | FindOperator<number>;
             artistId?: number;
-            status?: RecordStatus;
             audioUrl?: string;
-            durationMs?: number;
+            duration?: number;
             volume?: number;
         },
         options?: TypeormRelationOptions<Record>
@@ -26,9 +25,8 @@ export class RecordRepository extends DddRepository<Record> {
                 id: conditions.id,
                 cueId: conditions.cueId,
                 artistId: conditions.artistId,
-                status: conditions.status,
                 audioUrl: conditions.audioUrl,
-                durationMs: conditions.durationMs,
+                duration: conditions.duration,
                 volume: conditions.volume,
             }),
             ...convertOptions(options),
@@ -39,9 +37,8 @@ export class RecordRepository extends DddRepository<Record> {
         id?: number;
         cueId?: number;
         artistId?: number;
-        status?: RecordStatus;
         audioUrl?: string;
-        durationMs?: number;
+        duration?: number;
         volume?: number;
     }) {
         return this.entityManager.count(this.entityClass, {
@@ -49,9 +46,8 @@ export class RecordRepository extends DddRepository<Record> {
                 id: conditions.id,
                 cueId: conditions.cueId,
                 artistId: conditions.artistId,
-                status: conditions.status,
                 audioUrl: conditions.audioUrl,
-                durationMs: conditions.durationMs,
+                duration: conditions.duration,
                 volume: conditions.volume,
             }),
         });

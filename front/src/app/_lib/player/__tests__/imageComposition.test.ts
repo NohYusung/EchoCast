@@ -4,6 +4,7 @@ import {
     confirmImageCompositionDraft,
     moveImageCompositionLayer,
     syncImageCompositionDraft,
+    toCanvasCreateMedias,
     updateImageCompositionLayer,
     type ImageCompositionSource,
 } from '../imageComposition';
@@ -55,4 +56,56 @@ test('moveImageCompositionLayer changes layer order for composition output', () 
 
     assert.equal(moved.layers[0].clipId, 'canvas-2');
     assert.equal(moved.layers[1].clipId, 'canvas-1');
+});
+
+test('syncImageCompositionDraft follows visual source reorder for canvas media index', () => {
+    const draft = updateImageCompositionLayer(syncImageCompositionDraft(sources), 'image-layer-canvas-1', { x: 42 });
+    const confirmed = confirmImageCompositionDraft(draft, '2026-06-11T00:00:00.000Z');
+    const reordered = syncImageCompositionDraft(
+        [
+            { ...sources[1], order: 0 },
+            { ...sources[0], order: 1 },
+        ],
+        confirmed,
+    );
+
+    assert.equal(reordered.status, 'editing');
+    assert.equal(reordered.confirmedAt, undefined);
+    assert.deepEqual(
+        reordered.layers.map((layer) => layer.clipId),
+        ['canvas-2', 'canvas-1'],
+    );
+    assert.equal(reordered.layers.find((layer) => layer.clipId === 'canvas-1')?.x, 42);
+    assert.deepEqual(
+        toCanvasCreateMedias(reordered).map((media) => ({ mediaId: media.mediaId, mediaName: media.mediaName, index: media.index })),
+        [
+            { mediaId: 2, mediaName: '이미지 02', index: 0 },
+            { mediaId: 1, mediaName: '이미지 01', index: 1 },
+        ],
+    );
+});
+
+test('toCanvasCreateMedias maps visible image layers to canvas media payload', () => {
+    const draft = syncImageCompositionDraft(sources);
+    const arranged = updateImageCompositionLayer(draft, 'image-layer-canvas-1', {
+        x: 42,
+        y: 58,
+        scale: 1.25,
+        opacity: 0.8,
+    });
+    const hidden = updateImageCompositionLayer(arranged, 'image-layer-canvas-2', { isVisible: false });
+
+    assert.deepEqual(toCanvasCreateMedias(hidden), [
+        {
+            mediaId: 1,
+            mediaName: '이미지 01',
+            mediaType: 'image',
+            mediaUrl: 'https://assets.example.com/1.png',
+            index: 0,
+            x: 42,
+            y: 58,
+            scale: 1.25,
+            opacity: 0.8,
+        },
+    ]);
 });

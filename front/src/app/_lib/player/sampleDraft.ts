@@ -95,7 +95,7 @@ export function createSamplePlayerDraft({
                 isMuted: false,
             },
         ],
-        timelineItems: [
+        items: [
             {
                 id: 'visual-strip-1',
                 trackId: 'track-visual',
@@ -231,30 +231,19 @@ export function createSamplePlayerDraft({
         ],
         records: [
             {
-                id: 'record-5001-approved',
+                id: 'record-5001',
                 cueId: 'cue-5001',
                 artistId: 'artist-1',
-                status: 'approved',
-                audioUrl: '/audio/record-5001-approved.wav',
-                durationMs: 2100,
+                audioUrl: '/audio/record-5001.wav',
+                duration: 2100,
                 volume: 1,
             },
             {
-                id: 'record-5001-draft',
-                cueId: 'cue-5001',
-                artistId: 'artist-2',
-                status: 'draft',
-                audioUrl: '/audio/record-5001-draft.wav',
-                durationMs: 2300,
-                volume: 0.9,
-            },
-            {
-                id: 'record-5003-approved',
+                id: 'record-5003',
                 cueId: 'cue-5003',
                 artistId: 'artist-1',
-                status: 'approved',
-                audioUrl: '/audio/record-5003-approved.wav',
-                durationMs: 2800,
+                audioUrl: '/audio/record-5003.wav',
+                duration: 2800,
                 volume: 1,
             },
         ],

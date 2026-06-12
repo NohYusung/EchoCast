@@ -19,6 +19,12 @@ export class Canvas extends DddAggregate {
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
 
+    /*
+    AGENT
+    - manytomany로 수정. 
+    - 한 미디어는 여러개의 캔버스 위에 올라가는게 가능하고, 
+    - 한 캔버스는  여러개의 미디어를 갖는다. 
+    */
     @OneToMany(() => Media, (media) => media.canvas)
     medias!: Media[];
 

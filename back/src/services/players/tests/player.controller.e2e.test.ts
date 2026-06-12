@@ -71,9 +71,8 @@ test('GET player manifest endpoint exposes episode playback content without draf
             new RecordEntity({
                 cueId: cue.id,
                 artistId: artist.id,
-                status: 'approved',
                 audioUrl: 'https://assets.example.com/api-record.wav',
-                durationMs: 1700,
+                duration: 1700,
             })
         );
 

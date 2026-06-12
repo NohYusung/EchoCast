@@ -10,7 +10,7 @@ export interface TimelineItemTimingUpdate {
 export function applyTimelineItemTimings(draft: PlayerDraft, updates: TimelineItemTimingUpdate[]): PlayerDraft {
     const updateById = new Map(updates.map((update) => [update.itemId, update]));
     const cueTimingById = new Map<string, TimelineItemTimingUpdate>();
-    for (const item of draft.timelineItems) {
+    for (const item of draft.items) {
         const update = updateById.get(item.id);
         if (update && item.kind === 'cue' && item.cueId) {
             cueTimingById.set(item.cueId, update);
@@ -19,7 +19,7 @@ export function applyTimelineItemTimings(draft: PlayerDraft, updates: TimelineIt
 
     return {
         ...draft,
-        timelineItems: draft.timelineItems.map((item) => {
+        items: draft.items.map((item) => {
             const update = updateById.get(item.id);
             if (!update) return { ...item };
 

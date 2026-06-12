@@ -1,6 +1,6 @@
-import type { TimelineItemManifest } from './playerManifest.types';
+import type { PlayerManifestItem } from './playerManifest.types';
 
-export function resolveVisualFrame(items: TimelineItemManifest[], currentTime: number) {
+export function resolveVisualFrame(items: PlayerManifestItem[], currentTime: number) {
     const activeVisual = items.find(
         (item) => item.kind === 'visual' && item.startTime <= currentTime && currentTime < item.endTime
     );
