@@ -15,6 +15,12 @@ export type PlayerScene = {
     index?: number;
     mediaUrl?: string;
     mediaId?: string;
+    mediaDuration?: number;
+    trimStartTime?: number;
+    trimEndTime?: number;
+    hasTimelineControls?: boolean;
+    isMuted?: boolean;
+    volume: number;
     height: number;
     background: string;
 };
@@ -76,6 +82,7 @@ export function buildPlayerScenes(manifest: PlayerManifest): PlayerScene[] {
                 label: 'EMPTY',
                 startTime: 0,
                 endTime: Math.max(1000, manifest.durationMs),
+                volume: 1,
                 height: DEFAULT_SCENE_HEIGHT,
                 background: 'linear-gradient(180deg, #161b24 0%, #0d1117 100%)',
             },
@@ -96,6 +103,12 @@ export function buildPlayerScenes(manifest: PlayerManifest): PlayerScene[] {
             index: item.index ?? index,
             mediaUrl: media?.url,
             mediaId: item.mediaId,
+            mediaDuration: media?.durationMs,
+            trimStartTime: item.trimStartTime,
+            trimEndTime: item.trimEndTime,
+            hasTimelineControls: item.hasTimelineControls,
+            isMuted: item.isMuted,
+            volume: item.volume,
             height: getSceneHeight(item, media),
             background: `linear-gradient(160deg, hsl(${(index * 43) % 360} 34% 25%), #111827)`,
         };

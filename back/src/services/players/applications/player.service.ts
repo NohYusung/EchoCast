@@ -32,6 +32,8 @@ type PlayerItem = {
     layerId: number;
     trimStartTime?: number;
     trimEndTime?: number;
+    hasTimelineControls?: boolean;
+    isMuted?: boolean;
     volume?: number;
 };
 
@@ -275,10 +277,6 @@ export class PlayerService extends DddService {
         const trackKindById = new Map(tracksDraft.map((track) => [track.id, track.kind]));
         const maxCueEndTime = Math.max(0, ...cues.map((cue) => cue.endTime));
         const fallbackVisualEndTime = Math.max(maxCueEndTime, 1);
-        const fallbackVisualDuration =
-            visualMediaItems.length > 0
-                ? Math.max(1, fallbackVisualEndTime / visualMediaItems.length)
-                : fallbackVisualEndTime;
 
         return {
             products: [
@@ -310,8 +308,8 @@ export class PlayerService extends DddService {
                     const scroll =
                         scrollByCanvasStartIndex.get(`${canvas.id}:${mediaIndex}`) ??
                         (hasExplicitScrollMapping ? undefined : scrolls[index]);
-                    const fallbackStartTime = Number((index * fallbackVisualDuration).toFixed(3));
-                    const fallbackEndTime = Number(((index + 1) * fallbackVisualDuration).toFixed(3));
+                    const fallbackStartTime = 0;
+                    const fallbackEndTime = fallbackVisualEndTime;
                     const hasCanvasMediaTiming =
                         typeof canvasMedia.startTime === 'number' &&
                         typeof canvasMedia.endTime === 'number' &&
@@ -339,6 +337,8 @@ export class PlayerService extends DddService {
                         trimStartTime:
                             typeof canvasMedia.sourceStartTime === 'number' ? canvasMedia.sourceStartTime : undefined,
                         trimEndTime: typeof canvasMedia.sourceEndTime === 'number' ? canvasMedia.sourceEndTime : undefined,
+                        hasTimelineControls: media.mediaType === 'video' && hasCanvasMediaTiming,
+                        isMuted: canvasMedia.isMuted === true,
                         volume: canvasMedia.isMuted ? 0 : canvasMedia.volume,
                     };
                 }),
@@ -358,7 +358,7 @@ export class PlayerService extends DddService {
                     layerId: layerIdByTrackId.get(toId(cue.trackId)) ?? 1,
                     volume: cue.volume,
                 })),
-            ].sort((a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id)),
+            ].sort((a, b) => a.startTime - b.startTime || a.layerId - b.layerId || a.id.localeCompare(b.id)),
             media: [
                 ...canvases.flatMap((canvas) =>
                     canvas.canvasMedias.map((canvasMedia) => ({

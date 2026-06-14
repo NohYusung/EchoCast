@@ -408,6 +408,89 @@ describe('PlayerService', () => {
         }
     });
 
+    it('does not split visual media into synthetic playback windows without timeline data', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Anchor,
+                Artist,
+                Audio,
+                CanvasMedia,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'No synthetic visual windows product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'No synthetic visual windows episode',
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const firstMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'first.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/first.png',
+                })
+            );
+            const secondMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'second.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/second.png',
+                })
+            );
+            await dataSource.manager.save([
+                new CanvasMedia({ canvasId: canvas.id, mediaId: firstMedia.id, index: 0 }),
+                new CanvasMedia({ canvasId: canvas.id, mediaId: secondMedia.id, index: 1 }),
+            ]);
+
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+            const visualWindows = manifest.items
+                .filter((item) => item.kind === 'visual')
+                .map((item) => ({
+                    mediaId: item.mediaId,
+                    startTime: item.startTime,
+                    endTime: item.endTime,
+                }));
+
+            assert.deepEqual(visualWindows, [
+                { mediaId: String(firstMedia.id), startTime: 0, endTime: 1 },
+                { mediaId: String(secondMedia.id), startTime: 0, endTime: 1 },
+            ]);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
     it('maps canvas media video controls to manifest visual items', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
@@ -483,6 +566,8 @@ describe('PlayerService', () => {
             assert.equal(visualItem.endTime, 9000);
             assert.equal(visualItem.trimStartTime, 1000);
             assert.equal(visualItem.trimEndTime, 8000);
+            assert.equal(visualItem.hasTimelineControls, true);
+            assert.equal(visualItem.isMuted, false);
             assert.equal(visualItem.volume, 0.55);
         } finally {
             await dataSource.destroy();

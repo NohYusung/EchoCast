@@ -45,6 +45,8 @@ export interface PlayerDraft {
         layerId: number;
         trimStartTime?: number;
         trimEndTime?: number;
+        hasTimelineControls?: boolean;
+        isMuted?: boolean;
         volume?: number;
     }>;
     media: Array<{

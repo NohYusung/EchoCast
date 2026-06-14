@@ -120,6 +120,59 @@ test('buildPlayerScenes does not reserve duration-based height for image media',
     assert.equal(scene.height, 0);
 });
 
+test('buildPlayerScenes carries video playback controls from manifest items', () => {
+    const manifest: PlayerManifest = {
+        episodeId: '1',
+        durationMs: 12000,
+        tracks: [
+            {
+                id: 'visual-1',
+                name: 'Visual',
+                kind: 'visual',
+                layerId: 0,
+                isMuted: false,
+            },
+        ],
+        items: [
+            {
+                id: 'visual-video',
+                trackId: 'visual-1',
+                kind: 'visual',
+                startTime: 2000,
+                endTime: 9000,
+                mediaId: 'video-1',
+                layerId: 0,
+                trimStartTime: 1000,
+                trimEndTime: 8000,
+                volume: 0.55,
+                isMuted: true,
+                hasTimelineControls: true,
+            },
+        ],
+        cues: [],
+        media: [
+            {
+                id: 'video-1',
+                kind: 'video',
+                url: '/media/video.mp4',
+                durationMs: 12000,
+            },
+        ],
+        records: [],
+        tts: [],
+    };
+
+    const [scene] = buildPlayerScenes(manifest);
+
+    assert.equal(scene.kind, 'video');
+    assert.equal(scene.mediaDuration, 12000);
+    assert.equal(scene.trimStartTime, 1000);
+    assert.equal(scene.trimEndTime, 8000);
+    assert.equal(scene.volume, 0.55);
+    assert.equal(scene.isMuted, true);
+    assert.equal(scene.hasTimelineControls, true);
+});
+
 test('shouldDriveStripScrollFromScenes enables playback scroll only when visual timing is distinct', () => {
     assert.equal(
         shouldDriveStripScrollFromScenes([
@@ -131,6 +184,7 @@ test('shouldDriveStripScrollFromScenes enables playback scroll only when visual 
                 endTime: 2000,
                 mediaId: 'media-1',
                 mediaUrl: '/media/one.png',
+                volume: 1,
                 height: 420,
                 background: '#111827',
             },
@@ -142,6 +196,7 @@ test('shouldDriveStripScrollFromScenes enables playback scroll only when visual 
                 endTime: 4000,
                 mediaId: 'media-2',
                 mediaUrl: '/media/two.png',
+                volume: 1,
                 height: 420,
                 background: '#111827',
             },

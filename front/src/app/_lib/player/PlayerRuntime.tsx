@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { buildPlaybackEvents } from './buildPlaybackEvents';
 import type { PlaybackEvent } from './buildPlaybackEvents';
 import type { PlayerManifest } from './playerManifest.types';
+import { syncPreviewVideoPlayback, type PreviewVideoClip } from './previewVideoPlayback';
 import { getPreviewScrollOffset, type PreviewScrollVisualSegment } from './previewScrollPosition';
 import { buildPlayerScenes, type PlayerScene } from './playerScenes';
 
@@ -70,6 +71,33 @@ function getActivePlaybackEvents(events: PlaybackEvent[], playheadMs: number) {
     return events.filter((event) => event.startTime <= playheadMs && playheadMs < event.endTime);
 }
 
+function toSeconds(milliseconds: number | undefined) {
+    return typeof milliseconds === 'number' && Number.isFinite(milliseconds) ? milliseconds / 1000 : undefined;
+}
+
+function getVideoSceneDurationMs(scene: PlayerScene) {
+    const itemDuration = Math.max(0, scene.endTime - scene.startTime);
+
+    if (scene.kind !== 'video') return itemDuration;
+    if (scene.hasTimelineControls) return itemDuration;
+
+    if (
+        typeof scene.trimStartTime === 'number' &&
+        Number.isFinite(scene.trimStartTime) &&
+        typeof scene.trimEndTime === 'number' &&
+        Number.isFinite(scene.trimEndTime) &&
+        scene.trimEndTime > scene.trimStartTime
+    ) {
+        return scene.trimEndTime - scene.trimStartTime;
+    }
+
+    if (typeof scene.mediaDuration === 'number' && Number.isFinite(scene.mediaDuration) && scene.mediaDuration > 0) {
+        return scene.mediaDuration;
+    }
+
+    return itemDuration;
+}
+
 export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; manifest: PlayerManifest }) {
     const scrollerRef = useRef<HTMLDivElement | null>(null);
     const sceneRefs = useRef(new Map<string, HTMLElement>());
@@ -90,12 +118,35 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
         [manifest.scrolls],
     );
     const playbackEvents = useMemo(() => buildPlaybackEvents(manifest), [manifest]);
-    const durationMs = Math.max(1000, manifest.durationMs, ...scenes.map((scene) => scene.endTime));
+    const durationMs = Math.max(
+        1000,
+        manifest.durationMs,
+        ...scenes.map((scene) => scene.endTime),
+        ...scenes.map((scene) => (scene.kind === 'video' ? scene.startTime + getVideoSceneDurationMs(scene) : 0)),
+    );
     const [playheadMs, setPlayheadMs] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isLooping, setIsLooping] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [volume, setVolume] = useState(82);
+    const videoClips = useMemo<PreviewVideoClip[]>(
+        () =>
+            scenes.map((scene) => ({
+                id: scene.id,
+                kind: scene.kind,
+                mediaType: scene.kind,
+                mediaUrl: scene.mediaUrl,
+                mediaDuration: scene.mediaDuration,
+                hasTimelineControls: scene.hasTimelineControls,
+                sourceStart: toSeconds(scene.trimStartTime),
+                sourceEnd: toSeconds(scene.trimEndTime),
+                volume: clamp((scene.volume * volume) / 100, 0, 1),
+                isMuted: isMuted || scene.isMuted === true,
+                start: scene.startTime / 1000,
+                duration: getVideoSceneDurationMs(scene) / 1000,
+            })),
+        [isMuted, scenes, volume],
+    );
     const activeScene = getActiveScene(scenes, playheadMs);
     const activeEvents = getActivePlaybackEvents(playbackEvents, playheadMs);
 
@@ -202,29 +253,13 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
     }, [activeEvents, isMuted, isPlaying, playbackEvents, playheadMs, volume]);
 
     useEffect(() => {
-        for (const scene of scenes) {
-            if (scene.kind !== 'video') continue;
-
-            const video = videoRefs.current.get(scene.id);
-            if (!video) continue;
-
-            if (activeScene?.id !== scene.id) {
-                video.pause();
-                continue;
-            }
-
-            const targetTime = Math.max(0, (playheadMs - scene.startTime) / 1000);
-            if (Math.abs(video.currentTime - targetTime) > 0.25) {
-                video.currentTime = targetTime;
-            }
-
-            if (isPlaying) {
-                void video.play().catch(() => undefined);
-            } else {
-                video.pause();
-            }
-        }
-    }, [activeScene, isPlaying, playheadMs, scenes]);
+        syncPreviewVideoPlayback({
+            clips: videoClips,
+            isPlaying,
+            playhead: playheadMs / 1000,
+            videos: videoRefs.current,
+        });
+    }, [isPlaying, playheadMs, videoClips]);
 
     useEffect(() => {
         return () => {
@@ -281,7 +316,6 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                                 {scene.kind === 'video' && scene.mediaUrl ? (
                                     <video
                                         className="vpp-media"
-                                        muted
                                         playsInline
                                         preload="metadata"
                                         ref={(node) => {
