@@ -75,8 +75,6 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
             .post(`/tracks/${track.id}/cues`)
             .send({
                 script: 'API로 추가한 큐',
-                startTime: 1500,
-                endTime: 5500,
                 volume: 0.85,
             })
             .expect(201);
@@ -89,10 +87,13 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(cueListResponse.body.data.total, 1);
         assert.equal(listedCue.characterId, character.id);
         assert.equal(listedCue.trackId, track.id);
-        assert.equal(listedCue.startTime, 1500);
-        assert.equal(listedCue.endTime, 5500);
+        assert.equal(listedCue.startTime, 0);
+        assert.equal(listedCue.endTime, 1000);
+        assert.equal(listedCue.startPosition, 0);
+        assert.equal(listedCue.endPosition, 0);
         assert.equal(listedCue.volume, 0.85);
         assert.equal(listedCue.script, 'API로 추가한 큐');
+        assert.equal(Object.hasOwn(listedCue, 'ttsVoiceId'), false);
 
         const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
         const updatedTrack = listResponse.body.data.items.find(
@@ -102,10 +103,13 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(updatedTrack.cues.length, 1);
         assert.equal(updatedTrack.cues[0].characterId, character.id);
         assert.equal(updatedTrack.cues[0].trackId, track.id);
-        assert.equal(updatedTrack.cues[0].startTime, 1500);
-        assert.equal(updatedTrack.cues[0].endTime, 5500);
+        assert.equal(updatedTrack.cues[0].startTime, 0);
+        assert.equal(updatedTrack.cues[0].endTime, 1000);
+        assert.equal(updatedTrack.cues[0].startPosition, 0);
+        assert.equal(updatedTrack.cues[0].endPosition, 0);
         assert.equal(updatedTrack.cues[0].volume, 0.85);
         assert.equal(updatedTrack.cues[0].script, 'API로 추가한 큐');
+        assert.equal(Object.hasOwn(updatedTrack.cues[0], 'ttsVoiceId'), false);
 
         const cueId = updatedTrack.cues[0].id;
         const updateResponse = await request(app.getHttpServer())
@@ -114,6 +118,8 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
                 script: 'API로 수정한 큐',
                 startTime: 1800,
                 endTime: 6000,
+                startPosition: 18,
+                endPosition: 72,
                 volume: 0.65,
             })
             .expect(200);
@@ -130,6 +136,8 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(trackWithUpdatedCue.cues[0].script, 'API로 수정한 큐');
         assert.equal(trackWithUpdatedCue.cues[0].startTime, 1800);
         assert.equal(trackWithUpdatedCue.cues[0].endTime, 6000);
+        assert.equal(trackWithUpdatedCue.cues[0].startPosition, 18);
+        assert.equal(trackWithUpdatedCue.cues[0].endPosition, 72);
         assert.equal(trackWithUpdatedCue.cues[0].volume, 0.65);
 
         const deleteResponse = await request(app.getHttpServer())

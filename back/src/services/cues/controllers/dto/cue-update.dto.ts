@@ -2,6 +2,12 @@ export class CueUpdateDto {
     script?: string;
     startTime?: number;
     endTime?: number;
-    ttsVoiceId?: number;
+    startCanvasMediaId?: number;
+    endCanvasMediaId?: number;
+    audioId?: number;
+    audioStartTime?: number;
+    audioEndTime?: number;
+    startPosition?: number;
+    endPosition?: number;
     volume?: number;
 }

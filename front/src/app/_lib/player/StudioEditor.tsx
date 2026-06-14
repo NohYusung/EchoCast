@@ -3,23 +3,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import type { StudioEpisodeDetails } from './getEpisodeDetails';
+import { getCutEditMediaDetails } from './cutEditMediaDetails';
 import {
     confirmImageCompositionDraft,
     createEmptyImageCompositionDraft,
-    moveImageCompositionLayer,
-    removeImageCompositionLayer,
-    selectImageCompositionLayer,
     syncImageCompositionDraft,
     toCanvasCreateMedias,
-    updateImageCompositionLayer,
     type ImageCompositionCanvasMedia,
     type ImageCompositionDraft,
-    type ImageCompositionLayer,
-    type ImageCompositionLayerPatch,
     type ImageCompositionSource,
 } from './imageComposition';
 import { getAudioDuration } from './audioDuration';
+import { audioInspectorSectionIds } from './audioInspectorSections';
 import { getAudioUploadCandidateKind, prepareAudioUploadFile } from './audioFileExtraction';
+import { getVideoDuration } from './videoDuration';
+import { getActiveCuePlaybackProgressLabel, getCuePlaybackProgressLabel } from './cuePlaybackProgress';
 import {
     stopStudioTimelineAudioPlayback,
     syncStudioTimelineAudioPlayback,
@@ -28,6 +26,7 @@ import {
 import {
     buildFileUploadUrlRequests,
     buildMediaUploadQueue,
+    buildMediaRegistrationRequest,
     getUploadContentType,
     toMediaUploadFailureMessage,
     uploadFileToPresignedUrl,
@@ -39,32 +38,65 @@ import {
     getNextMediaSelection,
     parseMediaDragPayload,
 } from './mediaDragSelection';
-import { getCueApiIdFromTimelineClipId, toCueMutationTarget, toCueTimingUpdateRequest } from './cueTimelinePersistence';
+import {
+    filterPreviewCanvasItems,
+    getPreviewCanvasOptions,
+    resolvePreviewCanvasId,
+    type PreviewCanvasOption,
+} from './previewCanvasSelection';
+import { previewModeDefinitions, type PreviewMode } from './previewModes';
+import {
+    getCueApiIdFromTimelineClipId,
+    resolveCueTimelineTrackId,
+    toClickedCuePositionRequest,
+    toCuePositionUpdateRequest,
+    toCueStripMarker,
+    toCueMutationTarget,
+    toCueTimingUpdateRequest,
+    type CueStripPositionRequest,
+} from './cueTimelinePersistence';
 import type { PlayerDraft } from './playerDraft.types';
 import type { PlayerManifest } from './playerManifest.types';
 import {
     getPreviewScrollAnchor,
     getPreviewScrollOffset,
+    getPreviewScrollOffsetForAnchor,
     getPreviewScrollPixel,
     getPreviewScrollPosition,
     getSelectedPreviewVisual,
     type PreviewScrollAnchor,
+    type PreviewScrollPositionEvent,
     type PreviewScrollVisualSegment,
 } from './previewScrollPosition';
+import { syncPreviewVideoPlayback } from './previewVideoPlayback';
 import {
     getScrollEventApiId,
     toClickedScrollAnchorMutationRequest,
     toDraggedScrollAnchorMutationRequest,
     toScrollAnchorMutationRequests,
     toScrollEventMutationRequest,
+    toTimelineDraggedScrollAnchorMutationRequest,
     type ScrollAnchorMutationRequest,
     type ScrollEventMutationRequest,
 } from './scrollEventPersistence';
-import { getTimelineSidebarResizeWidth } from './timelineResize';
+import {
+    clampTimelineAudioResizeTiming,
+    getTimelineAudioClipMaxDurationSeconds,
+    getTimelineResizeMinDurationSeconds,
+    getTimelineSidebarResizeWidth,
+} from './timelineResize';
+import { getTimelineScrubState } from './timelineScrub';
 import { getTrackDeleteUrl, toTrackMutationTarget } from './trackPersistence';
+import {
+    getAnchorDeleteUrl,
+    getAnchorEventDeleteUrl,
+    resolveAnchorPlacementTrackId,
+    toAnchorMutationTarget,
+} from './anchorPersistence';
 
 const TIMELINE_DURATION_SECONDS = 72;
 const TIMELINE_TRACK_HEIGHT = 58;
+const VIDEO_TIMELINE_TRACK_ID = 'canvas-video-track';
 const PREVIEW_CUT_HEIGHT = 198;
 const PREVIEW_SCROLL_STRIP_HEIGHT_PX = 2400;
 const INITIAL_PLAYHEAD_SECONDS = 18.4;
@@ -96,10 +128,16 @@ const SCROLL_POSITION_STEP_PX = 24;
 const MEDIA_DRAG_MIME = 'application/x-tooned-media-id';
 const MEDIA_BATCH_DRAG_MIME = 'application/x-tooned-media-ids';
 const AUDIO_DRAG_MIME = 'application/x-tooned-audio-id';
-const DROPPED_MEDIA_DURATION_SECONDS = 4;
+const CANVAS_MEDIA_SEQUENCE_UNIT_SECONDS = 1;
+const defaultAnchorEventDraft: AnchorEventDraft = {
+    type: 'scroll',
+    endAnchorId: '',
+    duration: '1000',
+    isSaving: false,
+    error: null,
+};
 
 type PanelId = 'fx' | 'char' | 'assets' | 'audio' | 'text' | 'settings';
-type PreviewMode = 'preview' | 'cutEdit' | 'motion';
 type CharacterId = string;
 type AudioTrackId = string;
 type TrackApiType = 'scroll' | 'scrolls' | 'record' | 'audio' | 'effect' | 'bgm';
@@ -144,11 +182,6 @@ type PanelDefinition = {
     title: string;
     description: string;
 };
-type PreviewModeDefinition = {
-    id: PreviewMode;
-    label: string;
-};
-
 type CharacterDefinition = {
     id: CharacterId;
     name: string;
@@ -186,9 +219,16 @@ type TimelineClip = {
     sublabel: string;
     audioId?: number;
     audioUrl?: string;
+    audioStart?: number;
+    audioEnd?: number;
+    audioDuration?: number;
     characterId?: CharacterId;
     effects?: EffectId[];
     volume?: number;
+    startCanvasMediaId?: number;
+    endCanvasMediaId?: number;
+    startPosition?: number;
+    endPosition?: number;
 };
 
 type ScrollEventClip = TimelineClip & {
@@ -205,8 +245,15 @@ type ScrollEventClip = TimelineClip & {
 type VisualClip = {
     id: string;
     canvasId?: number;
+    canvasMediaId?: number;
     index?: number;
     mediaId: number;
+    mediaDuration?: number;
+    hasTimelineControls?: boolean;
+    sourceStart?: number;
+    sourceEnd?: number;
+    volume?: number;
+    isMuted?: boolean;
     kind: 'cut' | 'video';
     start: number;
     duration: number;
@@ -223,6 +270,31 @@ type VisualClip = {
     subtitle?: string;
 };
 
+type CutEditCanvasSummary = {
+    id: number;
+    label: string;
+    sublabel: string;
+    layerCount: number;
+    clips: VisualClip[];
+};
+
+type CutEditCueTrack = {
+    id: string;
+    label: string;
+    color?: string;
+    cues: TrackCueListItem[];
+};
+
+type CutEditCueMarker = {
+    cue: TrackCueListItem;
+    cueId: string;
+    trackId: string;
+    trackLabel: string;
+    trackIndex: number;
+    top: number;
+    endTop: number;
+};
+
 type AnchorSelection = {
     id: string;
     anchorId: number;
@@ -231,11 +303,12 @@ type AnchorSelection = {
     time: number;
     position: number;
     index: number;
+    event: AnchorEvent | null;
     label: string;
     sublabel: string;
 };
 type Selection = TimelineClip | VisualClip | AnchorSelection;
-type TimelineItemKind = 'scroll' | 'audio';
+type TimelineItemKind = 'scroll' | 'audio' | 'video';
 type TimelineEditMode = 'move' | 'resize-start' | 'resize-end';
 type TimelineToolMode = 'select' | 'split' | 'selectL' | 'selectR';
 type TimelineEditableItem = Pick<TimelineClip | VisualClip, 'id' | 'start' | 'duration'>;
@@ -247,6 +320,13 @@ type TimelinePointerEdit = {
     pointerStartX: number;
     originalStart: number;
     originalDuration: number;
+    maxDuration?: number;
+};
+type TimelineAnchorPointerEdit = {
+    anchor: AnchorListItem;
+    pointerStartX: number;
+    originalTimeSeconds: number;
+    hasMoved: boolean;
 };
 type TimelinePointerEditRequest = {
     event: ReactPointerEvent<HTMLElement>;
@@ -254,11 +334,22 @@ type TimelinePointerEditRequest = {
     item: TimelineEditableItem;
     mode: TimelineEditMode;
 };
+type TimelineAnchorPointerEditRequest = {
+    event: ReactPointerEvent<HTMLElement>;
+    anchor: AnchorListItem;
+};
+type VideoClipControlPatch = Partial<Pick<VisualClip, 'sourceStart' | 'sourceEnd' | 'volume' | 'isMuted'>>;
 type TimelinePointerEditHandlers = {
     draggingItemId: string | null;
     onTimelinePointerEditStart: (request: TimelinePointerEditRequest) => void;
     onTimelinePointerEditMove: (event: ReactPointerEvent<HTMLElement>) => void;
     onTimelinePointerEditEnd: (event: ReactPointerEvent<HTMLElement>) => void;
+};
+type TimelineAnchorPointerEditHandlers = {
+    timelineAnchorEditingId: number | null;
+    onTimelineAnchorEditStart: (request: TimelineAnchorPointerEditRequest) => void;
+    onTimelineAnchorEditMove: (event: ReactPointerEvent<HTMLElement>) => void;
+    onTimelineAnchorEditEnd: (event: ReactPointerEvent<HTMLElement>) => void;
 };
 type TimelinePanelResize = {
     pointerStartY: number;
@@ -331,6 +422,17 @@ type PreviewAnchorPointerEdit = {
     originalPixel: number;
     hasMoved: boolean;
 };
+type PreviewCuePointerEdit = {
+    cue: TrackCueListItem;
+    trackId: string;
+    pointerStartY: number;
+    coordinateHeightPx: number;
+    visualClips: VisualClip[];
+    visualSegments: PreviewScrollVisualSegment[];
+    originalStartPixel: number;
+    originalEndPixel: number;
+    hasMoved: boolean;
+};
 type PreviewScrollPointerEditRequest = {
     event: ReactPointerEvent<HTMLElement>;
     item: ScrollEventClip;
@@ -340,6 +442,10 @@ type PreviewAnchorPointerEditRequest = {
     event: ReactPointerEvent<HTMLElement>;
     anchor: AnchorListItem;
     top: number;
+};
+type PreviewCuePointerEditRequest = {
+    event: ReactPointerEvent<HTMLElement>;
+    marker: CutEditCueMarker;
 };
 type PreviewScrollPointerEditHandlers = {
     previewScrollEditingId: string | null;
@@ -352,6 +458,12 @@ type PreviewAnchorPointerEditHandlers = {
     onPreviewAnchorEditStart: (request: PreviewAnchorPointerEditRequest) => void;
     onPreviewAnchorEditMove: (event: ReactPointerEvent<HTMLElement>) => void;
     onPreviewAnchorEditEnd: (event: ReactPointerEvent<HTMLElement>) => void;
+};
+type PreviewCuePointerEditHandlers = {
+    previewCueEditingId: number | null;
+    onPreviewCueEditStart: (request: PreviewCuePointerEditRequest) => void;
+    onPreviewCueEditMove: (event: ReactPointerEvent<HTMLElement>) => void;
+    onPreviewCueEditEnd: (event: ReactPointerEvent<HTMLElement>) => void;
 };
 type VisualCutPointerEditRequest = {
     event: ReactPointerEvent<HTMLElement>;
@@ -380,7 +492,12 @@ type TrackCueListItem = {
     };
     startTime: number;
     endTime: number;
-    ttsVoiceId?: number;
+    audioStartTime?: number;
+    audioEndTime?: number;
+    startCanvasMediaId?: number;
+    endCanvasMediaId?: number;
+    startPosition: number;
+    endPosition: number;
     volume: number;
 };
 type TrackScrollListItem = {
@@ -472,21 +589,36 @@ type AudioListResponse = {
     };
 };
 type CanvasListMediaItem = {
+    canvasMediaId?: number;
     mediaId: number;
     mediaName?: string;
     mediaType?: MediaType;
     mediaUrl?: string;
     duration?: number;
     index?: number;
+    startTime?: number;
+    endTime?: number;
+    sourceStartTime?: number;
+    sourceEndTime?: number;
+    volume?: number;
+    isMuted?: boolean;
 };
 type CanvasListItem = {
     id: number;
     episodeId: number;
+    canvasMediaId?: number;
     mediaId?: number;
     mediaName?: string;
     mediaType?: MediaType;
     mediaUrl?: string;
+    duration?: number;
     index?: number;
+    startTime?: number;
+    endTime?: number;
+    sourceStartTime?: number;
+    sourceEndTime?: number;
+    volume?: number;
+    isMuted?: boolean;
     medias?: CanvasListMediaItem[];
 };
 type CanvasListResponse = {
@@ -559,6 +691,42 @@ type AudioDropResponse = {
         audio: AudioListItem;
     };
 };
+type CanvasUpdateMediaRequest = {
+    mediaId: number;
+    index?: number;
+    startTime?: number;
+    endTime?: number;
+    sourceStartTime?: number;
+    sourceEndTime?: number;
+    volume?: number;
+    isMuted?: boolean;
+};
+type AnchorEvent =
+    | {
+          type: 'scroll';
+          id: number;
+          scrollId: number;
+          startAnchorId: number;
+          endAnchorId: number;
+          canvasId?: number;
+          startIndex?: number;
+          endIndex?: number;
+          startTime?: number;
+          endTime?: number;
+          startPosition?: number;
+          endPosition?: number;
+      }
+    | {
+          type: 'pause';
+          id: number;
+          pauseId: number;
+          anchorId: number;
+          duration: number;
+          canvasId?: number;
+          index?: number;
+          time?: number;
+          position?: number;
+      };
 type AnchorListItem = {
     id: number;
     trackId: number;
@@ -566,6 +734,7 @@ type AnchorListItem = {
     time: number;
     position: number;
     index: number;
+    event: AnchorEvent | null;
 };
 type AnchorListResponse = {
     data: {
@@ -573,6 +742,14 @@ type AnchorListResponse = {
         total: number;
     };
 };
+type AnchorEventDraft = {
+    type: 'scroll' | 'pause';
+    endAnchorId: string;
+    duration: string;
+    isSaving: boolean;
+    error: string | null;
+};
+type AnchorEventMutationRequest = { type: 'scroll'; endAnchorId: number } | { type: 'pause'; duration: number };
 type CharacterCreateDraft = {
     name: string;
     role: CharacterRole;
@@ -586,12 +763,21 @@ type CharacterCreatePanelState = {
 };
 type CueCreateRequest = {
     script: string;
-    startTime: number;
-    endTime: number;
-    ttsVoiceId?: number;
+    startTime?: number;
+    endTime?: number;
+    audioId?: number;
+    audioStartTime?: number;
+    audioEndTime?: number;
+    startCanvasMediaId?: number;
+    endCanvasMediaId?: number;
+    startPosition?: number;
+    endPosition?: number;
     volume?: number;
 };
 type CueUpdateRequest = Partial<CueCreateRequest>;
+type CueSplitRequest = {
+    splitTime: number;
+};
 type CueScriptPanelState = {
     draft: string;
     isSaving: boolean;
@@ -651,20 +837,6 @@ const panelDefinitions: PanelDefinition[] = [
         icon: 'settings',
         title: '프로젝트 설정',
         description: '영상 비율, 내보내기 품질, 작업 기준을 조정합니다.',
-    },
-];
-const previewModeDefinitions: PreviewModeDefinition[] = [
-    {
-        id: 'preview',
-        label: '미리보기',
-    },
-    {
-        id: 'cutEdit',
-        label: '컷 편집',
-    },
-    {
-        id: 'motion',
-        label: '이펙트',
     },
 ];
 const timelineToolDefinitions: TimelineToolDefinition[] = [
@@ -1005,6 +1177,14 @@ function toTimelineSeconds(time: number) {
     return time >= 1000 ? time / 1000 : time;
 }
 
+function toTimelineMilliseconds(seconds: number | undefined) {
+    return typeof seconds === 'number' && Number.isFinite(seconds) ? Math.round(Math.max(0, seconds) * 1000) : undefined;
+}
+
+function toCanvasMediaSeconds(time: number | undefined) {
+    return typeof time === 'number' && Number.isFinite(time) ? Math.max(0, time / 1000) : undefined;
+}
+
 function snapTimelineSeconds(time: number) {
     return Math.round(time / TIMELINE_SNAP_SECONDS) * TIMELINE_SNAP_SECONDS;
 }
@@ -1041,22 +1221,80 @@ function reflowVisualClips(clips: VisualClip[]) {
     });
 }
 
-function moveVisualClip(clips: VisualClip[], clipId: string, targetIndex: number) {
-    const currentIndex = clips.findIndex((clip) => clip.id === clipId);
+function reflowVisualClipsForCanvas(clips: VisualClip[], canvasId: number) {
+    let nextStart = 0;
+
+    return clips.map((clip) => {
+        if (clip.canvasId !== canvasId) {
+            return clip;
+        }
+
+        const duration = Math.max(1, Number(clip.duration.toFixed(2)));
+        const nextClip = {
+            ...clip,
+            start: Number(nextStart.toFixed(2)),
+            duration,
+        };
+
+        nextStart += duration;
+        return nextClip;
+    });
+}
+
+function moveVisualClipWithinCanvas(clips: VisualClip[], clipId: string, targetIndex: number, canvasId: number) {
+    const canvasClips = clips.filter((clip) => clip.canvasId === canvasId);
+    const currentIndex = canvasClips.findIndex((clip) => clip.id === clipId);
 
     if (currentIndex < 0) {
         return clips;
     }
 
-    const nextClips = [...clips];
-    const [movedClip] = nextClips.splice(currentIndex, 1);
-    nextClips.splice(clamp(targetIndex, 0, nextClips.length), 0, movedClip);
+    const nextCanvasClips = [...canvasClips];
+    const [movedClip] = nextCanvasClips.splice(currentIndex, 1);
+    nextCanvasClips.splice(clamp(targetIndex, 0, nextCanvasClips.length), 0, movedClip);
 
-    return reflowVisualClips(nextClips);
+    const queue = [...nextCanvasClips];
+    const nextClips = clips.map((clip) => (clip.canvasId === canvasId ? queue.shift() ?? clip : clip));
+
+    return reflowVisualClipsForCanvas(nextClips, canvasId);
 }
 
 function toggleIdInList(ids: string[], id: string) {
     return ids.includes(id) ? ids.filter((itemId) => itemId !== id) : [...ids, id];
+}
+
+function getCanvasMediaClipDurationSeconds(item: { mediaType: Exclude<MediaType, 'audio'>; duration?: number }) {
+    if (item.mediaType === 'video' && typeof item.duration === 'number' && Number.isFinite(item.duration) && item.duration > 0) {
+        return item.duration / 1000;
+    }
+
+    return CANVAS_MEDIA_SEQUENCE_UNIT_SECONDS;
+}
+
+function getVisualClipTimingLabel(clip: VisualClip) {
+    if (clip.mediaType === 'video') {
+        if (clip.hasTimelineControls) {
+            return `타임라인 ${formatTime(clip.start)}-${formatTime(clip.start + clip.duration)}`;
+        }
+
+        return `영상 ${formatAudioDuration(clip.mediaDuration)}`;
+    }
+
+    return '앵커/이벤트 기준';
+}
+
+function getVideoTimelineClipMaxDurationSeconds(clip: VisualClip) {
+    const sourceStart = typeof clip.sourceStart === 'number' && Number.isFinite(clip.sourceStart) ? clip.sourceStart : 0;
+
+    if (typeof clip.sourceEnd === 'number' && Number.isFinite(clip.sourceEnd) && clip.sourceEnd > sourceStart) {
+        return Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, clip.sourceEnd - sourceStart);
+    }
+
+    if (typeof clip.mediaDuration === 'number' && Number.isFinite(clip.mediaDuration) && clip.mediaDuration > 0) {
+        return Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, clip.mediaDuration / 1000 - sourceStart);
+    }
+
+    return undefined;
 }
 
 function isTimelineTickMultiple(time: number, step: number) {
@@ -1177,12 +1415,20 @@ function isVisualClipId(id: string) {
 function toVisualClips(items: CanvasListItem[]): VisualClip[] {
     const visualItems: Array<{
         canvasId: number;
+        canvasMediaId?: number;
         clipId: string;
         mediaId: number;
         mediaName?: string;
         mediaType: Exclude<MediaType, 'audio'>;
         mediaUrl: string;
+        duration?: number;
         index?: number;
+        startTime?: number;
+        endTime?: number;
+        sourceStartTime?: number;
+        sourceEndTime?: number;
+        volume?: number;
+        isMuted?: boolean;
     }> = [];
 
     items.forEach((item) => {
@@ -1191,11 +1437,19 @@ function toVisualClips(items: CanvasListItem[]): VisualClip[] {
                 ? item.medias
                 : [
                       {
+                          canvasMediaId: item.canvasMediaId,
                           mediaId: item.mediaId,
                           mediaName: item.mediaName,
                           mediaType: item.mediaType,
                           mediaUrl: item.mediaUrl,
+                          duration: item.duration,
                           index: item.index,
+                          startTime: item.startTime,
+                          endTime: item.endTime,
+                          sourceStartTime: item.sourceStartTime,
+                          sourceEndTime: item.sourceEndTime,
+                          volume: item.volume,
+                          isMuted: item.isMuted,
                       },
                   ];
 
@@ -1210,6 +1464,7 @@ function toVisualClips(items: CanvasListItem[]): VisualClip[] {
 
             visualItems.push({
                 canvasId: item.id,
+                canvasMediaId: media.canvasMediaId,
                 clipId:
                     item.medias && item.medias.length > 1
                         ? `canvas-${item.id}-media-${media.mediaId}`
@@ -1218,7 +1473,14 @@ function toVisualClips(items: CanvasListItem[]): VisualClip[] {
                 mediaName: media.mediaName,
                 mediaType: media.mediaType,
                 mediaUrl: media.mediaUrl,
+                duration: media.duration,
                 index: media.index,
+                startTime: media.startTime,
+                endTime: media.endTime,
+                sourceStartTime: media.sourceStartTime,
+                sourceEndTime: media.sourceEndTime,
+                volume: media.volume,
+                isMuted: media.isMuted,
             });
         });
     });
@@ -1229,22 +1491,46 @@ function toVisualClips(items: CanvasListItem[]): VisualClip[] {
             a.canvasId - b.canvasId ||
             a.mediaId - b.mediaId,
     );
-    const duration = visualItems.length > 0 ? Math.max(4, TIMELINE_DURATION_SECONDS / visualItems.length) : 0;
 
-    return visualItems.map((item, index) => ({
-        id: item.clipId,
-        canvasId: item.canvasId,
-        index: item.index,
-        mediaId: item.mediaId,
-        kind: item.mediaType === 'video' ? 'video' : 'cut',
-        start: Number((index * duration).toFixed(2)),
-        duration: Number(duration.toFixed(2)),
-        label: item.mediaName?.trim() || `${item.mediaType === 'video' ? '영상' : '이미지'} ${String(index + 1).padStart(2, '0')}`,
-        description: item.mediaType === 'video' ? '스트립에 등록된 영상 미디어' : '스트립에 등록된 이미지 미디어',
-        background: visualClipBackgrounds[index % visualClipBackgrounds.length],
-        mediaUrl: item.mediaUrl,
-        mediaType: item.mediaType,
-    }));
+    let nextStart = 0;
+
+    return visualItems.map((item, index) => {
+        const explicitStart = toCanvasMediaSeconds(item.startTime);
+        const explicitEnd = toCanvasMediaSeconds(item.endTime);
+        const hasTimelineControls =
+            item.mediaType === 'video' &&
+            typeof explicitStart === 'number' &&
+            typeof explicitEnd === 'number' &&
+            explicitEnd > explicitStart;
+        const duration = hasTimelineControls
+            ? Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, explicitEnd - explicitStart)
+            : getCanvasMediaClipDurationSeconds(item);
+        const start = hasTimelineControls ? explicitStart : nextStart;
+        const clip = {
+            id: item.clipId,
+            canvasId: item.canvasId,
+            canvasMediaId: item.canvasMediaId,
+            index: item.index,
+            mediaId: item.mediaId,
+            mediaDuration: item.duration,
+            hasTimelineControls,
+            sourceStart: toCanvasMediaSeconds(item.sourceStartTime),
+            sourceEnd: toCanvasMediaSeconds(item.sourceEndTime),
+            volume: item.volume,
+            isMuted: item.isMuted,
+            kind: item.mediaType === 'video' ? 'video' : 'cut',
+            start: Number(start.toFixed(2)),
+            duration: Number(duration.toFixed(2)),
+            label: item.mediaName?.trim() || `${item.mediaType === 'video' ? '영상' : '이미지'} ${String(index + 1).padStart(2, '0')}`,
+            description: item.mediaType === 'video' ? '스트립에 등록된 영상 미디어' : '스트립에 등록된 이미지 미디어',
+            background: visualClipBackgrounds[index % visualClipBackgrounds.length],
+            mediaUrl: item.mediaUrl,
+            mediaType: item.mediaType,
+        } satisfies VisualClip;
+
+        nextStart = Math.max(nextStart, start + duration);
+        return clip;
+    });
 }
 
 function toImageCompositionSources(clips: VisualClip[]): ImageCompositionSource[] {
@@ -1261,11 +1547,99 @@ function toImageCompositionSources(clips: VisualClip[]): ImageCompositionSource[
             label: clip.label,
             mediaUrl: clip.mediaUrl,
             order: index,
+            ...(clip.hasTimelineControls
+                ? {
+                      startTime: toTimelineMilliseconds(clip.start),
+                      endTime: toTimelineMilliseconds(clip.start + clip.duration),
+                  }
+                : {}),
+            ...(typeof clip.sourceStart === 'number' ? { sourceStartTime: toTimelineMilliseconds(clip.sourceStart) } : {}),
+            ...(typeof clip.sourceEnd === 'number' ? { sourceEndTime: toTimelineMilliseconds(clip.sourceEnd) } : {}),
+            ...(typeof clip.volume === 'number' ? { volume: clip.volume } : {}),
+            ...(typeof clip.isMuted === 'boolean' ? { isMuted: clip.isMuted } : {}),
         }));
 }
 
-function getDroppedMediaClipId(mediaId: number, clips: VisualClip[]) {
-    const baseId = `media-${mediaId}`;
+function toCanvasUpdateMediasFromVisualClips(clips: VisualClip[], canvasId: number): CanvasUpdateMediaRequest[] {
+    return clips
+        .filter((clip) => clip.canvasId === canvasId)
+        .sort(
+            (a, b) =>
+                (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER) ||
+                a.mediaId - b.mediaId,
+        )
+        .map((clip, index) => ({
+            mediaId: clip.mediaId,
+            index,
+            ...(clip.mediaType === 'video' && clip.hasTimelineControls
+                ? {
+                      startTime: toTimelineMilliseconds(clip.start),
+                      endTime: toTimelineMilliseconds(clip.start + clip.duration),
+                  }
+                : {}),
+            ...(clip.mediaType === 'video' && typeof clip.sourceStart === 'number'
+                ? { sourceStartTime: toTimelineMilliseconds(clip.sourceStart) }
+                : {}),
+            ...(clip.mediaType === 'video' && typeof clip.sourceEnd === 'number'
+                ? { sourceEndTime: toTimelineMilliseconds(clip.sourceEnd) }
+                : {}),
+            ...(clip.mediaType === 'video' && typeof clip.volume === 'number' ? { volume: clip.volume } : {}),
+            ...(clip.mediaType === 'video' && typeof clip.isMuted === 'boolean' ? { isMuted: clip.isMuted } : {}),
+        }));
+}
+
+function getCanvasMediaCount(item: CanvasListItem) {
+    if (item.medias) {
+        return item.medias.length;
+    }
+
+    return typeof item.mediaId === 'number' ? 1 : 0;
+}
+
+function toCutEditCanvasSummaries(items: CanvasListItem[], clips: VisualClip[]): CutEditCanvasSummary[] {
+    const clipsByCanvasId = new Map<number, VisualClip[]>();
+
+    clips.forEach((clip) => {
+        if (typeof clip.canvasId !== 'number') {
+            return;
+        }
+
+        clipsByCanvasId.set(clip.canvasId, [...(clipsByCanvasId.get(clip.canvasId) ?? []), clip]);
+    });
+
+    const seenCanvasIds = new Set(items.map((item) => item.id));
+    const summaries = items.map((item, index) => {
+        const layerCount = getCanvasMediaCount(item);
+        const canvasClips = clipsByCanvasId.get(item.id) ?? [];
+
+        return {
+            id: item.id,
+            label: `캔버스 ${String(index + 1).padStart(2, '0')}`,
+            sublabel: `ID ${item.id} · ${layerCount}개 레이어`,
+            layerCount,
+            clips: canvasClips,
+        };
+    });
+
+    clipsByCanvasId.forEach((canvasClips, canvasId) => {
+        if (seenCanvasIds.has(canvasId)) {
+            return;
+        }
+
+        summaries.push({
+            id: canvasId,
+            label: `캔버스 ${canvasId}`,
+            sublabel: `ID ${canvasId} · ${canvasClips.length}개 레이어`,
+            layerCount: canvasClips.length,
+            clips: canvasClips,
+        });
+    });
+
+    return summaries;
+}
+
+function getDroppedMediaClipId(mediaId: number, clips: VisualClip[], canvasId?: number) {
+    const baseId = typeof canvasId === 'number' ? `canvas-${canvasId}-media-${mediaId}` : `media-${mediaId}`;
 
     if (!clips.some((clip) => clip.id === baseId)) {
         return baseId;
@@ -1279,21 +1653,26 @@ function getDroppedMediaClipId(mediaId: number, clips: VisualClip[]) {
     return `${baseId}-${suffix}`;
 }
 
-function toDroppedMediaVisualClip(media: MediaListItem, clips: VisualClip[]): VisualClip | null {
+function toDroppedMediaVisualClip(media: MediaListItem, clips: VisualClip[], canvasId?: number): VisualClip | null {
     if (media.mediaType === 'audio') {
         return null;
     }
 
-    const index = clips.length;
+    const targetClips = typeof canvasId === 'number' ? clips.filter((clip) => clip.canvasId === canvasId) : clips;
+    const index = targetClips.length;
     const label = media.mediaName?.trim() || `${getMediaTypeLabel(media.mediaType)} ${String(index + 1).padStart(2, '0')}`;
-    const start = clips.reduce((maxEnd, clip) => Math.max(maxEnd, clip.start + clip.duration), 0);
+    const start = targetClips.reduce((maxEnd, clip) => Math.max(maxEnd, clip.start + clip.duration), 0);
+    const duration = getCanvasMediaClipDurationSeconds({ mediaType: media.mediaType, duration: media.duration });
 
     return {
-        id: getDroppedMediaClipId(media.id, clips),
+        id: getDroppedMediaClipId(media.id, clips, canvasId),
+        canvasId,
+        index,
         mediaId: media.id,
+        mediaDuration: media.duration,
         kind: media.mediaType === 'video' ? 'video' : 'cut',
         start: Number(start.toFixed(2)),
-        duration: DROPPED_MEDIA_DURATION_SECONDS,
+        duration: Number(duration.toFixed(2)),
         label,
         description: media.mediaType === 'video' ? '미디어 탭에서 드롭한 영상 미디어' : '미디어 탭에서 드롭한 이미지 미디어',
         background: visualClipBackgrounds[index % visualClipBackgrounds.length],
@@ -1348,22 +1727,31 @@ function toTimelineData(tracks: TrackListItem[]): TrackTimelineData {
                 .map((cue) => {
                     const start = toTimelineSeconds(cue.startTime);
                     const end = toTimelineSeconds(cue.endTime);
+                    const cueTrackId = resolveCueTimelineTrackId({
+                        parentTrackId: track.id,
+                        cueTrackId: cue.trackId,
+                    });
 
                     return {
                         id: `cue-${cue.id}`,
-                        track: String(track.id),
+                        track: cueTrackId,
                         start,
                         duration: Math.max(end - start, 0.2),
                         label: cue.script || cue.audio?.name || '오디오',
                         sublabel: cue.audioId
                             ? `audio ${cue.audioId} · vol ${cue.volume}`
-                            : cue.ttsVoiceId
-                              ? `voice ${cue.ttsVoiceId} · vol ${cue.volume}`
-                              : `vol ${cue.volume}`,
+                            : `pos ${Math.round(cue.startPosition)}% · vol ${cue.volume}`,
                         audioId: cue.audioId,
                         audioUrl: cue.audio?.audioUrl,
+                        audioStart: typeof cue.audioStartTime === 'number' ? toTimelineSeconds(cue.audioStartTime) : undefined,
+                        audioEnd: typeof cue.audioEndTime === 'number' ? toTimelineSeconds(cue.audioEndTime) : undefined,
+                        audioDuration: typeof cue.audio?.duration === 'number' ? toTimelineSeconds(cue.audio.duration) : undefined,
                         characterId: typeof cue.characterId === 'number' ? String(cue.characterId) : undefined,
                         volume: cue.volume,
+                        startCanvasMediaId: cue.startCanvasMediaId,
+                        endCanvasMediaId: cue.endCanvasMediaId,
+                        startPosition: cue.startPosition,
+                        endPosition: cue.endPosition,
                     };
                 }),
         ),
@@ -1393,6 +1781,55 @@ function toTimelineData(tracks: TrackListItem[]): TrackTimelineData {
                 }),
         ),
     };
+}
+
+function toCutEditCueTracks(tracks: TrackListItem[], audioTracks: AudioTrackDefinition[]): CutEditCueTrack[] {
+    const trackDefinitionById = new Map(audioTracks.map((track) => [track.id, track]));
+    const cueTrackById = new Map(
+        tracks
+            .filter((track) => !isScrollTrackKind(track.type) && typeof track.characterId === 'number')
+            .map((track) => {
+                const trackDefinition = trackDefinitionById.get(String(track.id));
+
+                return [
+                    String(track.id),
+                    {
+                        id: String(track.id),
+                        label: trackDefinition?.label ?? track.name,
+                        color: trackDefinition?.color,
+                        cues: [] as TrackCueListItem[],
+                    },
+                ] as const;
+            }),
+    );
+    const seenCueIds = new Set<number>();
+
+    tracks.forEach((track) => {
+        (track.cues ?? []).forEach((cue) => {
+            if (seenCueIds.has(cue.id)) {
+                return;
+            }
+
+            const cueTrack = cueTrackById.get(
+                resolveCueTimelineTrackId({
+                    parentTrackId: track.id,
+                    cueTrackId: cue.trackId,
+                }),
+            );
+
+            if (!cueTrack) {
+                return;
+            }
+
+            cueTrack.cues.push(cue);
+            seenCueIds.add(cue.id);
+        });
+    });
+
+    return [...cueTrackById.values()].map((track) => ({
+        ...track,
+        cues: [...track.cues].sort((a, b) => a.startPosition - b.startPosition || a.id - b.id),
+    }));
 }
 
 async function listTracks(apiBaseUrl: string, episodeId: string) {
@@ -1479,6 +1916,20 @@ async function updateCue(apiBaseUrl: string, trackId: string, cueId: string, cue
     }
 }
 
+async function splitCue(apiBaseUrl: string, trackId: string, cueId: string, request: CueSplitRequest) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/cues/${cueId}/split`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Cue split failed: ${response.status}`);
+    }
+}
+
 async function deleteCue(apiBaseUrl: string, trackId: string, cueId: string) {
     const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/cues/${cueId}`, {
         method: 'DELETE',
@@ -1499,7 +1950,7 @@ async function listAnchors(apiBaseUrl: string, trackId: string) {
     }
 
     const result = (await response.json()) as AnchorListResponse;
-    return result.data.items;
+    return result.data.items.map((anchor) => ({ ...anchor, event: anchor.event ?? null }));
 }
 
 async function listAnchorsForTracks(apiBaseUrl: string, trackIds: string[]) {
@@ -1525,6 +1976,7 @@ function toAnchorSelection(anchor: AnchorListItem): AnchorSelection {
         time: anchor.time,
         position: anchor.position,
         index: anchor.index,
+        event: anchor.event ?? null,
         label: `앵커 A${anchor.id}`,
         sublabel: `${formatTime(toTimelineSeconds(anchor.time))} · ${formatScrollIndexedPosition(anchor.index, anchor.position)}`,
     };
@@ -1546,6 +1998,53 @@ function applyAnchorMutation(anchor: AnchorListItem, request: ScrollAnchorMutati
 
 function replaceAnchor(anchors: AnchorListItem[], nextAnchor: AnchorListItem) {
     return sortAnchors(anchors.map((anchor) => (anchor.id === nextAnchor.id ? nextAnchor : anchor)));
+}
+
+function applyCuePositionMutation(cue: TrackCueListItem, request: CueStripPositionRequest): TrackCueListItem {
+    return {
+        ...cue,
+        startCanvasMediaId: request.startCanvasMediaId,
+        endCanvasMediaId: request.endCanvasMediaId,
+        startPosition: request.startPosition,
+        endPosition: request.endPosition,
+    };
+}
+
+function replaceCueInTracks(tracks: TrackListItem[], trackId: string, nextCue: TrackCueListItem) {
+    return tracks.map((track) =>
+        String(track.id) === trackId || (track.cues ?? []).some((cue) => cue.id === nextCue.id)
+            ? {
+                  ...track,
+                  cues: (track.cues ?? []).map((cue) => (cue.id === nextCue.id ? nextCue : cue)),
+              }
+            : track,
+    );
+}
+
+function replaceCuePositionInTimelineData(
+    timelineData: TimelineData,
+    cue: TrackCueListItem,
+    request: CueStripPositionRequest,
+) {
+    const cueId = `cue-${cue.id}`;
+
+    return {
+        ...timelineData,
+        timelineClips: timelineData.timelineClips.map((clip) =>
+            clip.id === cueId
+                ? {
+                      ...clip,
+                      startCanvasMediaId: request.startCanvasMediaId,
+                      endCanvasMediaId: request.endCanvasMediaId,
+                      startPosition: request.startPosition,
+                      endPosition: request.endPosition,
+                      sublabel: clip.audioId
+                          ? `audio ${clip.audioId} · pos ${Math.round(request.startPosition)}% · vol ${clip.volume ?? cue.volume}`
+                          : `pos ${Math.round(request.startPosition)}% · vol ${clip.volume ?? cue.volume}`,
+                  }
+                : clip,
+        ),
+    };
 }
 
 function findMatchingAnchor(anchors: AnchorListItem[], request: ScrollAnchorMutationRequest) {
@@ -1594,6 +2093,52 @@ async function updateAnchor(apiBaseUrl: string, trackId: string, anchorId: numbe
 
     if (!response.ok) {
         throw new Error(`Anchor update failed: ${response.status}`);
+    }
+}
+
+async function deleteAnchor(apiBaseUrl: string, trackId: string, anchorId: number) {
+    const target = toAnchorMutationTarget({ trackId, anchorId });
+
+    if (!target) {
+        throw new Error('Anchor delete target is invalid');
+    }
+
+    const response = await fetch(getAnchorDeleteUrl(apiBaseUrl, target), {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Anchor delete failed: ${response.status}`);
+    }
+}
+
+async function upsertAnchorEvent(apiBaseUrl: string, trackId: string, anchorId: number, request: AnchorEventMutationRequest) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/anchors/${anchorId}/event`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Anchor event save failed: ${response.status}`);
+    }
+}
+
+async function deleteAnchorEvent(apiBaseUrl: string, trackId: string, anchorId: number) {
+    const target = toAnchorMutationTarget({ trackId, anchorId });
+
+    if (!target) {
+        throw new Error('Anchor event delete target is invalid');
+    }
+
+    const response = await fetch(getAnchorEventDeleteUrl(apiBaseUrl, target), {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Anchor event delete failed: ${response.status}`);
     }
 }
 
@@ -1736,21 +2281,12 @@ async function createMedia(
     }
 }
 
-async function createCanvas(apiBaseUrl: string, episodeId: string, canvas: { medias: ImageCompositionCanvasMedia[] }) {
-    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/episodes/${episodeId}/canvases`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(canvas),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Canvas create failed: ${response.status}`);
-    }
-}
-
-async function updateCanvas(apiBaseUrl: string, episodeId: string, canvasId: number, canvas: { medias: ImageCompositionCanvasMedia[] }) {
+async function updateCanvas(
+    apiBaseUrl: string,
+    episodeId: string,
+    canvasId: number,
+    canvas: { medias: Array<ImageCompositionCanvasMedia | CanvasUpdateMediaRequest> },
+) {
     const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/episodes/${episodeId}/canvases/${canvasId}`, {
         method: 'PUT',
         headers: {
@@ -1817,7 +2353,7 @@ function isTimelineClip(item: Selection): item is TimelineClip {
 }
 
 function isScrollEventClip(item: Selection): item is ScrollEventClip {
-    return isTimelineClip(item) && 'startPosition' in item && 'endPosition' in item;
+    return isTimelineClip(item) && item.id.startsWith('scroll-');
 }
 
 function isAnchorSelection(item: Selection): item is AnchorSelection {
@@ -1914,7 +2450,7 @@ function getMediaThumbStyle(media: MediaListItem, fallbackIndex: number): CSSPro
 
 function getPreviewPlayheadPixel(
     playhead: number,
-    scrollEvents: ScrollEventClip[],
+    scrollEvents: PreviewScrollPositionEvent[],
     stripHeightPx: number,
     visualSegments: PreviewScrollVisualSegment[],
 ) {
@@ -1974,16 +2510,6 @@ function getPreviewCutStyle(clip: VisualClip, visualClipCount: number, stripHeig
     };
 }
 
-function getImageCompositionLayerStyle(layer: ImageCompositionLayer): CSSProperties {
-    return {
-        left: `${layer.x}%`,
-        top: `${layer.y}%`,
-        opacity: layer.isVisible ? layer.opacity : 0.18,
-        transform: `translate(-50%, -50%) scale(${layer.scale})`,
-        zIndex: layer.zIndex + 1,
-    };
-}
-
 function formatScrollIndexedPosition(index: number | undefined, position: number) {
     const positionLabel = `${Math.round(position)}%`;
 
@@ -1992,6 +2518,16 @@ function formatScrollIndexedPosition(index: number | undefined, position: number
     }
 
     return `${index + 1}번째 · ${positionLabel}`;
+}
+
+function formatCueMediaPosition(canvasMediaId: number | undefined, position: number | undefined) {
+    const positionLabel = typeof position === 'number' ? `${Math.round(position)}%` : '-';
+
+    if (typeof canvasMediaId !== 'number') {
+        return positionLabel;
+    }
+
+    return `미디어 ${canvasMediaId} · ${positionLabel}`;
 }
 
 function formatScrollRangeLabel(startIndex: number | undefined, startPosition: number, endIndex: number | undefined, endPosition: number) {
@@ -2013,6 +2549,28 @@ function applyScrollAnchorToEvent(event: ScrollEventClip, edge: 'start' | 'end',
         endIndex: anchor.index,
         endPosition: anchor.position,
     };
+}
+
+function toPreviewPlaybackScrollEvents(scrollEvents: ScrollEventClip[], anchors: AnchorListItem[]): PreviewScrollPositionEvent[] {
+    const pauseEvents = anchors.flatMap((anchor): PreviewScrollPositionEvent[] => {
+        if (anchor.event?.type !== 'pause') {
+            return [];
+        }
+
+        return [
+            {
+                start: toTimelineSeconds(anchor.time),
+                duration: Math.max(anchor.event.duration / 1000, 0.001),
+                canvasId: anchor.canvasId,
+                startIndex: anchor.index,
+                endIndex: anchor.index,
+                startPosition: anchor.position,
+                endPosition: anchor.position,
+            },
+        ];
+    });
+
+    return [...scrollEvents, ...pauseEvents].sort((a, b) => a.start - b.start || a.duration - b.duration);
 }
 
 function getPreviewScrollEditAnchors(edit: PreviewScrollPointerEdit, clientY: number) {
@@ -2061,37 +2619,64 @@ function getPreviewAnchorEditRequest(edit: PreviewAnchorPointerEdit, clientY: nu
     });
 }
 
+function getPreviewCueEditRequest(edit: PreviewCuePointerEdit, clientY: number) {
+    const deltaPx = Math.round(clientY - edit.pointerStartY);
+    const coordinateHeightPx = getPreviewCoordinateHeight(edit.coordinateHeightPx);
+    const minPixel = Math.min(edit.originalStartPixel, edit.originalEndPixel);
+    const maxPixel = Math.max(edit.originalStartPixel, edit.originalEndPixel);
+    const clampedDeltaPx = clamp(deltaPx, -minPixel, coordinateHeightPx - maxPixel);
+
+    return toCuePositionUpdateRequest({
+        stripHeightPx: coordinateHeightPx,
+        startStripPositionPx: edit.originalStartPixel + clampedDeltaPx,
+        endStripPositionPx: edit.originalEndPixel + clampedDeltaPx,
+        visualClips: edit.visualClips,
+        visualSegments: edit.visualSegments,
+    });
+}
+
 function getTimelineEditTiming(edit: TimelinePointerEdit, clientX: number, pxPerSecond: number, durationSeconds: number, isSnapEnabled: boolean) {
     const deltaSeconds = getTimelineEditSeconds((clientX - edit.pointerStartX) / pxPerSecond, isSnapEnabled);
     const flexibleDurationLimit = Math.max(
         durationSeconds,
         edit.originalStart + edit.originalDuration + TIMELINE_RESIZE_EXTENSION_SECONDS,
     );
+    const minDuration = getTimelineResizeMinDurationSeconds(edit.maxDuration, MIN_TIMELINE_ITEM_DURATION_SECONDS);
 
     if (edit.mode === 'resize-start') {
         const originalEnd = edit.originalStart + edit.originalDuration;
-        const maxStart = Math.max(0, originalEnd - MIN_TIMELINE_ITEM_DURATION_SECONDS);
+        const maxStart = Math.max(0, originalEnd - minDuration);
         const start = getTimelineEditSeconds(clamp(edit.originalStart + deltaSeconds, 0, maxStart), isSnapEnabled);
+        const duration = Math.max(minDuration, getTimelineEditSeconds(originalEnd - start, isSnapEnabled));
 
-        return {
+        return clampTimelineAudioResizeTiming({
+            edge: 'start',
             start,
-            duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, getTimelineEditSeconds(originalEnd - start, isSnapEnabled)),
-        };
+            duration,
+            itemEnd: originalEnd,
+            maxDuration: edit.maxDuration,
+            minDuration,
+        });
     }
 
     if (edit.mode === 'resize-end') {
         const maxDuration = Math.max(
-            MIN_TIMELINE_ITEM_DURATION_SECONDS,
+            minDuration,
             flexibleDurationLimit - edit.originalStart,
         );
+        const duration = Math.max(
+            minDuration,
+            getTimelineEditSeconds(clamp(edit.originalDuration + deltaSeconds, minDuration, maxDuration), isSnapEnabled),
+        );
 
-        return {
+        return clampTimelineAudioResizeTiming({
+            edge: 'end',
             start: edit.originalStart,
-            duration: Math.max(
-                MIN_TIMELINE_ITEM_DURATION_SECONDS,
-                getTimelineEditSeconds(clamp(edit.originalDuration + deltaSeconds, MIN_TIMELINE_ITEM_DURATION_SECONDS, maxDuration), isSnapEnabled),
-            ),
-        };
+            duration,
+            itemEnd: edit.originalStart + duration,
+            maxDuration: edit.maxDuration,
+            minDuration,
+        });
     }
 
     const maxStart = Math.max(0, flexibleDurationLimit - edit.originalDuration);
@@ -2100,6 +2685,23 @@ function getTimelineEditTiming(edit: TimelinePointerEdit, clientX: number, pxPer
         start: getTimelineEditSeconds(clamp(edit.originalStart + deltaSeconds, 0, maxStart), isSnapEnabled),
         duration: edit.originalDuration,
     };
+}
+
+function getTimelineAnchorEditRequest(
+    edit: TimelineAnchorPointerEdit,
+    clientX: number,
+    pxPerSecond: number,
+    durationSeconds: number,
+    isSnapEnabled: boolean,
+) {
+    const deltaSeconds = getTimelineEditSeconds((clientX - edit.pointerStartX) / pxPerSecond, isSnapEnabled);
+    const flexibleDurationLimit = Math.max(durationSeconds, edit.originalTimeSeconds + TIMELINE_RESIZE_EXTENSION_SECONDS);
+    const timeSeconds = getTimelineEditSeconds(clamp(edit.originalTimeSeconds + deltaSeconds, 0, flexibleDurationLimit), isSnapEnabled);
+
+    return toTimelineDraggedScrollAnchorMutationRequest({
+        anchor: edit.anchor,
+        timeSeconds,
+    });
 }
 
 function getTimelinePointerCaptureTarget(target: HTMLElement) {
@@ -2648,204 +3250,266 @@ function renderPanelContent(
     );
 }
 
-function ImageCompositionTool({
+function ImageCompositionSaveButton({
     canConfirm,
-    draft,
     error,
     isConfirming,
     onConfirm,
-    onLayerMove,
-    onLayerPatch,
-    onLayerRemove,
-    onLayerSelect,
 }: {
     canConfirm: boolean;
-    draft: ImageCompositionDraft;
     error: string | null;
     isConfirming: boolean;
     onConfirm: () => Promise<void> | void;
-    onLayerMove: (layerId: string, direction: 'up' | 'down') => void;
-    onLayerPatch: (layerId: string, patch: ImageCompositionLayerPatch) => void;
-    onLayerRemove: (layerId: string) => void;
-    onLayerSelect: (layerId: string) => void;
 }) {
-    const selectedLayer = draft.layers.find((layer) => layer.id === draft.selectedLayerId);
-    const orderedLayers = [...draft.layers].sort((a, b) => b.zIndex - a.zIndex || a.clipId.localeCompare(b.clipId));
-
     return (
-        <aside className="odx-image-editor" aria-label="이미지 편집 툴">
-            <div className="odx-image-editor-head">
-                <span>
-                    <StudioIcon name="image" size={16} />
-                    이미지 편집 툴
-                </span>
-                <b className={draft.status === 'confirmed' ? 'is-confirmed' : ''}>
-                    {draft.status === 'confirmed' ? '확정됨' : '편집중'}
-                </b>
-            </div>
-            <div className="odx-image-editor-stage" aria-label="이미지 조합 미리보기">
-                {draft.layers.length > 0 ? (
-                    draft.layers.map((layer) => (
-                        <button
-                            aria-label={`${layer.label} 레이어 선택`}
-                            className={`odx-image-layer ${layer.id === draft.selectedLayerId ? 'is-selected' : ''} ${layer.isVisible ? '' : 'is-hidden'}`}
-                            key={layer.id}
-                            onClick={() => onLayerSelect(layer.id)}
-                            style={getImageCompositionLayerStyle(layer)}
-                            type="button"
-                        >
-                            {layer.mediaType === 'video' ? (
-                                <video muted playsInline preload="metadata" src={layer.mediaUrl} />
-                            ) : (
-                                <img alt="" src={layer.mediaUrl} />
-                            )}
-                        </button>
-                    ))
-                ) : (
-                    <div className="odx-image-editor-empty">이미지 레이어 없음</div>
-                )}
-            </div>
-            <div className="odx-image-layer-list">
-                {orderedLayers.map((layer) => (
-                    <button
-                        className={layer.id === draft.selectedLayerId ? 'is-selected' : ''}
-                        key={layer.id}
-                        onClick={() => onLayerSelect(layer.id)}
-                        type="button"
-                    >
-                        <span>{layer.label}</span>
-                        <small>{layer.isVisible ? '표시' : '숨김'}</small>
-                    </button>
-                ))}
-            </div>
-            {selectedLayer ? (
-                <div className="odx-image-editor-controls">
-                    <label>
-                        <span>X</span>
-                        <input
-                            max="100"
-                            min="0"
-                            onChange={(event) => onLayerPatch(selectedLayer.id, { x: Number(event.target.value) })}
-                            type="range"
-                            value={selectedLayer.x}
-                        />
-                        <b>{Math.round(selectedLayer.x)}</b>
-                    </label>
-                    <label>
-                        <span>Y</span>
-                        <input
-                            max="100"
-                            min="0"
-                            onChange={(event) => onLayerPatch(selectedLayer.id, { y: Number(event.target.value) })}
-                            type="range"
-                            value={selectedLayer.y}
-                        />
-                        <b>{Math.round(selectedLayer.y)}</b>
-                    </label>
-                    <label>
-                        <span>크기</span>
-                        <input
-                            max="1.8"
-                            min="0.35"
-                            onChange={(event) => onLayerPatch(selectedLayer.id, { scale: Number(event.target.value) })}
-                            step="0.05"
-                            type="range"
-                            value={selectedLayer.scale}
-                        />
-                        <b>{Math.round(selectedLayer.scale * 100)}%</b>
-                    </label>
-                    <label>
-                        <span>투명도</span>
-                        <input
-                            max="1"
-                            min="0.2"
-                            onChange={(event) => onLayerPatch(selectedLayer.id, { opacity: Number(event.target.value) })}
-                            step="0.05"
-                            type="range"
-                            value={selectedLayer.opacity}
-                        />
-                        <b>{Math.round(selectedLayer.opacity * 100)}%</b>
-                    </label>
-                    <div className="odx-image-editor-actions">
-                        <button onClick={() => onLayerMove(selectedLayer.id, 'down')} type="button">
-                            뒤로
-                        </button>
-                        <button onClick={() => onLayerMove(selectedLayer.id, 'up')} type="button">
-                            앞으로
-                        </button>
-                        <button
-                            aria-pressed={!selectedLayer.isVisible}
-                            onClick={() => onLayerPatch(selectedLayer.id, { isVisible: !selectedLayer.isVisible })}
-                            type="button"
-                        >
-                            {selectedLayer.isVisible ? '숨김' : '표시'}
-                        </button>
-                        <button className="is-danger" onClick={() => onLayerRemove(selectedLayer.id)} type="button">
-                            삭제
-                        </button>
-                    </div>
-                </div>
-            ) : null}
+        <div className="odx-cut-edit-save">
             {error ? (
-                <p className="odx-image-editor-error" role="alert">
+                <span className="odx-cut-edit-save-error" role="alert">
                     {error}
-                </p>
+                </span>
             ) : null}
-            <button className="odx-image-editor-confirm" disabled={!canConfirm || isConfirming} onClick={onConfirm} type="button">
-                {isConfirming ? '등록 중' : '이미지 조합 확정'}
+            <button disabled={!canConfirm || isConfirming} onClick={onConfirm} type="button">
+                {isConfirming ? '저장 중' : '변경 저장'}
             </button>
-        </aside>
+        </div>
     );
 }
 
 function CutEditWorkspace({
-    visualClips,
+    anchors,
+    canvasSummaries,
+    activeCanvasId,
+    playhead,
+    playbackScrollEvents,
     selectedId,
     activeVisual,
     canConfirmImageComposition,
-    imageCompositionDraft,
     imageCompositionConfirmError,
     isConfirmingImageComposition,
+    isAddingAnchor,
+    isAddingCue,
+    isAnchorPlacementMode,
+    isCuePlacementMode,
     isPreviewLocked,
+    previewAnchorEditingId,
+    previewCueEditingId,
+    previewScrollEditingId,
+    previewStripHeightPx,
+    previewVisualSegments,
+    scrollEvents,
+    cueTracks,
+    cuePlacementTrackId,
+    focusedTrackId,
     visualCutEditingId,
     onImageCompositionConfirm,
-    onImageCompositionLayerMove,
-    onImageCompositionLayerPatch,
-    onImageCompositionLayerRemove,
-    onImageCompositionLayerSelect,
     onMediaDrop,
+    onOpenTrackModal,
+    onPlaceAnchor,
+    onPlaceCue,
+    onPreviewStripHeightChange,
+    onPreviewVisualSegmentsChange,
+    onSelectAnchor,
+    onSelectCanvas,
+    onSelectCue,
+    onSelectScrollEvent,
     onSelectVisual,
-    onStepVisualDuration,
+    onFocusTrack,
+    onToggleAnchorPlacement,
+    onToggleCuePlacement,
+    onPreviewAnchorEditEnd,
+    onPreviewAnchorEditMove,
+    onPreviewAnchorEditStart,
+    onPreviewCueEditEnd,
+    onPreviewCueEditMove,
+    onPreviewCueEditStart,
+    onPreviewScrollEditEnd,
+    onPreviewScrollEditMove,
+    onPreviewScrollEditStart,
     onVisualCutEditStart,
     onVisualCutEditMove,
     onVisualCutEditEnd,
 }: {
-    visualClips: VisualClip[];
+    anchors: AnchorListItem[];
+    canvasSummaries: CutEditCanvasSummary[];
+    activeCanvasId: number | null;
+    playhead: number;
+    playbackScrollEvents: PreviewScrollPositionEvent[];
     selectedId: string;
     activeVisual: VisualClip | undefined;
     canConfirmImageComposition: boolean;
-    imageCompositionDraft: ImageCompositionDraft;
     imageCompositionConfirmError: string | null;
     isConfirmingImageComposition: boolean;
+    isAddingAnchor: boolean;
+    isAddingCue: boolean;
+    isAnchorPlacementMode: boolean;
+    isCuePlacementMode: boolean;
     isPreviewLocked: boolean;
+    previewAnchorEditingId: number | null;
+    previewCueEditingId: number | null;
+    previewScrollEditingId: string | null;
+    previewStripHeightPx: number;
+    previewVisualSegments: PreviewScrollVisualSegment[];
+    scrollEvents: ScrollEventClip[];
+    cueTracks: CutEditCueTrack[];
+    cuePlacementTrackId: string;
+    focusedTrackId: string;
     visualCutEditingId: string | null;
     onImageCompositionConfirm: () => Promise<void> | void;
-    onImageCompositionLayerMove: (layerId: string, direction: 'up' | 'down') => void;
-    onImageCompositionLayerPatch: (layerId: string, patch: ImageCompositionLayerPatch) => void;
-    onImageCompositionLayerRemove: (layerId: string) => void;
-    onImageCompositionLayerSelect: (layerId: string) => void;
     onMediaDrop: (event: ReactDragEvent<HTMLElement>) => void;
+    onOpenTrackModal: () => void;
+    onPlaceAnchor: (stripPositionPx: number, stripHeightPx: number) => Promise<void> | void;
+    onPlaceCue: (stripPositionPx: number, stripHeightPx: number) => Promise<void> | void;
+    onPreviewStripHeightChange: (heightPx: number) => void;
+    onPreviewVisualSegmentsChange: (segments: PreviewScrollVisualSegment[]) => void;
+    onSelectAnchor: (anchorId: number) => void;
+    onSelectCanvas: (canvasId: number) => void;
+    onSelectCue: (cueId: number) => void;
+    onSelectScrollEvent: (clipId: string) => void;
     onSelectVisual: (clipId: string) => void;
-    onStepVisualDuration: (clipId: string, deltaSeconds: number) => void;
-} & VisualCutPointerEditHandlers) {
+    onFocusTrack: (trackId: string) => void;
+    onToggleAnchorPlacement: () => void;
+    onToggleCuePlacement: () => void;
+} & PreviewScrollPointerEditHandlers &
+    PreviewAnchorPointerEditHandlers &
+    PreviewCuePointerEditHandlers &
+    VisualCutPointerEditHandlers) {
     const [cutEditorZoom, setCutEditorZoom] = useState(1);
     const [isMediaDropActive, setIsMediaDropActive] = useState(false);
-    const selectedVisual = visualClips.find((clip) => clip.id === selectedId) ?? activeVisual ?? visualClips[0];
-    const cutBaseHeight = getPreviewCutHeight(visualClips.length);
-    const canEditSelectedVisual = Boolean(selectedVisual) && !isPreviewLocked;
+    const cutEditStripRef = useRef<HTMLDivElement | null>(null);
+    const activeCanvas = canvasSummaries.find((canvas) => canvas.id === activeCanvasId);
+    const activeCanvasVisualClips = activeCanvas?.clips ?? [];
+    const activeVisualInCanvas = activeVisual?.canvasId === activeCanvasId ? activeVisual : undefined;
+    const selectedVisual =
+        activeCanvasVisualClips.find((clip) => clip.id === selectedId) ?? activeVisualInCanvas ?? activeCanvasVisualClips[0];
+    const cutBaseHeight = getPreviewCutHeight(activeCanvasVisualClips.length);
+    const cutEditCoordinateHeightPx = getPreviewCoordinateHeight(previewStripHeightPx);
+    const activeScrollEvent = scrollEvents.find((event) => playhead >= event.start && playhead < event.start + event.duration);
+    const selectedScrollEvent = scrollEvents.find((event) => event.id === selectedId);
+    const handleScrollEvent = selectedScrollEvent ?? activeScrollEvent;
+    const selectedCueTrack = cueTracks.find((track) => track.id === cuePlacementTrackId) ?? cueTracks.find((track) => track.id === focusedTrackId) ?? cueTracks[0];
+    const cutCueTrackLaneWidth = 152;
+    const cutCueTrackLayerWidth = cueTracks.length > 0 ? cueTracks.length * cutCueTrackLaneWidth : 0;
+    const previewPlayheadPixel = getPreviewPlayheadPixel(
+        playhead,
+        playbackScrollEvents,
+        cutEditCoordinateHeightPx,
+        previewVisualSegments,
+    );
+    const previewAnchorMarkers = useMemo(
+        () =>
+            anchors
+                .map((anchor) => ({
+                    anchor,
+                    top: getPreviewScrollPixel({
+                        canvasId: anchor.canvasId,
+                        index: anchor.index,
+                        position: anchor.position,
+                        stripHeightPx: cutEditCoordinateHeightPx,
+                        visualSegments: previewVisualSegments,
+                    }),
+                }))
+                .filter((marker): marker is { anchor: AnchorListItem; top: number } => typeof marker.top === 'number'),
+        [anchors, cutEditCoordinateHeightPx, previewVisualSegments],
+    );
+    const previewCueMarkers = useMemo(
+        () =>
+            cueTracks.flatMap((track, trackIndex) =>
+                track.cues.flatMap((cue) => {
+                    const marker = toCueStripMarker({
+                        cue,
+                        stripHeightPx: cutEditCoordinateHeightPx,
+                        visualClips: activeCanvasVisualClips,
+                        visualSegments: previewVisualSegments,
+                    });
 
+                    if (!marker) {
+                        return [];
+                    }
+
+                    return [
+                        {
+                            ...marker,
+                            cue,
+                            cueId: `cue-${cue.id}`,
+                            trackId: track.id,
+                            trackLabel: track.label,
+                            trackIndex,
+                        } satisfies CutEditCueMarker,
+                    ];
+                }),
+            ),
+        [activeCanvasVisualClips, cueTracks, cutEditCoordinateHeightPx, previewVisualSegments],
+    );
     const handleZoomStep = (delta: number) => {
         setCutEditorZoom((current) => clamp(Number((current + delta).toFixed(2)), 0.55, 1.45));
+    };
+    useEffect(() => {
+        const strip = cutEditStripRef.current;
+
+        if (!strip) {
+            return;
+        }
+
+        const updateCutEditStripMetrics = () => {
+            const stripRect = strip.getBoundingClientRect();
+            const nextHeight = getPreviewCoordinateHeight(strip.scrollHeight || stripRect.height);
+            const cutElements = Array.from(strip.querySelectorAll<HTMLElement>('.odx-cut-edit-block'));
+            const nextSegments = activeCanvasVisualClips.map((clip, index) => {
+                const cut = cutElements[index];
+                const cutRect = cut?.getBoundingClientRect();
+
+                return {
+                    id: clip.id,
+                    canvasId: clip.canvasId,
+                    index: clip.index ?? index,
+                    top: cutRect ? cutRect.top - stripRect.top : index * getPreviewCutHeight(activeCanvasVisualClips.length, nextHeight),
+                    height: cutRect ? cutRect.height : getPreviewCutHeight(activeCanvasVisualClips.length, nextHeight),
+                };
+            });
+
+            onPreviewStripHeightChange(nextHeight);
+            onPreviewVisualSegmentsChange(nextSegments);
+        };
+        const resizeObserver = new ResizeObserver(updateCutEditStripMetrics);
+
+        updateCutEditStripMetrics();
+        resizeObserver.observe(strip);
+        strip.querySelectorAll<HTMLElement>('.odx-cut-edit-block').forEach((cut) => resizeObserver.observe(cut));
+
+        return () => {
+            resizeObserver.disconnect();
+        };
+    }, [
+        activeCanvasVisualClips,
+        cutEditorZoom,
+        onPreviewStripHeightChange,
+        onPreviewVisualSegmentsChange,
+    ]);
+    const handleAnchorPlacementClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+        if (!isAnchorPlacementMode || isPreviewLocked || isAddingAnchor) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const rect = event.currentTarget.getBoundingClientRect();
+        const stripPositionPx = clamp(event.clientY - rect.top, 0, cutEditCoordinateHeightPx);
+
+        void onPlaceAnchor(stripPositionPx, cutEditCoordinateHeightPx);
+    };
+    const handleCuePlacementClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+        if (!isCuePlacementMode || isPreviewLocked || isAddingCue) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const rect = event.currentTarget.getBoundingClientRect();
+        const stripPositionPx = clamp(event.clientY - rect.top, 0, cutEditCoordinateHeightPx);
+
+        void onPlaceCue(stripPositionPx, cutEditCoordinateHeightPx);
     };
     const acceptsMediaDrag = (event: ReactDragEvent<HTMLElement>) => {
         const dragTypes = Array.from(event.dataTransfer.types);
@@ -2863,6 +3527,47 @@ function CutEditWorkspace({
 
     return (
         <div className="odx-cut-editor" aria-label="컷 편집 작업 영역">
+            <aside className="odx-cut-edit-canvas-panel" aria-label="캔버스 목록">
+                <div className="odx-cut-edit-canvas-head">
+                    <span>CANVASES</span>
+                    <b>{canvasSummaries.length}</b>
+                </div>
+                <div className="odx-cut-edit-canvas-list">
+                    {canvasSummaries.length > 0 ? (
+                        canvasSummaries.map((canvas) => (
+                            <button
+                                aria-pressed={canvas.id === activeCanvasId}
+                                className={`odx-cut-edit-canvas-item ${canvas.id === activeCanvasId ? 'is-selected' : ''}`}
+                                key={canvas.id}
+                                onClick={() => onSelectCanvas(canvas.id)}
+                                type="button"
+                            >
+                                <span className="odx-cut-edit-canvas-thumb">
+                                    {canvas.clips.length > 0 ? (
+                                        canvas.clips.slice(0, 6).map((clip) => (
+                                            <i
+                                                key={clip.id}
+                                                style={{
+                                                    background: clip.background,
+                                                    flex: 1,
+                                                }}
+                                            />
+                                        ))
+                                    ) : (
+                                        <i className="is-empty" />
+                                    )}
+                                </span>
+                                <span className="odx-cut-edit-canvas-meta">
+                                    <strong>{canvas.label}</strong>
+                                    <small>{canvas.sublabel}</small>
+                                </span>
+                            </button>
+                        ))
+                    ) : (
+                        <p className="odx-cut-edit-canvas-empty">등록된 캔버스가 없습니다.</p>
+                    )}
+                </div>
+            </aside>
             <section
                 className={`odx-cut-edit-stage ${isMediaDropActive ? 'is-media-drop-active' : ''}`}
                 aria-label="컷 편집 스트립"
@@ -2892,7 +3597,51 @@ function CutEditWorkspace({
                         <StudioIcon name="split" size={13} />
                         분할
                     </button>
-                    <span>컷을 클릭해 선택 · 하단 핸들을 끌면 길이 조절</span>
+                    <button
+                        aria-pressed={isAnchorPlacementMode}
+                        className={`odx-cut-edit-tool ${isAnchorPlacementMode || isAddingAnchor ? 'is-active' : ''}`}
+                        disabled={isPreviewLocked || isAddingAnchor}
+                        onClick={onToggleAnchorPlacement}
+                        title={
+                            isPreviewLocked
+                                ? '잠금 해제 후 앵커를 추가할 수 있습니다.'
+                                : isAnchorPlacementMode
+                                  ? '앵커 위치 선택 취소'
+                                  : '컷 편집 스트립에서 앵커 위치 선택'
+                        }
+                        type="button"
+                    >
+                        <StudioIcon name="anchor" size={13} />
+                        앵커
+                    </button>
+                    <button className="odx-cut-edit-tool" onClick={onOpenTrackModal} type="button">
+                        <StudioIcon name="mic" size={13} />
+                        트랙
+                    </button>
+                    <button
+                        aria-pressed={isCuePlacementMode}
+                        className={`odx-cut-edit-tool ${isCuePlacementMode || isAddingCue ? 'is-active' : ''}`}
+                        disabled={isPreviewLocked || isAddingCue || cueTracks.length === 0}
+                        onClick={onToggleCuePlacement}
+                        title={
+                            cueTracks.length === 0
+                                ? '먼저 보이스 트랙을 생성해 주세요.'
+                                : isPreviewLocked
+                                  ? '잠금 해제 후 큐를 추가할 수 있습니다.'
+                                  : isCuePlacementMode
+                                    ? '큐 위치 선택 취소'
+                                    : '컷 편집 스트립에서 큐 위치 선택'
+                        }
+                        type="button"
+                    >
+                        <StudioIcon name="text" size={13} />
+                        큐
+                    </button>
+                    <span>
+                        {activeCanvas
+                            ? `${activeCanvas.label} 선택됨 · 미디어를 드롭하면 이 캔버스에 레이어로 추가`
+                            : '왼쪽에서 수정할 캔버스를 선택'}
+                    </span>
                     <div className="odx-cut-edit-zoom" role="group" aria-label="컷 편집 확대">
                         <button aria-label="컷 편집 축소" onClick={() => handleZoomStep(-0.1)} type="button">
                             -
@@ -2909,118 +3658,363 @@ function CutEditWorkspace({
                 <div className="odx-cut-edit-viewport">
                     <div
                         className="odx-cut-edit-strip"
+                        ref={cutEditStripRef}
                         style={
                             {
                                 '--odx-cut-edit-width': `${Math.round(232 * cutEditorZoom)}px`,
+                                '--odx-cue-track-panel-width': `${cutCueTrackLayerWidth}px`,
                             } as CSSProperties
                         }
                     >
-                        {visualClips.map((clip, index) => {
-                            const blockHeight = Math.max(52, cutBaseHeight * cutEditorZoom);
-                            const isSelected = selectedVisual?.id === clip.id;
-                            const blockStyle: CSSProperties = {
-                                ...getPreviewCutStyle(clip, visualClips.length),
-                                ...(clip.mediaUrl ? {} : { height: `${blockHeight}px` }),
-                            };
+                        {activeCanvasVisualClips.length > 0 ? (
+                            <>
+                                {activeCanvasVisualClips.map((clip, index) => {
+                                    const blockHeight = Math.max(52, cutBaseHeight * cutEditorZoom);
+                                    const isSelected = selectedVisual?.id === clip.id;
+                                    const blockStyle: CSSProperties = {
+                                        ...getPreviewCutStyle(clip, activeCanvasVisualClips.length),
+                                        ...(clip.mediaUrl ? {} : { height: `${blockHeight}px` }),
+                                    };
 
-                            return (
-                                <button
-                                    aria-label={`${clip.label} 컷 선택`}
-                                    className={`odx-cut-edit-block ${clip.kind === 'video' ? 'is-video' : ''} ${clip.mediaUrl ? 'has-media' : ''} ${isSelected ? 'is-selected' : ''} ${activeVisual?.id === clip.id ? 'is-active' : ''} ${visualCutEditingId === clip.id ? 'is-editing' : ''}`}
-                                    key={clip.id}
-                                    onClick={() => onSelectVisual(clip.id)}
-                                    onPointerCancel={onVisualCutEditEnd}
-                                    onPointerDown={(pointerEvent) => {
-                                        if (isPreviewLocked) {
-                                            return;
-                                        }
+                                    return (
+                                        <button
+                                            aria-label={`${clip.label} 레이어 선택`}
+                                            className={`odx-cut-edit-block ${clip.kind === 'video' ? 'is-video' : ''} ${clip.mediaUrl ? 'has-media' : ''} ${isSelected ? 'is-selected' : ''} ${activeVisual?.id === clip.id ? 'is-active' : ''} ${visualCutEditingId === clip.id ? 'is-editing' : ''}`}
+                                            key={clip.id}
+                                            onClick={() => onSelectVisual(clip.id)}
+                                            onPointerCancel={onVisualCutEditEnd}
+                                            onPointerDown={(pointerEvent) => {
+                                                if (isPreviewLocked) {
+                                                    return;
+                                                }
 
-                                        onVisualCutEditStart({ event: pointerEvent, clip, index, mode: 'reorder' });
-                                    }}
-                                    onPointerMove={onVisualCutEditMove}
-                                    onPointerUp={onVisualCutEditEnd}
-                                    style={blockStyle}
-                                    type="button"
-                                >
-                                    {clip.mediaType === 'image' && clip.mediaUrl ? <img alt="" className="odx-cut-edit-media" src={clip.mediaUrl} /> : null}
-                                    {clip.mediaType === 'video' && clip.mediaUrl ? <video className="odx-cut-edit-media" muted playsInline preload="metadata" src={clip.mediaUrl} /> : null}
-                                    <span className="odx-cut-edit-label">
-                                        {String(index + 1).padStart(2, '0')} · {clip.label}
-                                    </span>
-                                    <span className="odx-cut-edit-duration">{clip.duration.toFixed(1)}s</span>
-                                    {clip.mediaUrl ? null : <strong>{clip.description}</strong>}
-                                    {clip.bubble ? <p className={`odx-speech-bubble odx-speech-${clip.bubble.tone ?? 'default'}`}>{clip.bubble.text}</p> : null}
-                                    {clip.subtitle ? <small>{clip.subtitle}</small> : null}
-                                    <i
-                                        aria-hidden="true"
-                                        className="odx-cut-edit-duration-handle"
-                                        onPointerDown={(pointerEvent) => {
-                                            if (isPreviewLocked) {
-                                                return;
-                                            }
+                                                onVisualCutEditStart({ event: pointerEvent, clip, index, mode: 'reorder' });
+                                            }}
+                                            onPointerMove={onVisualCutEditMove}
+                                            onPointerUp={onVisualCutEditEnd}
+                                            style={blockStyle}
+                                            type="button"
+                                        >
+                                            {clip.mediaType === 'image' && clip.mediaUrl ? <img alt="" className="odx-cut-edit-media" src={clip.mediaUrl} /> : null}
+                                            {clip.mediaType === 'video' && clip.mediaUrl ? <video className="odx-cut-edit-media" playsInline preload="metadata" src={clip.mediaUrl} /> : null}
+                                            <span className="odx-cut-edit-label">
+                                                {String(index + 1).padStart(2, '0')} · {clip.label}
+                                            </span>
+                                            {clip.mediaUrl ? null : <strong>{clip.description}</strong>}
+                                            {clip.bubble ? <p className={`odx-speech-bubble odx-speech-${clip.bubble.tone ?? 'default'}`}>{clip.bubble.text}</p> : null}
+                                            {clip.subtitle ? <small>{clip.subtitle}</small> : null}
+                                        </button>
+                                    );
+                                })}
+                                <div className="odx-preview-scroll-overlay" style={{ height: `${cutEditCoordinateHeightPx}px` }}>
+                                    {scrollEvents.map((event) => {
+                                        const isSelected = selectedId === event.id;
+                                        const isActive = activeScrollEvent?.id === event.id;
 
-                                            pointerEvent.stopPropagation();
-                                            onVisualCutEditStart({ event: pointerEvent, clip, index, mode: 'duration' });
-                                        }}
-                                    />
-                                </button>
-                            );
-                        })}
+                                        return (
+                                            <button
+                                                className={`odx-preview-scroll-event ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''} ${previewScrollEditingId === event.id ? 'is-position-editing' : ''}`}
+                                                key={event.id}
+                                                onClick={() => onSelectScrollEvent(event.id)}
+                                                onPointerCancel={onPreviewScrollEditEnd}
+                                                onPointerDown={(pointerEvent) => {
+                                                    if (isPreviewLocked) {
+                                                        return;
+                                                    }
+
+                                                    onPreviewScrollEditStart({ event: pointerEvent, item: event, mode: 'move' });
+                                                }}
+                                                onPointerMove={onPreviewScrollEditMove}
+                                                onPointerUp={onPreviewScrollEditEnd}
+                                                style={getPreviewScrollEventStyle(event, cutEditCoordinateHeightPx, previewVisualSegments)}
+                                                type="button"
+                                            >
+                                                <span
+                                                    aria-hidden="true"
+                                                    className="odx-preview-scroll-resize-handle odx-preview-scroll-resize-start"
+                                                    onPointerDown={(pointerEvent) => {
+                                                        if (isPreviewLocked) {
+                                                            return;
+                                                        }
+
+                                                        onPreviewScrollEditStart({ event: pointerEvent, item: event, mode: 'resize-start' });
+                                                    }}
+                                                />
+                                                <span
+                                                    aria-hidden="true"
+                                                    className="odx-preview-scroll-resize-handle odx-preview-scroll-resize-end"
+                                                    onPointerDown={(pointerEvent) => {
+                                                        if (isPreviewLocked) {
+                                                            return;
+                                                        }
+
+                                                        onPreviewScrollEditStart({ event: pointerEvent, item: event, mode: 'resize-end' });
+                                                    }}
+                                                />
+                                                <span>{event.label}</span>
+                                                <small>{event.sublabel}</small>
+                                            </button>
+                                        );
+                                    })}
+                                    {handleScrollEvent ? (
+                                        <div className="odx-scroll-handles" style={{ height: `${cutEditCoordinateHeightPx}px` }}>
+                                            <span className="odx-scroll-handle-band" style={getPreviewScrollBandStyle(handleScrollEvent, cutEditCoordinateHeightPx, previewVisualSegments)} />
+                                            <button
+                                                aria-label="스크롤 이벤트 시작 위치 조절"
+                                                className="odx-scroll-strip-line odx-scroll-strip-start"
+                                                onPointerCancel={onPreviewScrollEditEnd}
+                                                onPointerDown={(pointerEvent) => {
+                                                    if (isPreviewLocked) {
+                                                        return;
+                                                    }
+
+                                                    onPreviewScrollEditStart({ event: pointerEvent, item: handleScrollEvent, mode: 'resize-start' });
+                                                }}
+                                                onPointerMove={onPreviewScrollEditMove}
+                                                onPointerUp={onPreviewScrollEditEnd}
+                                                style={getPreviewScrollHandleStyle(getScrollEventStartPixel(handleScrollEvent, cutEditCoordinateHeightPx, previewVisualSegments))}
+                                                type="button"
+                                            >
+                                                <span>시작 ▲ {formatScrollIndexedPosition(handleScrollEvent.startIndex, handleScrollEvent.startPosition)}</span>
+                                            </button>
+                                            <button
+                                                aria-label="스크롤 이벤트 종료 위치 조절"
+                                                className="odx-scroll-strip-line odx-scroll-strip-end"
+                                                onPointerCancel={onPreviewScrollEditEnd}
+                                                onPointerDown={(pointerEvent) => {
+                                                    if (isPreviewLocked) {
+                                                        return;
+                                                    }
+
+                                                    onPreviewScrollEditStart({ event: pointerEvent, item: handleScrollEvent, mode: 'resize-end' });
+                                                }}
+                                                onPointerMove={onPreviewScrollEditMove}
+                                                onPointerUp={onPreviewScrollEditEnd}
+                                                style={getPreviewScrollHandleStyle(getScrollEventEndPixel(handleScrollEvent, cutEditCoordinateHeightPx, previewVisualSegments))}
+                                                type="button"
+                                            >
+                                                <span>종료 ▼ {formatScrollIndexedPosition(handleScrollEvent.endIndex, handleScrollEvent.endPosition)}</span>
+                                            </button>
+                                        </div>
+                                    ) : null}
+                                </div>
+                                <div className="odx-preview-anchor-layer" style={{ height: `${cutEditCoordinateHeightPx}px` }}>
+                                    {previewAnchorMarkers.map(({ anchor, top }) => (
+                                        <div
+                                            className={`odx-preview-anchor-marker ${selectedId === getAnchorSelectionId(anchor.id) ? 'is-selected' : ''} ${previewAnchorEditingId === anchor.id ? 'is-dragging' : ''}`}
+                                            key={anchor.id}
+                                            style={{ top: `${top}px` }}
+                                        >
+                                            <span aria-hidden="true" className="odx-preview-anchor-line" />
+                                            <button
+                                                aria-label={`앵커 ${anchor.id}`}
+                                                className="odx-preview-anchor-handle"
+                                                onClick={() => onSelectAnchor(anchor.id)}
+                                                onPointerCancel={onPreviewAnchorEditEnd}
+                                                onPointerDown={(pointerEvent) => {
+                                                    if (isPreviewLocked || isAddingAnchor) {
+                                                        return;
+                                                    }
+
+                                                    onPreviewAnchorEditStart({ event: pointerEvent, anchor, top });
+                                                }}
+                                                onPointerMove={onPreviewAnchorEditMove}
+                                                onPointerUp={onPreviewAnchorEditEnd}
+                                                type="button"
+                                            >
+                                                <b>A{anchor.id}</b>
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {cueTracks.length > 0 ? (
+                                    <div className="odx-cut-cue-track-layer" style={{ height: `${cutEditCoordinateHeightPx}px` }}>
+                                        <div className="odx-cut-cue-track-header-layer">
+                                            {cueTracks.map((track, trackIndex) => (
+                                                <button
+                                                    aria-pressed={focusedTrackId === track.id}
+                                                    className={`odx-cut-cue-track-header ${focusedTrackId === track.id ? 'is-focused' : ''}`}
+                                                    key={`cue-track-header-${track.id}`}
+                                                    onClick={() => onFocusTrack(track.id)}
+                                                    style={
+                                                        {
+                                                            left: `${trackIndex * cutCueTrackLaneWidth}px`,
+                                                            width: `${cutCueTrackLaneWidth - 8}px`,
+                                                            '--odx-track-color': track.color ?? 'rgba(52, 211, 153, 0.82)',
+                                                        } as CSSProperties
+                                                    }
+                                                    title={track.label}
+                                                    type="button"
+                                                >
+                                                    <span>{track.label}</span>
+                                                    <small>{track.cues.length}</small>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {cueTracks.map((track, trackIndex) => (
+                                            <button
+                                                aria-label={`${track.label} 트랙 선택`}
+                                                aria-pressed={focusedTrackId === track.id}
+                                                className={`odx-cut-cue-track-column ${focusedTrackId === track.id ? 'is-focused' : ''}`}
+                                                key={track.id}
+                                                onClick={() => onFocusTrack(track.id)}
+                                                style={
+                                                    {
+                                                        left: `${trackIndex * cutCueTrackLaneWidth}px`,
+                                                        width: `${cutCueTrackLaneWidth - 8}px`,
+                                                        '--odx-track-color': track.color ?? 'rgba(52, 211, 153, 0.82)',
+                                                    } as CSSProperties
+                                                }
+                                                title={track.label}
+                                                type="button"
+                                            />
+                                        ))}
+                                        {previewCueMarkers.map((marker) => {
+                                            const cueRangeHeight = Math.max(2, Math.abs(marker.endTop - marker.top));
+
+                                            return (
+                                                <button
+                                                    aria-label={`${marker.trackLabel} 큐 ${marker.cue.id}`}
+                                                    className={`odx-cut-cue-marker ${selectedId === marker.cueId ? 'is-selected' : ''} ${previewCueEditingId === marker.cue.id ? 'is-dragging' : ''}`}
+                                                    key={`${marker.trackId}-${marker.cue.id}`}
+                                                    onClick={() => onSelectCue(marker.cue.id)}
+                                                    onPointerCancel={onPreviewCueEditEnd}
+                                                    onPointerDown={(pointerEvent) => {
+                                                        if (isPreviewLocked || isAddingCue) {
+                                                            return;
+                                                        }
+
+                                                        onPreviewCueEditStart({ event: pointerEvent, marker });
+                                                    }}
+                                                    onPointerMove={onPreviewCueEditMove}
+                                                    onPointerUp={onPreviewCueEditEnd}
+                                                    style={
+                                                        {
+                                                            top: `${marker.top}px`,
+                                                            left: `${marker.trackIndex * cutCueTrackLaneWidth + 4}px`,
+                                                            width: `${cutCueTrackLaneWidth - 16}px`,
+                                                            '--odx-cue-range-height': `${cueRangeHeight}px`,
+                                                        } as CSSProperties
+                                                    }
+                                                    title={`${marker.trackLabel} · ${Math.round(marker.cue.startPosition)}%`}
+                                                    type="button"
+                                                >
+                                                    <span>{marker.cue.script || '큐'}</span>
+                                                    <small>{Math.round(marker.cue.startPosition)}%</small>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ) : null}
+                                {isAnchorPlacementMode ? (
+                                    <button
+                                        aria-label="앵커 위치 선택"
+                                        className="odx-anchor-placement-layer"
+                                        disabled={isPreviewLocked || isAddingAnchor}
+                                        onClick={handleAnchorPlacementClick}
+                                        style={{ height: `${cutEditCoordinateHeightPx}px` }}
+                                        title="앵커 추가"
+                                        type="button"
+                                    >
+                                        <span>A+</span>
+                                    </button>
+                                ) : null}
+                                {isCuePlacementMode ? (
+                                    <button
+                                        aria-label="큐 위치 선택"
+                                        className="odx-cue-placement-layer"
+                                        disabled={isPreviewLocked || isAddingCue}
+                                        onClick={handleCuePlacementClick}
+                                        style={{ height: `${cutEditCoordinateHeightPx}px` }}
+                                        title="큐 추가"
+                                        type="button"
+                                    >
+                                        <span>Q+</span>
+                                    </button>
+                                ) : null}
+                                {previewPlayheadPixel !== undefined ? (
+                                    <div className="odx-strip-playhead" style={{ top: `${previewPlayheadPixel}px` }}>
+                                        <span>{formatTime(playhead)}</span>
+                                    </div>
+                                ) : null}
+                            </>
+                        ) : (
+                            <div className="odx-cut-edit-empty-strip">
+                                {activeCanvas ? '이 캔버스에 등록된 레이어가 없습니다. 미디어를 드래그해 추가하세요.' : '수정할 캔버스를 선택하세요.'}
+                            </div>
+                        )}
                     </div>
                 </div>
             </section>
 
             <aside className="odx-cut-edit-props">
                 {selectedVisual ? (
-                    <>
-                        <div className="odx-cut-edit-props-head">
-                            <span className="odx-cut-edit-props-thumb" style={getVisualClipThumbStyle(selectedVisual)}>
-                                {selectedVisual.kind === 'video' ? <StudioIcon name="play" size={16} /> : null}
-                            </span>
-                            <span>
-                                <strong>{selectedVisual.label}</strong>
-                                <small>
-                                    {formatTime(selectedVisual.start)} · {selectedVisual.duration.toFixed(1)}s
-                                </small>
-                            </span>
-                        </div>
-                        <div className="odx-cut-edit-section">
-                            <div className="odx-cut-edit-section-title">노출 시간</div>
-                            <div className="odx-cut-edit-duration-step">
-                                <button disabled={!canEditSelectedVisual} onClick={() => onStepVisualDuration(selectedVisual.id, -0.5)} type="button">
-                                    -
-                                </button>
-                                <b>{selectedVisual.duration.toFixed(1)}s</b>
-                                <button disabled={!canEditSelectedVisual} onClick={() => onStepVisualDuration(selectedVisual.id, 0.5)} type="button">
-                                    +
-                                </button>
-                            </div>
-                        </div>
-                        <div className="odx-cut-edit-section">
-                            <div className="odx-cut-edit-section-title">컷 정보</div>
-                            <div className="odx-cut-edit-info-grid">
-                                <span>유형</span>
-                                <b>{selectedVisual.kind === 'video' ? '삽입 영상' : '웹툰 컷'}</b>
-                                <span>시작</span>
-                                <b>{formatTime(selectedVisual.start)}</b>
-                                <span>효과</span>
-                                <b>{selectedVisual.effects?.length ? selectedVisual.effects.join(', ') : '없음'}</b>
-                            </div>
-                        </div>
-                    </>
+                    <div className="odx-cut-edit-props-head">
+                        <span className="odx-cut-edit-props-thumb" style={getVisualClipThumbStyle(selectedVisual)}>
+                            {selectedVisual.kind === 'video' ? <StudioIcon name="play" size={16} /> : null}
+                        </span>
+                        <span>
+                            <strong>{selectedVisual.label}</strong>
+                            <small>{selectedVisual.mediaType ?? selectedVisual.kind}</small>
+                        </span>
+                    </div>
                 ) : (
-                    <div className="odx-cut-edit-empty">선택된 컷이 없습니다.</div>
+                    <div className="odx-cut-edit-empty">선택된 레이어가 없습니다.</div>
                 )}
-                <ImageCompositionTool
+                {selectedVisual ? (
+                    <div className="odx-cut-edit-section">
+                        <div className="odx-cut-edit-section-title">미디어 정보</div>
+                        <div className="odx-cut-edit-info-grid">
+                            {getCutEditMediaDetails(selectedVisual).flatMap((detail) => [
+                                <span key={`${detail.label}-label`}>{detail.label}</span>,
+                                <b key={`${detail.label}-value`}>{detail.value}</b>,
+                            ])}
+                        </div>
+                    </div>
+                ) : null}
+                <div className="odx-cut-edit-section">
+                    <div className="odx-cut-edit-section-title">큐 등록</div>
+                    <div className="odx-cut-edit-cue-controls">
+                        <label>
+                            <span>트랙</span>
+                            <select
+                                disabled={cueTracks.length === 0 || isAddingCue}
+                                onChange={(event) => onFocusTrack(event.target.value)}
+                                value={selectedCueTrack?.id ?? ''}
+                            >
+                                {cueTracks.length > 0 ? (
+                                    cueTracks.map((track) => (
+                                        <option key={track.id} value={track.id}>
+                                            {track.label}
+                                        </option>
+                                    ))
+                                ) : (
+                                    <option value="">보이스 트랙 없음</option>
+                                )}
+                            </select>
+                        </label>
+                        <div className="odx-cut-edit-cue-row">
+                            <button onClick={onOpenTrackModal} type="button">
+                                <StudioIcon name="plus" size={13} />
+                                트랙
+                            </button>
+                            <button
+                                className={isCuePlacementMode ? 'is-active' : ''}
+                                disabled={cueTracks.length === 0 || isPreviewLocked || isAddingCue}
+                                onClick={onToggleCuePlacement}
+                                type="button"
+                            >
+                                <StudioIcon name="text" size={13} />
+                                {isCuePlacementMode ? '위치 선택 중' : '큐 위치'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <ImageCompositionSaveButton
                     canConfirm={canConfirmImageComposition}
-                    draft={imageCompositionDraft}
                     error={imageCompositionConfirmError}
                     isConfirming={isConfirmingImageComposition}
                     onConfirm={onImageCompositionConfirm}
-                    onLayerMove={onImageCompositionLayerMove}
-                    onLayerPatch={onImageCompositionLayerPatch}
-                    onLayerRemove={onImageCompositionLayerRemove}
-                    onLayerSelect={onImageCompositionLayerSelect}
                 />
             </aside>
         </div>
@@ -3029,40 +4023,54 @@ function CutEditWorkspace({
 
 function PreviewCanvas({
     activeVisual,
+    previewActiveVisual,
+    activeCutCanvasId,
     playhead,
     canConfirmImageComposition,
-    imageCompositionDraft,
+    canvasSummaries,
+    canvasOptions,
     imageCompositionConfirmError,
     previewZoom,
     previewMode,
     previewStripHeightPx,
     previewVisualSegments,
+    previewVisualClips,
+    selectedPreviewCanvasId,
     isConfirmingImageComposition,
     isAddingAnchor,
+    isAddingCue,
     isAnchorPlacementMode,
+    isCuePlacementMode,
     isPreviewAudioEnabled,
     isPreviewFullscreen,
     isPreviewLocked,
+    isPlaying,
     effects,
     visualClips,
     scrollEvents,
+    cueTracks,
+    cuePlacementTrackId,
+    focusedTrackId,
+    playbackScrollEvents,
     anchors,
     selectedId,
     onImageCompositionConfirm,
-    onImageCompositionLayerMove,
-    onImageCompositionLayerPatch,
-    onImageCompositionLayerRemove,
-    onImageCompositionLayerSelect,
     onMediaDrop,
+    onOpenTrackModal,
     onPreviewModeChange,
     onPreviewStripHeightChange,
     onPreviewVisualSegmentsChange,
     onPreviewZoomChange,
     onPreviewZoomStep,
+    onSelectPreviewCanvas,
     onSelectVisual,
-    onStepVisualDuration,
+    onSelectCutCanvas,
+    onFocusTrack,
+    onSelectCue,
     onToggleAnchorPlacement,
+    onToggleCuePlacement,
     onPlaceAnchor,
+    onPlaceCue,
     onSelectAnchor,
     onSelectScrollEvent,
     previewScrollEditingId,
@@ -3073,6 +4081,10 @@ function PreviewCanvas({
     onPreviewAnchorEditStart,
     onPreviewAnchorEditMove,
     onPreviewAnchorEditEnd,
+    previewCueEditingId,
+    onPreviewCueEditStart,
+    onPreviewCueEditMove,
+    onPreviewCueEditEnd,
     visualCutEditingId,
     onVisualCutEditStart,
     onVisualCutEditMove,
@@ -3082,40 +4094,54 @@ function PreviewCanvas({
     onTogglePreviewLock,
 }: {
     activeVisual: VisualClip | undefined;
+    previewActiveVisual: VisualClip | undefined;
+    activeCutCanvasId: number | null;
     playhead: number;
     canConfirmImageComposition: boolean;
-    imageCompositionDraft: ImageCompositionDraft;
+    canvasSummaries: CutEditCanvasSummary[];
+    canvasOptions: PreviewCanvasOption[];
     imageCompositionConfirmError: string | null;
     previewZoom: number;
     previewMode: PreviewMode;
     previewStripHeightPx: number;
     previewVisualSegments: PreviewScrollVisualSegment[];
+    previewVisualClips: VisualClip[];
+    selectedPreviewCanvasId: number | null;
     isConfirmingImageComposition: boolean;
     isAddingAnchor: boolean;
+    isAddingCue: boolean;
     isAnchorPlacementMode: boolean;
+    isCuePlacementMode: boolean;
     isPreviewAudioEnabled: boolean;
     isPreviewFullscreen: boolean;
     isPreviewLocked: boolean;
+    isPlaying: boolean;
     effects: EffectId[];
     visualClips: VisualClip[];
     scrollEvents: ScrollEventClip[];
+    cueTracks: CutEditCueTrack[];
+    cuePlacementTrackId: string;
+    focusedTrackId: string;
+    playbackScrollEvents: PreviewScrollPositionEvent[];
     anchors: AnchorListItem[];
     selectedId: string;
     onImageCompositionConfirm: () => Promise<void> | void;
-    onImageCompositionLayerMove: (layerId: string, direction: 'up' | 'down') => void;
-    onImageCompositionLayerPatch: (layerId: string, patch: ImageCompositionLayerPatch) => void;
-    onImageCompositionLayerRemove: (layerId: string) => void;
-    onImageCompositionLayerSelect: (layerId: string) => void;
     onMediaDrop: (event: ReactDragEvent<HTMLElement>) => void;
+    onOpenTrackModal: () => void;
     onPreviewModeChange: (mode: PreviewMode) => void;
     onPreviewStripHeightChange: (heightPx: number) => void;
     onPreviewVisualSegmentsChange: (segments: PreviewScrollVisualSegment[]) => void;
     onPreviewZoomChange: (zoom: number) => void;
     onPreviewZoomStep: (delta: number) => void;
+    onSelectPreviewCanvas: (canvasId: number) => void;
     onSelectVisual: (clipId: string) => void;
-    onStepVisualDuration: (clipId: string, deltaSeconds: number) => void;
+    onSelectCutCanvas: (canvasId: number) => void;
+    onFocusTrack: (trackId: string) => void;
+    onSelectCue: (cueId: number) => void;
     onToggleAnchorPlacement: () => void;
+    onToggleCuePlacement: () => void;
     onPlaceAnchor: (stripPositionPx: number, stripHeightPx: number) => Promise<void> | void;
+    onPlaceCue: (stripPositionPx: number, stripHeightPx: number) => Promise<void> | void;
     onSelectAnchor: (anchorId: number) => void;
     onSelectScrollEvent: (clipId: string) => void;
     onTogglePreviewAudio: () => void;
@@ -3123,6 +4149,7 @@ function PreviewCanvas({
     onTogglePreviewLock: () => void;
 } & PreviewScrollPointerEditHandlers &
     PreviewAnchorPointerEditHandlers &
+    PreviewCuePointerEditHandlers &
     VisualCutPointerEditHandlers) {
     const [canvasSize, setCanvasSize] = useState<PreviewCanvasSize>({
         width: DEFAULT_PREVIEW_CANVAS_WIDTH,
@@ -3130,41 +4157,35 @@ function PreviewCanvas({
     });
     const [canvasResize, setCanvasResize] = useState<PreviewCanvasResize | null>(null);
     const previewStripRef = useRef<HTMLDivElement | null>(null);
-    const activeScrollEvent = scrollEvents.find((event) => playhead >= event.start && playhead < event.start + event.duration);
-    const selectedScrollEvent = scrollEvents.find((event) => event.id === selectedId);
-    const handleScrollEvent = selectedScrollEvent ?? activeScrollEvent;
+    const previewVideoRefs = useRef(new Map<string, HTMLVideoElement>());
+    const selectedAnchor = anchors.find((anchor) => selectedId === getAnchorSelectionId(anchor.id));
     const isCutEditMode = previewMode === 'cutEdit';
-    const isMotionMode = previewMode === 'motion';
+    const renderedVisualClips = isCutEditMode ? visualClips : previewVisualClips;
+    const displayActiveVisual = isCutEditMode ? activeVisual : previewActiveVisual;
     const previewCoordinateHeightPx = getPreviewCoordinateHeight(previewStripHeightPx);
     const previewViewportHeightPx = Math.max(1, Math.round(canvasSize.height * previewZoom) - 34);
-    const previewPlayheadPixel = getPreviewPlayheadPixel(playhead, scrollEvents, previewCoordinateHeightPx, previewVisualSegments);
-    const previewScrollOffsetPx = getPreviewScrollOffset({
+    const previewPlayheadPixel = getPreviewPlayheadPixel(playhead, playbackScrollEvents, previewCoordinateHeightPx, previewVisualSegments);
+    const playbackPreviewScrollOffsetPx = getPreviewScrollOffset({
         playhead,
-        scrollEvents,
+        scrollEvents: playbackScrollEvents,
         stripHeightPx: previewCoordinateHeightPx,
         viewportHeightPx: previewViewportHeightPx,
         visualSegments: previewVisualSegments,
     });
+    const selectedAnchorScrollOffsetPx = selectedAnchor
+        ? getPreviewScrollOffsetForAnchor({
+              canvasId: selectedAnchor.canvasId,
+              index: selectedAnchor.index,
+              position: selectedAnchor.position,
+              stripHeightPx: previewCoordinateHeightPx,
+              viewportHeightPx: previewViewportHeightPx,
+              visualSegments: previewVisualSegments,
+          })
+        : undefined;
+    const previewScrollOffsetPx = selectedAnchorScrollOffsetPx ?? playbackPreviewScrollOffsetPx;
     const activeFxNames = effects
         .map((effectId) => effectById.get(effectId)?.name ?? effectId)
         .filter(Boolean);
-    const previewAnchorMarkers = useMemo(
-        () =>
-            anchors
-                .map((anchor) => ({
-                    anchor,
-                    top: getPreviewScrollPixel({
-                        canvasId: anchor.canvasId,
-                        index: anchor.index,
-                        position: anchor.position,
-                        stripHeightPx: previewCoordinateHeightPx,
-                        visualSegments: previewVisualSegments,
-                    }),
-                }))
-                .filter((marker): marker is { anchor: AnchorListItem; top: number } => typeof marker.top === 'number'),
-        [anchors, previewCoordinateHeightPx, previewVisualSegments],
-    );
-
     useEffect(() => {
         if (isCutEditMode) {
             return;
@@ -3180,7 +4201,7 @@ function PreviewCanvas({
             const stripRect = strip.getBoundingClientRect();
             const nextHeight = getPreviewCoordinateHeight(stripRect.height);
             const cutElements = Array.from(strip.querySelectorAll<HTMLElement>('.odx-preview-cut'));
-            const nextSegments = visualClips.map((clip, index) => {
+            const nextSegments = renderedVisualClips.map((clip, index) => {
                 const cut = cutElements[index];
                 const cutRect = cut?.getBoundingClientRect();
 
@@ -3188,8 +4209,8 @@ function PreviewCanvas({
                     id: clip.id,
                     canvasId: clip.canvasId,
                     index: clip.index ?? index,
-                    top: cutRect ? cutRect.top - stripRect.top : index * getPreviewCutHeight(visualClips.length, nextHeight),
-                    height: cutRect ? cutRect.height : getPreviewCutHeight(visualClips.length, nextHeight),
+                    top: cutRect ? cutRect.top - stripRect.top : index * getPreviewCutHeight(renderedVisualClips.length, nextHeight),
+                    height: cutRect ? cutRect.height : getPreviewCutHeight(renderedVisualClips.length, nextHeight),
                 };
             });
 
@@ -3205,7 +4226,23 @@ function PreviewCanvas({
         return () => {
             resizeObserver.disconnect();
         };
-    }, [isCutEditMode, onPreviewStripHeightChange, onPreviewVisualSegmentsChange, visualClips]);
+    }, [isCutEditMode, onPreviewStripHeightChange, onPreviewVisualSegmentsChange, renderedVisualClips]);
+
+    useEffect(() => {
+        syncPreviewVideoPlayback({
+            clips: renderedVisualClips,
+            isPlaying: isPlaying && !isCutEditMode,
+            playhead,
+            videos: previewVideoRefs.current,
+        });
+    }, [isCutEditMode, isPlaying, playhead, renderedVisualClips]);
+
+    useEffect(
+        () => () => {
+            previewVideoRefs.current.forEach((video) => video.pause());
+        },
+        [],
+    );
 
     const handlePreviewCanvasResizeStart = (event: ReactPointerEvent<HTMLElement>) => {
         if (isPreviewLocked) {
@@ -3259,20 +4296,6 @@ function PreviewCanvas({
         setCanvasResize(null);
     };
 
-    const handleAnchorPlacementClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
-        if (!isAnchorPlacementMode || isPreviewLocked || isAddingAnchor) {
-            return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const rect = event.currentTarget.getBoundingClientRect();
-        const stripPositionPx = clamp(event.clientY - rect.top, 0, previewCoordinateHeightPx);
-
-        void onPlaceAnchor(stripPositionPx, previewCoordinateHeightPx);
-    };
-
     return (
         <section className={`odx-stage odx-stage-${previewMode} ${canvasResize ? 'is-canvas-resizing' : ''} ${isPreviewFullscreen ? 'is-preview-fullscreen' : ''} ${isPreviewLocked ? 'is-preview-locked' : ''} ${isPreviewAudioEnabled ? '' : 'is-preview-muted'}`}>
             <div className="odx-stage-toolbar">
@@ -3283,9 +4306,30 @@ function PreviewCanvas({
                         </button>
                     ))}
                 </div>
+                {!isCutEditMode ? (
+                    <label className="odx-preview-canvas-select">
+                        <span>캔버스</span>
+                        <select
+                            aria-label="미리보기 캔버스 선택"
+                            disabled={canvasOptions.length === 0}
+                            onChange={(event) => onSelectPreviewCanvas(Number(event.target.value))}
+                            value={selectedPreviewCanvasId ?? ''}
+                        >
+                            {canvasOptions.length > 0 ? (
+                                canvasOptions.map((canvas) => (
+                                    <option key={canvas.id} value={canvas.id}>
+                                        {canvas.label} · {canvas.mediaCount}개
+                                    </option>
+                                ))
+                            ) : (
+                                <option value="">캔버스 없음</option>
+                            )}
+                        </select>
+                    </label>
+                ) : null}
                 <div className="odx-stage-meta">
                     <span>
-                        비율 9:20 · FPS 30 · 현재 {activeVisual?.label ?? '컷 없음'}
+                        비율 9:20 · FPS 30 · 현재 {displayActiveVisual?.label ?? '컷 없음'}
                     </span>
                     <span>{formatTime(playhead)}</span>
                 </div>
@@ -3310,26 +4354,58 @@ function PreviewCanvas({
             </div>
             {isCutEditMode ? (
                 <CutEditWorkspace
+                    activeCanvasId={activeCutCanvasId}
                     activeVisual={activeVisual}
+                    anchors={anchors}
                     canConfirmImageComposition={canConfirmImageComposition}
-                    imageCompositionDraft={imageCompositionDraft}
+                    canvasSummaries={canvasSummaries}
                     imageCompositionConfirmError={imageCompositionConfirmError}
+                    isAddingAnchor={isAddingAnchor}
+                    isAddingCue={isAddingCue}
+                    isAnchorPlacementMode={isAnchorPlacementMode}
+                    isCuePlacementMode={isCuePlacementMode}
                     isConfirmingImageComposition={isConfirmingImageComposition}
                     isPreviewLocked={isPreviewLocked}
+                    cuePlacementTrackId={cuePlacementTrackId}
+                    cueTracks={cueTracks}
+                    focusedTrackId={focusedTrackId}
+                    onFocusTrack={onFocusTrack}
                     onImageCompositionConfirm={onImageCompositionConfirm}
-                    onImageCompositionLayerMove={onImageCompositionLayerMove}
-                    onImageCompositionLayerPatch={onImageCompositionLayerPatch}
-                    onImageCompositionLayerRemove={onImageCompositionLayerRemove}
-                    onImageCompositionLayerSelect={onImageCompositionLayerSelect}
                     onMediaDrop={onMediaDrop}
+                    onOpenTrackModal={onOpenTrackModal}
+                    onPlaceAnchor={onPlaceAnchor}
+                    onPlaceCue={onPlaceCue}
+                    onPreviewAnchorEditEnd={onPreviewAnchorEditEnd}
+                    onPreviewAnchorEditMove={onPreviewAnchorEditMove}
+                    onPreviewAnchorEditStart={onPreviewAnchorEditStart}
+                    onPreviewCueEditEnd={onPreviewCueEditEnd}
+                    onPreviewCueEditMove={onPreviewCueEditMove}
+                    onPreviewCueEditStart={onPreviewCueEditStart}
+                    onPreviewScrollEditEnd={onPreviewScrollEditEnd}
+                    onPreviewScrollEditMove={onPreviewScrollEditMove}
+                    onPreviewScrollEditStart={onPreviewScrollEditStart}
+                    onPreviewStripHeightChange={onPreviewStripHeightChange}
+                    onPreviewVisualSegmentsChange={onPreviewVisualSegmentsChange}
+                    onSelectAnchor={onSelectAnchor}
+                    onSelectCanvas={onSelectCutCanvas}
+                    onSelectCue={onSelectCue}
+                    onSelectScrollEvent={onSelectScrollEvent}
                     onSelectVisual={onSelectVisual}
-                    onStepVisualDuration={onStepVisualDuration}
+                    onToggleAnchorPlacement={onToggleAnchorPlacement}
+                    onToggleCuePlacement={onToggleCuePlacement}
                     onVisualCutEditEnd={onVisualCutEditEnd}
                     onVisualCutEditMove={onVisualCutEditMove}
                     onVisualCutEditStart={onVisualCutEditStart}
+                    playbackScrollEvents={playbackScrollEvents}
+                    playhead={playhead}
+                    previewAnchorEditingId={previewAnchorEditingId}
+                    previewCueEditingId={previewCueEditingId}
+                    previewScrollEditingId={previewScrollEditingId}
+                    previewStripHeightPx={previewStripHeightPx}
+                    previewVisualSegments={previewVisualSegments}
+                    scrollEvents={scrollEvents}
                     selectedId={selectedId}
                     visualCutEditingId={visualCutEditingId}
-                    visualClips={visualClips}
                 />
             ) : (
             <div className="odx-preview-wrap">
@@ -3362,16 +4438,30 @@ function PreviewCanvas({
                         }
                     >
                         <div className="odx-webtoon-strip" ref={previewStripRef}>
-                            {visualClips.length > 0 ? (
-                                visualClips.map((clip, index) => (
+                            {renderedVisualClips.length > 0 ? (
+                                renderedVisualClips.map((clip, index) => (
                                     <article
-                                        className={`odx-preview-cut ${clip.mediaUrl ? 'has-media' : ''} ${clip.id === activeVisual?.id ? 'is-active' : ''} ${selectedId === clip.id ? 'is-selected' : ''}`}
+                                        className={`odx-preview-cut ${clip.mediaUrl ? 'has-media' : ''} ${clip.id === displayActiveVisual?.id ? 'is-active' : ''} ${selectedId === clip.id ? 'is-selected' : ''}`}
                                         data-clip-id={clip.id}
                                         key={clip.id}
-                                        style={getPreviewCutStyle(clip, visualClips.length, previewCoordinateHeightPx)}
+                                        style={getPreviewCutStyle(clip, renderedVisualClips.length, previewCoordinateHeightPx)}
                                     >
                                         {clip.mediaType === 'image' && clip.mediaUrl ? <img alt="" className="odx-preview-media" src={clip.mediaUrl} /> : null}
-                                        {clip.mediaType === 'video' && clip.mediaUrl ? <video className="odx-preview-media" muted playsInline preload="metadata" src={clip.mediaUrl} /> : null}
+                                        {clip.mediaType === 'video' && clip.mediaUrl ? (
+                                            <video
+                                                className="odx-preview-media"
+                                                playsInline
+                                                preload="metadata"
+                                                ref={(node) => {
+                                                    if (node) {
+                                                        previewVideoRefs.current.set(clip.id, node);
+                                                    } else {
+                                                        previewVideoRefs.current.delete(clip.id);
+                                                    }
+                                                }}
+                                                src={clip.mediaUrl}
+                                            />
+                                        ) : null}
                                         {clip.mediaUrl ? null : <span>{clip.label}</span>}
                                         {clip.mediaUrl ? null : <strong>{clip.description}</strong>}
                                         {clip.bubble ? <p className={`odx-speech-bubble odx-speech-${clip.bubble.tone ?? 'default'}`}>{clip.bubble.text}</p> : null}
@@ -3395,7 +4485,7 @@ function PreviewCanvas({
                                                 <span>{String(index + 1).padStart(2, '0')}</span>
                                                 <strong>{clip.label}</strong>
                                                 <small>
-                                                    {formatTime(clip.start)} · {clip.duration}s
+                                                    {getVisualClipTimingLabel(clip)}
                                                 </small>
                                                 <i
                                                     aria-hidden="true"
@@ -3416,138 +4506,6 @@ function PreviewCanvas({
                                 <div className="odx-preview-empty">등록된 컷 미디어가 없습니다.</div>
                             )}
                         </div>
-                        {isMotionMode ? (
-                            <div className="odx-preview-scroll-overlay" style={{ height: `${previewCoordinateHeightPx}px` }}>
-                                {scrollEvents.map((event) => {
-                                    const isSelected = selectedId === event.id;
-                                    const isActive = activeScrollEvent?.id === event.id;
-
-                                    return (
-                                        <button
-                                            className={`odx-preview-scroll-event ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''} ${previewScrollEditingId === event.id ? 'is-position-editing' : ''}`}
-                                            key={event.id}
-                                            onClick={() => onSelectScrollEvent(event.id)}
-                                            onPointerCancel={onPreviewScrollEditEnd}
-                                            onPointerDown={(pointerEvent) => {
-                                                if (isPreviewLocked) {
-                                                    return;
-                                                }
-
-                                                onPreviewScrollEditStart({ event: pointerEvent, item: event, mode: 'move' });
-                                            }}
-                                            onPointerMove={onPreviewScrollEditMove}
-                                            onPointerUp={onPreviewScrollEditEnd}
-                                            style={getPreviewScrollEventStyle(event, previewCoordinateHeightPx, previewVisualSegments)}
-                                            type="button"
-                                        >
-                                            <span
-                                                aria-hidden="true"
-                                                className="odx-preview-scroll-resize-handle odx-preview-scroll-resize-start"
-                                                onPointerDown={(pointerEvent) => {
-                                                    if (isPreviewLocked) {
-                                                        return;
-                                                    }
-
-                                                    onPreviewScrollEditStart({ event: pointerEvent, item: event, mode: 'resize-start' });
-                                                }}
-                                            />
-                                            <span
-                                                aria-hidden="true"
-                                                className="odx-preview-scroll-resize-handle odx-preview-scroll-resize-end"
-                                                onPointerDown={(pointerEvent) => {
-                                                    if (isPreviewLocked) {
-                                                        return;
-                                                    }
-
-                                                    onPreviewScrollEditStart({ event: pointerEvent, item: event, mode: 'resize-end' });
-                                                }}
-                                            />
-                                            <span>{event.label}</span>
-                                            <small>{event.sublabel}</small>
-                                        </button>
-                                    );
-                                })}
-                                {handleScrollEvent ? (
-                                    <div className="odx-scroll-handles" style={{ height: `${previewCoordinateHeightPx}px` }}>
-                                        <span className="odx-scroll-handle-band" style={getPreviewScrollBandStyle(handleScrollEvent, previewCoordinateHeightPx, previewVisualSegments)} />
-                                        <button
-                                            aria-label="스크롤 이벤트 시작 위치 조절"
-                                            className="odx-scroll-strip-line odx-scroll-strip-start"
-                                            onPointerCancel={onPreviewScrollEditEnd}
-                                            onPointerDown={(pointerEvent) => {
-                                                if (isPreviewLocked) {
-                                                    return;
-                                                }
-
-                                                onPreviewScrollEditStart({ event: pointerEvent, item: handleScrollEvent, mode: 'resize-start' });
-                                            }}
-                                            onPointerMove={onPreviewScrollEditMove}
-                                            onPointerUp={onPreviewScrollEditEnd}
-                                            style={getPreviewScrollHandleStyle(getScrollEventStartPixel(handleScrollEvent, previewCoordinateHeightPx, previewVisualSegments))}
-                                            type="button"
-                                        >
-                                            <span>시작 ▲ {formatScrollIndexedPosition(handleScrollEvent.startIndex, handleScrollEvent.startPosition)}</span>
-                                        </button>
-                                        <button
-                                            aria-label="스크롤 이벤트 종료 위치 조절"
-                                            className="odx-scroll-strip-line odx-scroll-strip-end"
-                                            onPointerCancel={onPreviewScrollEditEnd}
-                                            onPointerDown={(pointerEvent) => {
-                                                if (isPreviewLocked) {
-                                                    return;
-                                                }
-
-                                                onPreviewScrollEditStart({ event: pointerEvent, item: handleScrollEvent, mode: 'resize-end' });
-                                            }}
-                                            onPointerMove={onPreviewScrollEditMove}
-                                            onPointerUp={onPreviewScrollEditEnd}
-                                            style={getPreviewScrollHandleStyle(getScrollEventEndPixel(handleScrollEvent, previewCoordinateHeightPx, previewVisualSegments))}
-                                            type="button"
-                                        >
-                                            <span>종료 ▼ {formatScrollIndexedPosition(handleScrollEvent.endIndex, handleScrollEvent.endPosition)}</span>
-                                        </button>
-                                    </div>
-                                ) : null}
-                            </div>
-                        ) : null}
-                        {isMotionMode ? (
-                            <div className="odx-preview-anchor-layer" style={{ height: `${previewCoordinateHeightPx}px` }}>
-                                {previewAnchorMarkers.map(({ anchor, top }) => (
-                                    <button
-                                        aria-label={`앵커 ${anchor.id}`}
-                                        className={`odx-preview-anchor-marker ${selectedId === getAnchorSelectionId(anchor.id) ? 'is-selected' : ''} ${previewAnchorEditingId === anchor.id ? 'is-dragging' : ''}`}
-                                        key={anchor.id}
-                                        onClick={() => onSelectAnchor(anchor.id)}
-                                        onPointerCancel={onPreviewAnchorEditEnd}
-                                        onPointerDown={(pointerEvent) => {
-                                            if (isPreviewLocked || isAddingAnchor) {
-                                                return;
-                                            }
-
-                                            onPreviewAnchorEditStart({ event: pointerEvent, anchor, top });
-                                        }}
-                                        onPointerMove={onPreviewAnchorEditMove}
-                                        onPointerUp={onPreviewAnchorEditEnd}
-                                        style={{ top: `${top}px` }}
-                                        type="button"
-                                    >
-                                        <b>A{anchor.id}</b>
-                                    </button>
-                                ))}
-                            </div>
-                        ) : null}
-                        {isMotionMode && isAnchorPlacementMode ? (
-                            <button
-                                aria-label="앵커 위치 선택"
-                                className="odx-anchor-placement-layer"
-                                disabled={isPreviewLocked || isAddingAnchor}
-                                onClick={handleAnchorPlacementClick}
-                                style={{ height: `${previewCoordinateHeightPx}px` }}
-                                type="button"
-                            >
-                                <span>클릭해서 앵커 추가</span>
-                            </button>
-                        ) : null}
                         {previewPlayheadPixel !== undefined ? (
                             <div className="odx-strip-playhead" style={{ top: `${previewPlayheadPixel}px` }}>
                                 <span>{formatTime(playhead)}</span>
@@ -3614,32 +4572,44 @@ function InspectorPanel({
     selectedItem,
     effects,
     activeVisual,
+    anchors,
+    anchorEventDraft,
     trackById,
     characterById,
     previewStripHeightPx,
     previewVisualSegments,
     cueScriptState,
+    onAnchorEventDraftChange,
+    onSaveAnchorEvent,
+    onDeleteAnchorEvent,
+    onDeleteAnchor,
     onCueScriptDraftChange,
     onSaveCueScript,
+    onUpdateVideoClipControls,
     onStepTimelineItem,
     onNudgeScrollPosition,
-    onStepVisualDuration,
     onDeleteTimelineItem,
     onResizeStart,
 }: {
     selectedItem: Selection | undefined;
     effects: EffectId[];
     activeVisual: VisualClip | undefined;
+    anchors: AnchorListItem[];
+    anchorEventDraft: AnchorEventDraft;
     trackById: Map<string, AudioTrackDefinition>;
     characterById: Map<string, CharacterDefinition>;
     previewStripHeightPx: number;
     previewVisualSegments: PreviewScrollVisualSegment[];
     cueScriptState: CueScriptPanelState;
+    onAnchorEventDraftChange: (patch: Partial<Pick<AnchorEventDraft, 'type' | 'endAnchorId' | 'duration'>>) => void;
+    onSaveAnchorEvent: () => Promise<void> | void;
+    onDeleteAnchorEvent: () => Promise<void> | void;
+    onDeleteAnchor: () => Promise<void> | void;
     onCueScriptDraftChange: (script: string) => void;
     onSaveCueScript: () => Promise<void> | void;
+    onUpdateVideoClipControls: (clipId: string, patch: VideoClipControlPatch, options?: { persist?: boolean }) => void;
     onStepTimelineItem: (itemKind: TimelineItemKind, itemId: string, edge: 'start' | 'end', deltaSeconds: number) => void;
     onNudgeScrollPosition: (itemId: string, edge: 'start' | 'end', deltaPx: number) => void;
-    onStepVisualDuration: (clipId: string, deltaSeconds: number) => void;
     onDeleteTimelineItem: (itemKind: TimelineItemKind, itemId: string) => void;
     onResizeStart: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
@@ -3667,6 +4637,7 @@ function InspectorPanel({
     const isScrollEvent = isScrollEventClip(item);
     const isAudioClip = isTimelineItem && !isScrollEvent;
     const visualItem = !isTimelineItem && !isAnchor ? item : undefined;
+    const isVideoClip = visualItem?.mediaType === 'video';
     const character = isAudioClip && item.characterId ? characterById.get(item.characterId) : undefined;
     const itemTitle = isTimelineItem || isAnchor ? item.label : `${item.label} · ${item.description}`;
     const scrollStartPositionLabel = isScrollEvent ? formatScrollIndexedPosition(item.startIndex, item.startPosition) : '';
@@ -3676,14 +4647,31 @@ function InspectorPanel({
         : isScrollEvent
         ? `시간 ${formatTime(item.start)} · 위치 ${scrollStartPositionLabel} -> ${scrollEndPositionLabel}`
         : isAudioClip
-          ? `${trackById.get(item.track)?.label ?? item.track} · ${item.sublabel}`
-          : `${visualItem?.kind.toUpperCase() ?? 'CUT'} · ${item.duration}s`;
+          ? `${trackById.get(item.track)?.label ?? item.track}`
+          : `캔버스 ${visualItem?.canvasId ?? '-'} · ${visualItem?.mediaType ?? visualItem?.kind ?? 'media'}`;
     const scrollStartPixel = isScrollEvent ? getScrollEventStartPixel(item, previewStripHeightPx, previewVisualSegments) : 0;
     const scrollEndPixel = isScrollEvent ? getScrollEventEndPixel(item, previewStripHeightPx, previewVisualSegments) : 0;
     const scrollDistance = isScrollEvent ? Math.abs(scrollEndPixel - scrollStartPixel) : 0;
     const scrollSpeed = isScrollEvent ? Math.round(scrollDistance / Math.max(1, item.duration)) : 0;
     const scrollStartTop = isScrollEvent ? clamp((scrollStartPixel / Math.max(1, previewStripHeightPx)) * 100, 0, 100) : 0;
     const scrollEndTop = isScrollEvent ? clamp((scrollEndPixel / Math.max(1, previewStripHeightPx)) * 100, 0, 100) : 0;
+    const anchorEventEndOptions = isAnchor
+        ? anchors.filter(
+              (anchor) =>
+                  String(anchor.trackId) === item.trackId &&
+                  anchor.id !== item.anchorId &&
+                  anchor.canvasId === item.canvasId &&
+                  anchor.time > item.time,
+          )
+        : [];
+    const anchorEventLabel =
+        isAnchor && item.event?.type === 'scroll'
+            ? `스크롤 · A${item.event.startAnchorId} -> A${item.event.endAnchorId}`
+            : isAnchor && item.event?.type === 'pause'
+              ? `정지 · ${Math.round(item.event.duration)}ms`
+              : '이벤트 없음';
+    const showAudioCueScript = isAudioClip && audioInspectorSectionIds.includes('cueScript');
+    const showAudioTiming = isAudioClip && audioInspectorSectionIds.includes('timing');
 
     if (isAnchor) {
         return (
@@ -3735,6 +4723,89 @@ function InspectorPanel({
                             </div>
                         </div>
                     </section>
+                    <section className="odx-inspector-card">
+                        <h3>앵커 이벤트</h3>
+                        <div className="odx-anchor-event-summary">
+                            <span>현재 이벤트</span>
+                            <b>{anchorEventLabel}</b>
+                        </div>
+                        <form
+                            className="odx-anchor-event-form"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void onSaveAnchorEvent();
+                            }}
+                        >
+                            <div className="odx-anchor-event-toggle" role="group" aria-label="앵커 이벤트 유형">
+                                <button
+                                    className={anchorEventDraft.type === 'scroll' ? 'is-active' : ''}
+                                    disabled={anchorEventDraft.isSaving}
+                                    onClick={() => onAnchorEventDraftChange({ type: 'scroll' })}
+                                    type="button"
+                                >
+                                    스크롤
+                                </button>
+                                <button
+                                    className={anchorEventDraft.type === 'pause' ? 'is-active' : ''}
+                                    disabled={anchorEventDraft.isSaving}
+                                    onClick={() => onAnchorEventDraftChange({ type: 'pause' })}
+                                    type="button"
+                                >
+                                    정지
+                                </button>
+                            </div>
+                            {anchorEventDraft.type === 'scroll' ? (
+                                <label className="odx-anchor-event-field">
+                                    <span>종료 앵커</span>
+                                    <select
+                                        disabled={anchorEventDraft.isSaving || anchorEventEndOptions.length === 0}
+                                        onChange={(event) => onAnchorEventDraftChange({ endAnchorId: event.currentTarget.value })}
+                                        value={anchorEventDraft.endAnchorId}
+                                    >
+                                        <option value="">종료 앵커 선택</option>
+                                        {anchorEventEndOptions.map((anchor) => (
+                                            <option key={anchor.id} value={anchor.id}>
+                                                {`A${anchor.id} · ${formatTime(toTimelineSeconds(anchor.time))} · ${formatScrollIndexedPosition(anchor.index, anchor.position)}`}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {anchorEventEndOptions.length === 0 ? <small>같은 캔버스에서 뒤쪽 앵커를 하나 더 추가해야 합니다.</small> : null}
+                                </label>
+                            ) : (
+                                <label className="odx-anchor-event-field">
+                                    <span>정지 시간(ms)</span>
+                                    <input
+                                        disabled={anchorEventDraft.isSaving}
+                                        min="1"
+                                        onChange={(event) => onAnchorEventDraftChange({ duration: event.currentTarget.value })}
+                                        step="100"
+                                        type="number"
+                                        value={anchorEventDraft.duration}
+                                    />
+                                </label>
+                            )}
+                            {anchorEventDraft.error ? (
+                                <p className="odx-cue-script-error" role="alert">
+                                    {anchorEventDraft.error}
+                                </p>
+                            ) : null}
+                            <div className="odx-anchor-event-actions">
+                                <button disabled={anchorEventDraft.isSaving} type="submit">
+                                    {anchorEventDraft.isSaving ? '저장 중' : '이벤트 저장'}
+                                </button>
+                                {item.event ? (
+                                    <button disabled={anchorEventDraft.isSaving} onClick={() => void onDeleteAnchorEvent()} type="button">
+                                        이벤트 삭제
+                                    </button>
+                                ) : null}
+                            </div>
+                        </form>
+                    </section>
+                    <section className="odx-inspector-actions">
+                        <button className="odx-danger-action" disabled={anchorEventDraft.isSaving} onClick={() => void onDeleteAnchor()} type="button">
+                            앵커 삭제
+                        </button>
+                    </section>
                 </div>
             </aside>
         );
@@ -3754,22 +4825,36 @@ function InspectorPanel({
                         <small>{itemMeta}</small>
                     </div>
                     <dl className="odx-property-grid">
-                        <div>
-                            <dt>시작</dt>
-                            <dd>{formatTime(item.start)}</dd>
-                        </div>
-                        <div>
-                            <dt>길이</dt>
-                            <dd>{item.duration.toFixed(1)}s</dd>
-                        </div>
-                        <div>
-                            <dt>볼륨</dt>
-                            <dd>{isScrollEvent ? '-' : isAudioClip ? '-5.0 dB' : '100%'}</dd>
-                        </div>
-                        <div>
-                            <dt>상태</dt>
-                            <dd>{effects.length > 0 ? '효과 적용' : '기본'}</dd>
-                        </div>
+                        {isTimelineItem ? (
+                            <>
+                                <div>
+                                    <dt>시작</dt>
+                                    <dd>{formatTime(item.start)}</dd>
+                                </div>
+                                <div>
+                                    <dt>길이</dt>
+                                    <dd>{item.duration.toFixed(1)}s</dd>
+                                </div>
+                            </>
+                        ) : null}
+                        {visualItem ? (
+                            <>
+                                <div>
+                                    <dt>미디어 ID</dt>
+                                    <dd>{visualItem.mediaId}</dd>
+                                </div>
+                                <div>
+                                    <dt>기준</dt>
+                                    <dd>{getVisualClipTimingLabel(visualItem)}</dd>
+                                </div>
+                            </>
+                        ) : null}
+                        {!isAudioClip && !visualItem ? (
+                            <div>
+                                <dt>상태</dt>
+                                <dd>{effects.length > 0 ? '효과 적용' : '기본'}</dd>
+                            </div>
+                        ) : null}
                     </dl>
                 </section>
                 {isScrollEvent ? (
@@ -3853,55 +4938,106 @@ function InspectorPanel({
                                 </span>
                             </div>
                         ) : null}
-                        <form
-                            className="odx-cue-script-form"
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                void onSaveCueScript();
-                            }}
-                        >
-                            <label className="odx-cue-script-field">
-                                <span>대사</span>
-                                <textarea
-                                    disabled={cueScriptState.isSaving}
-                                    onChange={(event) => onCueScriptDraftChange(event.currentTarget.value)}
-                                    placeholder="대사를 입력하세요"
-                                    value={cueScriptState.draft}
-                                />
-                            </label>
-                            {cueScriptState.error ? (
-                                <p className="odx-cue-script-error" role="alert">
-                                    {cueScriptState.error}
-                                </p>
-                            ) : null}
-                            <div className="odx-cue-script-actions">
-                                <button disabled={cueScriptState.isSaving || !cueScriptState.draft.trim()} type="submit">
-                                    {cueScriptState.isSaving ? '등록 중' : '등록'}
-                                </button>
+                        <div className="odx-inspector-step-grid">
+                            <div className="odx-step-field">
+                                <span>시작 위치</span>
+                                <b>{formatCueMediaPosition(item.startCanvasMediaId, item.startPosition)}</b>
                             </div>
-                        </form>
-                        <div className="odx-chip-row">
-                            <button className="is-active" type="button">
-                                기본
-                            </button>
-                            <button type="button">밝게</button>
-                            <button type="button">진지하게</button>
-                            <button type="button">속삭임</button>
+                            <div className="odx-step-field">
+                                <span>종료 위치</span>
+                                <b>{formatCueMediaPosition(item.endCanvasMediaId ?? item.startCanvasMediaId, item.endPosition ?? item.startPosition)}</b>
+                            </div>
                         </div>
-                        <div className="odx-meter odx-meter-dense">
-                            {waveformBars.concat(waveformBars).map((height, index) => (
-                                <i key={`${height}-${index}`} style={{ height: `${Math.max(8, height)}px` }} />
-                            ))}
+                        {showAudioCueScript ? (
+                            <form
+                                className="odx-cue-script-form"
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    void onSaveCueScript();
+                                }}
+                            >
+                                <label className="odx-cue-script-field">
+                                    <span>대사</span>
+                                    <textarea
+                                        disabled={cueScriptState.isSaving}
+                                        onChange={(event) => onCueScriptDraftChange(event.currentTarget.value)}
+                                        placeholder="대사를 입력하세요"
+                                        value={cueScriptState.draft}
+                                    />
+                                </label>
+                                {cueScriptState.error ? (
+                                    <p className="odx-cue-script-error" role="alert">
+                                        {cueScriptState.error}
+                                    </p>
+                                ) : null}
+                                <div className="odx-cue-script-actions">
+                                    <button disabled={cueScriptState.isSaving || !cueScriptState.draft.trim()} type="submit">
+                                        {cueScriptState.isSaving ? '등록 중' : '등록'}
+                                    </button>
+                                </div>
+                            </form>
+                        ) : null}
+                        {showAudioTiming ? (
+                            <div className="odx-inspector-step-grid">
+                                <div className="odx-step-field">
+                                    <span>시작</span>
+                                    <div className="odx-dur-step">
+                                        <button onClick={() => onStepTimelineItem('audio', item.id, 'start', -0.5)} type="button">
+                                            -
+                                        </button>
+                                        <b>{formatTime(item.start)}</b>
+                                        <button onClick={() => onStepTimelineItem('audio', item.id, 'start', 0.5)} type="button">
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="odx-step-field">
+                                    <span>종료</span>
+                                    <div className="odx-dur-step">
+                                        <button onClick={() => onStepTimelineItem('audio', item.id, 'end', -0.5)} type="button">
+                                            -
+                                        </button>
+                                        <b>{formatTime(item.start + item.duration)}</b>
+                                        <button onClick={() => onStepTimelineItem('audio', item.id, 'end', 0.5)} type="button">
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : null}
+                    </section>
+                ) : null}
+                {visualItem ? (
+                    <section className="odx-inspector-card">
+                        <h3>캔버스 레이어</h3>
+                        <div className="odx-inspector-step-grid">
+                            <div className="odx-step-field">
+                                <span>캔버스</span>
+                                <b>{visualItem.canvasId ?? '-'}</b>
+                            </div>
+                            <div className="odx-step-field">
+                                <span>순서</span>
+                                <b>{typeof visualItem.index === 'number' ? visualItem.index + 1 : '-'}</b>
+                            </div>
+                            <div className="odx-step-field">
+                                <span>미디어</span>
+                                <b>{visualItem.mediaType ?? visualItem.kind}</b>
+                            </div>
                         </div>
+                    </section>
+                ) : null}
+                {isVideoClip ? (
+                    <section className="odx-inspector-card">
+                        <h3>비디오 타임라인</h3>
                         <div className="odx-inspector-step-grid">
                             <div className="odx-step-field">
                                 <span>시작</span>
                                 <div className="odx-dur-step">
-                                    <button onClick={() => onStepTimelineItem('audio', item.id, 'start', -0.5)} type="button">
+                                    <button onClick={() => onStepTimelineItem('video', visualItem.id, 'start', -0.5)} type="button">
                                         -
                                     </button>
-                                    <b>{formatTime(item.start)}</b>
-                                    <button onClick={() => onStepTimelineItem('audio', item.id, 'start', 0.5)} type="button">
+                                    <b>{formatTime(visualItem.start)}</b>
+                                    <button onClick={() => onStepTimelineItem('video', visualItem.id, 'start', 0.5)} type="button">
                                         +
                                     </button>
                                 </div>
@@ -3909,42 +5045,74 @@ function InspectorPanel({
                             <div className="odx-step-field">
                                 <span>종료</span>
                                 <div className="odx-dur-step">
-                                    <button onClick={() => onStepTimelineItem('audio', item.id, 'end', -0.5)} type="button">
+                                    <button onClick={() => onStepTimelineItem('video', visualItem.id, 'end', -0.5)} type="button">
                                         -
                                     </button>
-                                    <b>{formatTime(item.start + item.duration)}</b>
-                                    <button onClick={() => onStepTimelineItem('audio', item.id, 'end', 0.5)} type="button">
+                                    <b>{formatTime(visualItem.start + visualItem.duration)}</b>
+                                    <button onClick={() => onStepTimelineItem('video', visualItem.id, 'end', 0.5)} type="button">
                                         +
                                     </button>
                                 </div>
                             </div>
                         </div>
-                    </section>
-                ) : null}
-                {visualItem ? (
-                    <section className="odx-inspector-card">
-                        <h3>컷 편집</h3>
-                        <div className="odx-inspector-step-grid">
-                            <div className="odx-step-field">
-                                <span>컷 길이</span>
-                                <div className="odx-dur-step">
-                                    <button onClick={() => onStepVisualDuration(visualItem.id, -0.5)} type="button">
-                                        -
-                                    </button>
-                                    <b>{visualItem.duration.toFixed(1)}s</b>
-                                    <button onClick={() => onStepVisualDuration(visualItem.id, 0.5)} type="button">
-                                        +
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="odx-step-field">
-                                <span>미디어</span>
-                                <b>{visualItem.mediaType ?? visualItem.kind}</b>
-                            </div>
+                        <div className="odx-video-control-grid">
+                            <label>
+                                <span>원본 시작(s)</span>
+                                <input
+                                    min="0"
+                                    onBlur={(event) =>
+                                        onUpdateVideoClipControls(visualItem.id, { sourceStart: Number(event.currentTarget.value) }, { persist: true })
+                                    }
+                                    onChange={(event) => onUpdateVideoClipControls(visualItem.id, { sourceStart: Number(event.currentTarget.value) })}
+                                    step="0.1"
+                                    type="number"
+                                    value={visualItem.sourceStart ?? 0}
+                                />
+                            </label>
+                            <label>
+                                <span>원본 종료(s)</span>
+                                <input
+                                    min="0"
+                                    onBlur={(event) =>
+                                        onUpdateVideoClipControls(visualItem.id, { sourceEnd: Number(event.currentTarget.value) }, { persist: true })
+                                    }
+                                    onChange={(event) => onUpdateVideoClipControls(visualItem.id, { sourceEnd: Number(event.currentTarget.value) })}
+                                    step="0.1"
+                                    type="number"
+                                    value={visualItem.sourceEnd ?? ''}
+                                />
+                            </label>
+                            <label>
+                                <span>음량</span>
+                                <input
+                                    max="100"
+                                    min="0"
+                                    onChange={(event) =>
+                                        onUpdateVideoClipControls(
+                                            visualItem.id,
+                                            { volume: Number(event.currentTarget.value) / 100 },
+                                            { persist: true },
+                                        )
+                                    }
+                                    step="1"
+                                    type="range"
+                                    value={Math.round((visualItem.volume ?? 1) * 100)}
+                                />
+                            </label>
+                            <label className="odx-video-muted-toggle">
+                                <span>뮤트</span>
+                                <input
+                                    checked={visualItem.isMuted === true}
+                                    onChange={(event) =>
+                                        onUpdateVideoClipControls(visualItem.id, { isMuted: event.currentTarget.checked }, { persist: true })
+                                    }
+                                    type="checkbox"
+                                />
+                            </label>
                         </div>
-                        <p className="odx-dur-hint">컷 편집 모드에서 컷 박스를 위아래로 드래그하면 순서가 바뀌고, 하단 핸들을 끌면 길이가 바뀝니다.</p>
                     </section>
                 ) : null}
+                {effects.length > 0 || !isAudioClip ? (
                 <section className="odx-inspector-card">
                     <h3>적용된 효과</h3>
                     <div className="odx-effect-stack">
@@ -3967,6 +5135,7 @@ function InspectorPanel({
                         )}
                     </div>
                 </section>
+                ) : null}
                 {isScrollEvent ? (
                     <section className="odx-inspector-card">
                         <h3>프리뷰 스크롤 위치</h3>
@@ -3989,43 +5158,6 @@ function InspectorPanel({
                             </div>
                         </div>
                     </section>
-                ) : null}
-                {isAudioClip ? (
-                    <>
-                        <section className="odx-inspector-card">
-                            <h3>오디오 분석</h3>
-                            <div className="odx-meter">
-                                {waveformBars.map((height, index) => (
-                                    <i key={`${height}-${index}`} style={{ height: `${height}px` }} />
-                                ))}
-                            </div>
-                            <div className="odx-property-grid">
-                                <div>
-                                    <dt>Peak</dt>
-                                    <dd>-3.1 dB</dd>
-                                </div>
-                                <div>
-                                    <dt>LUFS</dt>
-                                    <dd>-16.8</dd>
-                                </div>
-                            </div>
-                        </section>
-                        <section className="odx-inspector-card">
-                            <h3>자동화</h3>
-                            <div className="odx-automation-row">
-                                <span>입장</span>
-                                <b>fade · 0.35s</b>
-                            </div>
-                            <div className="odx-automation-row">
-                                <span>감정톤</span>
-                                <b>긴장 72%</b>
-                            </div>
-                            <div className="odx-automation-row">
-                                <span>자막 싱크</span>
-                                <b>+04f</b>
-                            </div>
-                        </section>
-                    </>
                 ) : null}
                 {isScrollEvent || isAudioClip ? (
                     <section className="odx-inspector-actions">
@@ -4155,6 +5287,7 @@ function AudioTracks({
     lockedTrackIds,
     timelineTool,
     effectsById,
+    playhead,
     onSelect,
     onSplitTimelineItem,
     onSelectTimelineRange,
@@ -4177,6 +5310,7 @@ function AudioTracks({
     lockedTrackIds: ReadonlySet<string>;
     timelineTool: TimelineToolMode;
     effectsById: Record<string, EffectId[]>;
+    playhead: number;
     onSelect: (clipId: string) => void;
     onSplitTimelineItem: (itemKind: TimelineItemKind, itemId: string) => void;
     onSelectTimelineRange: (itemId: string, direction: 'left' | 'right') => void;
@@ -4239,6 +5373,7 @@ function AudioTracks({
                         {clips.map((clip) => {
                             const character = clip.characterId ? characterById.get(clip.characterId) : undefined;
                             const effects = getItemEffects(clip, effectsById);
+                            const isClipPlaying = getCuePlaybackProgressLabel(clip, playhead) !== null;
                             const handleClick = () => {
                                 if (timelineTool === 'split') {
                                     if (isLocked) {
@@ -4259,7 +5394,7 @@ function AudioTracks({
 
                             return (
                                 <button
-                                    className={`odx-audio-clip ${clip.id === selectedId ? 'is-selected' : ''} ${rangeSelectionIds.has(clip.id) ? 'is-range' : ''} ${draggingItemId === clip.id ? 'is-dragging' : ''}`}
+                                    className={`odx-audio-clip ${clip.id === selectedId ? 'is-selected' : ''} ${rangeSelectionIds.has(clip.id) ? 'is-range' : ''} ${draggingItemId === clip.id ? 'is-dragging' : ''} ${isClipPlaying ? 'is-playing' : ''}`}
                                     data-testid={`odx-clip-${clip.id}`}
                                     key={clip.id}
                                     onClick={handleClick}
@@ -4294,9 +5429,74 @@ function AudioTracks({
     );
 }
 
+function VideoTrackLane({
+    videoClips,
+    pxPerSecond,
+    selectedId,
+    draggingItemId,
+    playhead,
+    timelineTool,
+    onSelect,
+    onTimelinePointerEditStart,
+    onTimelinePointerEditMove,
+    onTimelinePointerEditEnd,
+}: {
+    videoClips: VisualClip[];
+    pxPerSecond: number;
+    selectedId: string;
+    draggingItemId: string | null;
+    playhead: number;
+    timelineTool: TimelineToolMode;
+    onSelect: (clipId: string) => void;
+} & TimelinePointerEditHandlers) {
+    if (videoClips.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="odx-track-lane odx-video-track-lane" style={{ height: `${TIMELINE_TRACK_HEIGHT}px` }}>
+            {videoClips.map((clip) => {
+                const isClipPlaying = playhead >= clip.start && playhead < clip.start + clip.duration;
+
+                return (
+                    <button
+                        className={`odx-audio-clip odx-video-timeline-clip ${clip.id === selectedId ? 'is-selected' : ''} ${draggingItemId === clip.id ? 'is-dragging' : ''} ${isClipPlaying ? 'is-playing' : ''}`}
+                        data-testid={`odx-video-clip-${clip.id}`}
+                        key={clip.id}
+                        onClick={() => onSelect(clip.id)}
+                        onPointerCancel={onTimelinePointerEditEnd}
+                        onPointerDown={(event) => {
+                            if (timelineTool !== 'select') {
+                                return;
+                            }
+
+                            onTimelinePointerEditStart({ event, itemKind: 'video', item: clip, mode: 'move' });
+                        }}
+                        onPointerMove={onTimelinePointerEditMove}
+                        onPointerUp={onTimelinePointerEditEnd}
+                        style={{
+                            ...getClipStyle(clip.start, clip.duration, pxPerSecond),
+                            '--odx-clip-bg': 'linear-gradient(135deg, rgba(34, 197, 94, .28), rgba(20, 184, 166, .12))',
+                            '--odx-clip-accent': '#34d399',
+                        } as CSSProperties}
+                        type="button"
+                    >
+                        <TimelineResizeHandles item={clip} itemKind="video" onTimelinePointerEditStart={onTimelinePointerEditStart} />
+                        <span className="odx-clip-title">{clip.label}</span>
+                        <span className="odx-clip-meta">
+                            {formatTime(clip.start)} · {clip.duration.toFixed(1)}s · vol {Math.round((clip.volume ?? 1) * 100)}%
+                        </span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
 function Timeline({
     audioTracks,
     timelineClips,
+    videoClips,
     scrollEvents,
     anchors,
     trackLoadError,
@@ -4342,11 +5542,16 @@ function Timeline({
     onTimelinePointerEditStart,
     onTimelinePointerEditMove,
     onTimelinePointerEditEnd,
+    timelineAnchorEditingId,
+    onTimelineAnchorEditStart,
+    onTimelineAnchorEditMove,
+    onTimelineAnchorEditEnd,
     onTimelineHeightResizeStart,
     onTimelineSidebarResizeStart,
 }: {
     audioTracks: AudioTrackDefinition[];
     timelineClips: TimelineClip[];
+    videoClips: VisualClip[];
     scrollEvents: ScrollEventClip[];
     anchors: AnchorListItem[];
     trackLoadError: string | null;
@@ -4384,7 +5589,7 @@ function Timeline({
     onTimelineZoomChange: (pxPerSecond: number) => void;
     onTimelineZoomStep: (delta: number) => void;
     durationSeconds: number;
-} & TimelinePointerEditHandlers & TimelinePanelResizeHandlers) {
+} & TimelinePointerEditHandlers & TimelineAnchorPointerEditHandlers & TimelinePanelResizeHandlers) {
     const timelineScrollRef = useRef<HTMLDivElement | null>(null);
     const timelineScrubbingRef = useRef(false);
     const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
@@ -4394,6 +5599,8 @@ function Timeline({
     const soloTrackSet = useMemo(() => new Set(soloTrackIds), [soloTrackIds]);
     const lockedTrackSet = useMemo(() => new Set(lockedTrackIds), [lockedTrackIds]);
     const activeTimelineTool = timelineToolDefinitions.find((tool) => tool.id === timelineTool) ?? timelineToolDefinitions[0];
+    const hasVideoTrack = videoClips.length > 0;
+    const timelineTrackCount = audioTracks.length + (hasVideoTrack ? 1 : 0);
     const visibleSeconds = timelineViewportWidth > 0 ? Math.ceil(timelineViewportWidth / pxPerSecond) : durationSeconds;
     const contentSeconds = Math.max(durationSeconds, visibleSeconds);
     const ticks = getTimelineTicks(contentSeconds, pxPerSecond);
@@ -4402,6 +5609,7 @@ function Timeline({
     const rulerStyle = { width: `${contentWidth}px` };
     const gridStep = getTimelineGridStep(pxPerSecond);
     const zoomPercent = Math.round((pxPerSecond / DEFAULT_PX_PER_SECOND) * 100);
+    const activeCuePlaybackProgress = getActiveCuePlaybackProgressLabel(timelineClips, playhead, selectedId);
     useEffect(() => {
         const timelineScroll = timelineScrollRef.current;
 
@@ -4528,7 +5736,7 @@ function Timeline({
                     </div>
                 </div>
                 <span className="odx-timeline-title">
-                    타임라인 <b>{audioTracks.length}</b> 트랙 · 길이 {formatTime(durationSeconds)}
+                    타임라인 <b>{timelineTrackCount}</b> 트랙 · 길이 {formatTime(durationSeconds)}
                 </span>
                 {trackLoadError ? (
                     <span className="odx-timeline-error" role="alert">
@@ -4573,10 +5781,29 @@ function Timeline({
             <div
                 className="odx-timeline-left"
                 style={{
-                    gridTemplateRows: `28px repeat(${audioTracks.length}, ${TIMELINE_TRACK_HEIGHT}px) 44px`,
+                    gridTemplateRows: `28px repeat(${timelineTrackCount}, ${TIMELINE_TRACK_HEIGHT}px) 44px`,
                 }}
             >
                 <div className="odx-track-ruler-spacer" aria-hidden="true" />
+                {hasVideoTrack ? (
+                    <div
+                        aria-pressed={focusedTrackId === VIDEO_TIMELINE_TRACK_ID}
+                        className={`odx-track-header odx-video-track-header ${focusedTrackId === VIDEO_TIMELINE_TRACK_ID ? 'is-focused' : ''}`}
+                        onClick={() => onFocusTrack(VIDEO_TIMELINE_TRACK_ID)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                onFocusTrack(VIDEO_TIMELINE_TRACK_ID);
+                            }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                    >
+                        <StudioIcon name="play" size={15} />
+                        <span>비디오</span>
+                        <small>VIDEO · {videoClips.length}개</small>
+                    </div>
+                ) : null}
                 {audioTracks.map((track) => {
                     const isMuted = mutedTrackSet.has(track.id);
                     const isSolo = soloTrackSet.has(track.id);
@@ -4689,7 +5916,7 @@ function Timeline({
                         </span>
                     ))}
                 </div>
-                    <div className="odx-track-stack" style={{ width: `${contentWidth}px` }}>
+                <div className="odx-track-stack" style={{ width: `${contentWidth}px` }}>
                     <div className="odx-track-gridlines" aria-hidden="true">
                         {gridlines.map((tick) => (
                             <span className={`odx-track-gridline is-${tick.kind}`} key={`${tick.kind}-${tick.time}`} style={{ left: `${tick.time * pxPerSecond}px` }} />
@@ -4699,9 +5926,19 @@ function Timeline({
                         {anchors.map((anchor) => (
                             <button
                                 aria-label={`앵커 ${anchor.id}`}
-                                className={`odx-timeline-anchor-marker ${selectedId === getAnchorSelectionId(anchor.id) ? 'is-selected' : ''}`}
+                                className={`odx-timeline-anchor-marker ${selectedId === getAnchorSelectionId(anchor.id) ? 'is-selected' : ''} ${timelineAnchorEditingId === anchor.id ? 'is-dragging' : ''}`}
                                 key={anchor.id}
                                 onClick={() => onSelectAnchor(anchor.id)}
+                                onPointerCancel={onTimelineAnchorEditEnd}
+                                onPointerDown={(event) => {
+                                    if (event.button !== 0) {
+                                        return;
+                                    }
+
+                                    onTimelineAnchorEditStart({ event, anchor });
+                                }}
+                                onPointerMove={onTimelineAnchorEditMove}
+                                onPointerUp={onTimelineAnchorEditEnd}
                                 style={{ left: `${toTimelineSeconds(anchor.time) * pxPerSecond}px` }}
                                 title={`A${anchor.id} · ${formatTime(toTimelineSeconds(anchor.time))}`}
                                 type="button"
@@ -4710,6 +5947,18 @@ function Timeline({
                             </button>
                         ))}
                     </div>
+                    <VideoTrackLane
+                        draggingItemId={draggingItemId}
+                        onSelect={onSelect}
+                        onTimelinePointerEditEnd={onTimelinePointerEditEnd}
+                        onTimelinePointerEditMove={onTimelinePointerEditMove}
+                        onTimelinePointerEditStart={onTimelinePointerEditStart}
+                        playhead={playhead}
+                        pxPerSecond={pxPerSecond}
+                        selectedId={selectedId}
+                        timelineTool={timelineTool}
+                        videoClips={videoClips}
+                    />
                     <AudioTracks
                         audioTracks={audioTracks}
                         characterById={characterById}
@@ -4725,6 +5974,7 @@ function Timeline({
                         onTimelinePointerEditEnd={onTimelinePointerEditEnd}
                         onTimelinePointerEditMove={onTimelinePointerEditMove}
                         onTimelinePointerEditStart={onTimelinePointerEditStart}
+                        playhead={playhead}
                         pxPerSecond={pxPerSecond}
                         rangeSelectionIds={rangeSelectionSet}
                         selectedId={selectedId}
@@ -4760,6 +6010,9 @@ function Timeline({
                 </span>
                 <span>
                     LENGTH <b>{formatTime(durationSeconds)}</b>
+                </span>
+                <span className="odx-statusbar-cue-progress">
+                    CUE <b>{activeCuePlaybackProgress ?? '-'}</b>
                 </span>
             </div>
         </section>
@@ -4800,6 +6053,7 @@ export function StudioEditor({
     const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
     const [isPreviewLocked, setIsPreviewLocked] = useState(false);
     const [isAddingAnchor, setIsAddingAnchor] = useState(false);
+    const [isAddingCutCue, setIsAddingCutCue] = useState(false);
     const [previewStripHeightPx, setPreviewStripHeightPx] = useState(PREVIEW_SCROLL_STRIP_HEIGHT_PX);
     const [timelineHeight, setTimelineHeight] = useState(DEFAULT_TIMELINE_PANEL_HEIGHT);
     const [timelineSidebarWidth, setTimelineSidebarWidth] = useState(DEFAULT_TIMELINE_SIDEBAR_WIDTH);
@@ -4820,11 +6074,14 @@ export function StudioEditor({
     const [deletingMediaId, setDeletingMediaId] = useState<number | null>(null);
     const [trackContextMenu, setTrackContextMenu] = useState<TrackContextMenuState | null>(null);
     const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
+    const [canvasItems, setCanvasItems] = useState<CanvasListItem[]>([]);
+    const [activeCutCanvasId, setActiveCutCanvasId] = useState<number | null>(null);
+    const [selectedPreviewCanvasId, setSelectedPreviewCanvasId] = useState<number | null>(null);
     const [editableVisualClips, setEditableVisualClips] = useState<VisualClip[]>([]);
+    const [dirtyImageCompositionCanvasIds, setDirtyImageCompositionCanvasIds] = useState<number[]>([]);
     const [imageCompositionDraft, setImageCompositionDraft] = useState<ImageCompositionDraft>(
         createEmptyImageCompositionDraft,
     );
-    const [dirtyImageCompositionCanvasIds, setDirtyImageCompositionCanvasIds] = useState<number[]>([]);
     const [isConfirmingImageComposition, setIsConfirmingImageComposition] = useState(false);
     const [imageCompositionConfirmError, setImageCompositionConfirmError] = useState<string | null>(null);
     const [tracks, setTracks] = useState<TrackListItem[]>([]);
@@ -4835,17 +6092,21 @@ export function StudioEditor({
     const [scrollEvents, setScrollEvents] = useState<ScrollEventClip[]>([]);
     const [anchors, setAnchors] = useState<AnchorListItem[]>([]);
     const [anchorPlacementTrackId, setAnchorPlacementTrackId] = useState<string | null>(null);
+    const [cutCuePlacementTrackId, setCutCuePlacementTrackId] = useState<string | null>(null);
+    const [anchorEventDraft, setAnchorEventDraft] = useState<AnchorEventDraft>(defaultAnchorEventDraft);
     const [trackLoadError, setTrackLoadError] = useState<string | null>(null);
     const [cueScriptDraft, setCueScriptDraft] = useState('');
     const [isSavingCueScript, setIsSavingCueScript] = useState(false);
     const [cueScriptError, setCueScriptError] = useState<string | null>(null);
     const [timelinePointerEdit, setTimelinePointerEdit] = useState<TimelinePointerEdit | null>(null);
+    const [timelineAnchorPointerEdit, setTimelineAnchorPointerEdit] = useState<TimelineAnchorPointerEdit | null>(null);
     const [timelinePanelResize, setTimelinePanelResize] = useState<TimelinePanelResize | null>(null);
     const [timelineSidebarResize, setTimelineSidebarResize] = useState<TimelineSidebarResize | null>(null);
     const [inspectorWidth, setInspectorWidth] = useState(DEFAULT_INSPECTOR_WIDTH);
     const [inspectorResize, setInspectorResize] = useState<InspectorResize | null>(null);
     const [previewScrollPointerEdit, setPreviewScrollPointerEdit] = useState<PreviewScrollPointerEdit | null>(null);
     const [previewAnchorPointerEdit, setPreviewAnchorPointerEdit] = useState<PreviewAnchorPointerEdit | null>(null);
+    const [previewCuePointerEdit, setPreviewCuePointerEdit] = useState<PreviewCuePointerEdit | null>(null);
     const [previewVisualSegments, setPreviewVisualSegments] = useState<PreviewScrollVisualSegment[]>([]);
     const [visualCutPointerEdit, setVisualCutPointerEdit] = useState<VisualCutPointerEdit | null>(null);
     const [isTrackModalOpen, setIsTrackModalOpen] = useState(false);
@@ -4879,23 +6140,94 @@ export function StudioEditor({
         [characterById, dialogueCues],
     );
     const visualClipById = useMemo(() => new Map(editableVisualClips.map((clip) => [clip.id, clip])), [editableVisualClips]);
+    const canvasSummaries = useMemo(
+        () => toCutEditCanvasSummaries(canvasItems, editableVisualClips),
+        [canvasItems, editableVisualClips],
+    );
+    const previewCanvasOptions = useMemo(() => getPreviewCanvasOptions(canvasItems), [canvasItems]);
+    const resolvedPreviewCanvasId = useMemo(
+        () => resolvePreviewCanvasId(canvasItems, selectedPreviewCanvasId),
+        [canvasItems, selectedPreviewCanvasId],
+    );
+    const previewVisualClips = useMemo(
+        () => filterPreviewCanvasItems(editableVisualClips, resolvedPreviewCanvasId),
+        [editableVisualClips, resolvedPreviewCanvasId],
+    );
+    const resolvedActiveCutCanvasId = useMemo(() => {
+        if (typeof activeCutCanvasId === 'number' && canvasSummaries.some((canvas) => canvas.id === activeCutCanvasId)) {
+            return activeCutCanvasId;
+        }
+
+        const selectedCanvasId = visualClipById.get(selectedId)?.canvasId;
+
+        if (typeof selectedCanvasId === 'number' && canvasSummaries.some((canvas) => canvas.id === selectedCanvasId)) {
+            return selectedCanvasId;
+        }
+
+        return canvasSummaries[0]?.id ?? null;
+    }, [activeCutCanvasId, canvasSummaries, selectedId, visualClipById]);
+    const dirtyImageCompositionCanvasIdSet = useMemo(
+        () => new Set(dirtyImageCompositionCanvasIds),
+        [dirtyImageCompositionCanvasIds],
+    );
     const imageCompositionSources = useMemo(() => toImageCompositionSources(editableVisualClips), [editableVisualClips]);
     const canConfirmImageComposition =
-        dirtyImageCompositionCanvasIds.length > 0 ||
-        imageCompositionDraft.layers.some((layer) => layer.isVisible && typeof layer.canvasId !== 'number');
+        typeof resolvedActiveCutCanvasId === 'number' && dirtyImageCompositionCanvasIdSet.has(resolvedActiveCutCanvasId);
     const audioTrackById = useMemo(() => new Map(timelineData.audioTracks.map((track) => [track.id, track])), [timelineData.audioTracks]);
+    const cutCueTracks = useMemo(
+        () => timelineData.audioTracks.filter((track) => !isScrollTrackKind(track.kind) && Boolean(track.characterId)),
+        [timelineData.audioTracks],
+    );
+    const cutCueTargetTrackId = useMemo(() => {
+        if (cutCuePlacementTrackId && cutCueTracks.some((track) => track.id === cutCuePlacementTrackId)) {
+            return cutCuePlacementTrackId;
+        }
+
+        if (cutCueTracks.some((track) => track.id === focusedTrackId)) {
+            return focusedTrackId;
+        }
+
+        return cutCueTracks[0]?.id ?? '';
+    }, [cutCuePlacementTrackId, cutCueTracks, focusedTrackId]);
+    const cutEditCueTracks = useMemo(
+        () => toCutEditCueTracks(tracks, timelineData.audioTracks),
+        [timelineData.audioTracks, tracks],
+    );
     const audioClipById = useMemo(() => new Map(timelineData.timelineClips.map((clip) => [clip.id, clip])), [timelineData.timelineClips]);
+    const activeStageCanvasId = previewMode === 'cutEdit' ? resolvedActiveCutCanvasId : resolvedPreviewCanvasId;
+    const videoTimelineClips = useMemo(
+        () =>
+            filterPreviewCanvasItems(editableVisualClips, activeStageCanvasId).filter(
+                (clip) => clip.mediaType === 'video' && typeof clip.canvasId === 'number',
+            ),
+        [activeStageCanvasId, editableVisualClips],
+    );
     const scrollEventById = useMemo(() => new Map(scrollEvents.map((event) => [event.id, event])), [scrollEvents]);
     const anchorBySelectionId = useMemo(() => new Map(anchors.map((anchor) => [getAnchorSelectionId(anchor.id), toAnchorSelection(anchor)])), [anchors]);
+    const playbackScrollEvents = useMemo(() => toPreviewPlaybackScrollEvents(scrollEvents, anchors), [anchors, scrollEvents]);
+    const stageAnchors = useMemo(() => filterPreviewCanvasItems(anchors, activeStageCanvasId), [activeStageCanvasId, anchors]);
+    const stageScrollEvents = useMemo(
+        () => filterPreviewCanvasItems(scrollEvents, activeStageCanvasId),
+        [activeStageCanvasId, scrollEvents],
+    );
+    const stagePlaybackScrollEvents = useMemo(
+        () => filterPreviewCanvasItems(playbackScrollEvents, activeStageCanvasId),
+        [activeStageCanvasId, playbackScrollEvents],
+    );
     const timelineDurationSeconds = useMemo(() => {
         const maxAudioEnd = timelineData.timelineClips.reduce((maxEnd, clip) => Math.max(maxEnd, clip.start + clip.duration), 0);
-        const maxScrollEnd = scrollEvents.reduce((maxEnd, event) => Math.max(maxEnd, event.start + event.duration), 0);
-        return Math.max(manualTimelineDurationSeconds, TIMELINE_DURATION_SECONDS, Math.ceil(maxAudioEnd), Math.ceil(maxScrollEnd));
-    }, [manualTimelineDurationSeconds, scrollEvents, timelineData.timelineClips]);
+        const maxVideoEnd = videoTimelineClips.reduce((maxEnd, clip) => Math.max(maxEnd, clip.start + clip.duration), 0);
+        const maxScrollEnd = playbackScrollEvents.reduce((maxEnd, event) => Math.max(maxEnd, event.start + event.duration), 0);
+        return Math.max(manualTimelineDurationSeconds, TIMELINE_DURATION_SECONDS, Math.ceil(maxAudioEnd), Math.ceil(maxVideoEnd), Math.ceil(maxScrollEnd));
+    }, [manualTimelineDurationSeconds, playbackScrollEvents, timelineData.timelineClips, videoTimelineClips]);
     const activeVisual = useSelectedPreviewVisual(selectedId, editableVisualClips);
+    const selectedPreviewVisual = useSelectedPreviewVisual(selectedId, previewVisualClips);
+    const previewActiveVisual = selectedPreviewVisual ?? previewVisualClips[0];
     const selectedItem = getSelectedItem(selectedId, visualClipById, audioClipById, scrollEventById, anchorBySelectionId);
+    const shouldShowCutEditInspector = Boolean(selectedItem);
     const selectedEffects = getItemEffects(selectedItem ?? activeVisual, effectsById);
     const isAnchorPlacementMode = anchorPlacementTrackId !== null;
+    const isCutCuePlacementMode = cutCuePlacementTrackId !== null;
     const selectedTrackCharacter = newTrackCharacterId ? characterById.get(newTrackCharacterId) : undefined;
     const canCreateTrack = !isCreatingTrack && (newTrackType !== 'record' || Boolean(selectedTrackCharacter));
     const cueScriptState: CueScriptPanelState = {
@@ -4936,6 +6268,51 @@ export function StudioEditor({
         setCueScriptDraft(selectedAudioClip?.label ?? '');
         setCueScriptError(null);
     }, [selectedId]);
+
+    useEffect(() => {
+        if (!selectedItem || !isAnchorSelection(selectedItem)) {
+            setAnchorEventDraft(defaultAnchorEventDraft);
+            return;
+        }
+
+        const selectedAnchor = anchors.find((anchor) => anchor.id === selectedItem.anchorId);
+        const event = selectedAnchor?.event ?? selectedItem.event;
+
+        if (event?.type === 'scroll') {
+            setAnchorEventDraft({
+                type: 'scroll',
+                endAnchorId: String(event.endAnchorId),
+                duration: '1000',
+                isSaving: false,
+                error: null,
+            });
+            return;
+        }
+
+        if (event?.type === 'pause') {
+            setAnchorEventDraft({
+                type: 'pause',
+                endAnchorId: '',
+                duration: String(event.duration),
+                isSaving: false,
+                error: null,
+            });
+            return;
+        }
+
+        const fallbackEndAnchor = anchors.find(
+            (anchor) =>
+                String(anchor.trackId) === selectedItem.trackId &&
+                anchor.id !== selectedItem.anchorId &&
+                anchor.canvasId === selectedItem.canvasId &&
+                anchor.time > selectedItem.time,
+        );
+
+        setAnchorEventDraft({
+            ...defaultAnchorEventDraft,
+            endAnchorId: fallbackEndAnchor ? String(fallbackEndAnchor.id) : '',
+        });
+    }, [anchors, selectedItem]);
 
     useEffect(() => {
         let ignore = false;
@@ -4995,7 +6372,18 @@ export function StudioEditor({
                 if (!ignore) {
                     const nextVisualClips = toVisualClips(items);
 
+                    setCanvasItems(items);
                     setEditableVisualClips(nextVisualClips);
+                    setDirtyImageCompositionCanvasIds([]);
+                    setActiveCutCanvasId((current) => {
+                        const nextCanvasIds = new Set(items.map((item) => item.id));
+
+                        if (typeof current === 'number' && nextCanvasIds.has(current)) {
+                            return current;
+                        }
+
+                        return nextVisualClips.find((clip) => typeof clip.canvasId === 'number')?.canvasId ?? items[0]?.id ?? null;
+                    });
                     setSelectedId((current) => {
                         if (!current || (isVisualClipId(current) && !nextVisualClips.some((clip) => clip.id === current))) {
                             return nextVisualClips[0]?.id ?? '';
@@ -5007,7 +6395,10 @@ export function StudioEditor({
             })
             .catch(() => {
                 if (!ignore) {
+                    setCanvasItems([]);
+                    setActiveCutCanvasId(null);
                     setEditableVisualClips([]);
+                    setDirtyImageCompositionCanvasIds([]);
                     setSelectedId((current) => (isVisualClipId(current) ? '' : current));
                 }
             });
@@ -5018,26 +6409,25 @@ export function StudioEditor({
     }, [episodeId, resolvedApiBaseUrl]);
 
     useEffect(() => {
+        setSelectedPreviewCanvasId((current) => resolvePreviewCanvasId(canvasItems, current));
+    }, [canvasItems]);
+
+    useEffect(() => {
         setImageCompositionDraft((current) => syncImageCompositionDraft(imageCompositionSources, current));
     }, [imageCompositionSources]);
 
     useEffect(() => {
-        if (!isVisualClipId(selectedId)) {
-            return;
-        }
-
-        setImageCompositionDraft((current) => {
-            const selectedLayer = current.layers.find((layer) => layer.clipId === selectedId);
-
-            return selectedLayer ? selectImageCompositionLayer(current, selectedLayer.id) : current;
-        });
-    }, [selectedId]);
-
-    useEffect(() => {
-        if (previewMode !== 'motion') {
+        if (previewMode !== 'cutEdit') {
             setAnchorPlacementTrackId(null);
+            setCutCuePlacementTrackId(null);
         }
     }, [previewMode]);
+
+    useEffect(() => {
+        if (cutCuePlacementTrackId && !cutCueTracks.some((track) => track.id === cutCuePlacementTrackId)) {
+            setCutCuePlacementTrackId(null);
+        }
+    }, [cutCuePlacementTrackId, cutCueTracks]);
 
     useEffect(() => {
         let ignore = false;
@@ -5079,6 +6469,7 @@ export function StudioEditor({
                     setScrollEvents([]);
                     setAnchors([]);
                     setAnchorPlacementTrackId(null);
+                    setCutCuePlacementTrackId(null);
                     setFocusedTrackId('');
                     setTrackLoadError(
                         error instanceof Error
@@ -5387,6 +6778,26 @@ export function StudioEditor({
         return nextAnchor;
     };
 
+    const persistCuePositionUpdate = async (edit: PreviewCuePointerEdit, request: CueStripPositionRequest) => {
+        const cueTrackId = resolveCueTimelineTrackId({
+            parentTrackId: edit.trackId,
+            cueTrackId: edit.cue.trackId,
+        });
+
+        try {
+            await updateCue(resolvedApiBaseUrl, cueTrackId, String(edit.cue.id), request);
+            await refreshTimelineTracks();
+            setSelectedId(`cue-${edit.cue.id}`);
+            setFocusedTrackId(cueTrackId);
+            setTrackLoadError(null);
+        } catch (error) {
+            await refreshTimelineTracks().catch(() => undefined);
+            setTrackLoadError(error instanceof Error ? `큐 위치 저장에 실패했습니다: ${error.message}` : '큐 위치 저장에 실패했습니다.');
+            setSelectedId(`cue-${edit.cue.id}`);
+            setFocusedTrackId(cueTrackId);
+        }
+    };
+
     const persistCueTimingUpdate = async (clip: TimelineClip) => {
         const target = toCueMutationTarget(clip);
 
@@ -5404,14 +6815,52 @@ export function StudioEditor({
         }
     };
 
+    const persistVideoTimelineUpdate = async (clip: VisualClip, nextVisualClips: VisualClip[]) => {
+        if (typeof clip.canvasId !== 'number') {
+            return;
+        }
+
+        try {
+            await updateCanvas(resolvedApiBaseUrl, episodeId, clip.canvasId, {
+                medias: toCanvasUpdateMediasFromVisualClips(nextVisualClips, clip.canvasId),
+            });
+
+            const nextCanvasItems = await listCanvases(resolvedApiBaseUrl, episodeId);
+            const refreshedVisualClips = toVisualClips(nextCanvasItems);
+
+            setCanvasItems(nextCanvasItems);
+            setEditableVisualClips(refreshedVisualClips);
+            setImageCompositionDraft((current) => syncImageCompositionDraft(toImageCompositionSources(refreshedVisualClips), current));
+            setTrackLoadError(null);
+        } catch (error) {
+            const nextCanvasItems = await listCanvases(resolvedApiBaseUrl, episodeId).catch(() => []);
+            const refreshedVisualClips = toVisualClips(nextCanvasItems);
+
+            if (nextCanvasItems.length > 0) {
+                setCanvasItems(nextCanvasItems);
+                setEditableVisualClips(refreshedVisualClips);
+            }
+            setTrackLoadError(error instanceof Error ? `비디오 타임라인 저장에 실패했습니다: ${error.message}` : '비디오 타임라인 저장에 실패했습니다.');
+        }
+    };
+
     const handleSelectItem = (itemId: string) => {
-        const timelineItem = audioClipById.get(itemId) ?? scrollEventById.get(itemId);
+        const scrollEvent = scrollEventById.get(itemId);
+        const timelineItem = audioClipById.get(itemId) ?? scrollEvent;
+        const visualItem = visualClipById.get(itemId);
 
         setSelectedId(itemId);
         setRangeSelectionIds([]);
 
         if (timelineItem) {
             setFocusedTrackId(timelineItem.track);
+        }
+        if (visualItem?.mediaType === 'video') {
+            setFocusedTrackId(VIDEO_TIMELINE_TRACK_ID);
+            setPlayhead(visualItem.start);
+        }
+        if (scrollEvent) {
+            setPlayhead(scrollEvent.start);
         }
     };
 
@@ -5425,10 +6874,133 @@ export function StudioEditor({
         setSelectedId(getAnchorSelectionId(anchor.id));
         setRangeSelectionIds([]);
         setFocusedTrackId(String(anchor.trackId));
+        setPlayhead(toTimelineSeconds(anchor.time));
+    };
+
+    const handleAnchorEventDraftChange = (patch: Partial<Pick<AnchorEventDraft, 'type' | 'endAnchorId' | 'duration'>>) => {
+        setAnchorEventDraft((current) => {
+            const nextType = patch.type ?? current.type;
+            const nextEndAnchorId =
+                patch.endAnchorId ??
+                (patch.type === 'scroll' && !current.endAnchorId && selectedItem && isAnchorSelection(selectedItem)
+                    ? String(
+                          anchors.find(
+                              (anchor) =>
+                                  String(anchor.trackId) === selectedItem.trackId &&
+                                  anchor.id !== selectedItem.anchorId &&
+                                  anchor.canvasId === selectedItem.canvasId &&
+                                  anchor.time > selectedItem.time,
+                          )?.id ?? '',
+                      )
+                    : current.endAnchorId);
+
+            return {
+                ...current,
+                ...patch,
+                type: nextType,
+                endAnchorId: nextEndAnchorId,
+                error: null,
+            };
+        });
+    };
+
+    const handleSaveAnchorEvent = async () => {
+        if (!selectedItem || !isAnchorSelection(selectedItem)) {
+            return;
+        }
+
+        let request: AnchorEventMutationRequest;
+
+        if (anchorEventDraft.type === 'scroll') {
+            const endAnchorId = Number(anchorEventDraft.endAnchorId);
+
+            if (!Number.isInteger(endAnchorId) || endAnchorId <= 0) {
+                setAnchorEventDraft((current) => ({ ...current, error: '종료 앵커를 선택해 주세요.' }));
+                return;
+            }
+            if (endAnchorId === selectedItem.anchorId) {
+                setAnchorEventDraft((current) => ({ ...current, error: '스크롤 종료 앵커는 현재 앵커와 달라야 합니다.' }));
+                return;
+            }
+
+            request = { type: 'scroll', endAnchorId };
+        } else {
+            const duration = Number(anchorEventDraft.duration);
+
+            if (!Number.isFinite(duration) || duration <= 0) {
+                setAnchorEventDraft((current) => ({ ...current, error: '정지 시간은 0보다 큰 ms 값이어야 합니다.' }));
+                return;
+            }
+
+            request = { type: 'pause', duration };
+        }
+
+        try {
+            setAnchorEventDraft((current) => ({ ...current, isSaving: true, error: null }));
+            await upsertAnchorEvent(resolvedApiBaseUrl, selectedItem.trackId, selectedItem.anchorId, request);
+            await refreshTimelineTracks();
+            setSelectedId(getAnchorSelectionId(selectedItem.anchorId));
+            setFocusedTrackId(selectedItem.trackId);
+            setTrackLoadError(null);
+        } catch (error) {
+            setAnchorEventDraft((current) => ({
+                ...current,
+                isSaving: false,
+                error: error instanceof Error ? `앵커 이벤트 저장에 실패했습니다: ${error.message}` : '앵커 이벤트 저장에 실패했습니다.',
+            }));
+        }
+    };
+
+    const handleDeleteAnchorEvent = async () => {
+        if (!selectedItem || !isAnchorSelection(selectedItem)) {
+            return;
+        }
+
+        try {
+            setAnchorEventDraft((current) => ({ ...current, isSaving: true, error: null }));
+            await deleteAnchorEvent(resolvedApiBaseUrl, selectedItem.trackId, selectedItem.anchorId);
+            await refreshTimelineTracks();
+            setSelectedId(getAnchorSelectionId(selectedItem.anchorId));
+            setFocusedTrackId(selectedItem.trackId);
+            setTrackLoadError(null);
+        } catch (error) {
+            setAnchorEventDraft((current) => ({
+                ...current,
+                isSaving: false,
+                error: error instanceof Error ? `앵커 이벤트 삭제에 실패했습니다: ${error.message}` : '앵커 이벤트 삭제에 실패했습니다.',
+            }));
+        }
+    };
+
+    const handleDeleteAnchor = async () => {
+        if (!selectedItem || !isAnchorSelection(selectedItem)) {
+            return;
+        }
+
+        const anchorSelectionId = getAnchorSelectionId(selectedItem.anchorId);
+
+        try {
+            setAnchorEventDraft((current) => ({ ...current, isSaving: true, error: null }));
+            await deleteAnchor(resolvedApiBaseUrl, selectedItem.trackId, selectedItem.anchorId);
+            await refreshTimelineTracks();
+            setSelectedId((current) => (current === anchorSelectionId ? activeVisual?.id ?? '' : current));
+            setRangeSelectionIds((current) => current.filter((id) => id !== anchorSelectionId));
+            setAnchorEventDraft(defaultAnchorEventDraft);
+            setTrackLoadError(null);
+        } catch (error) {
+            setAnchorEventDraft((current) => ({
+                ...current,
+                isSaving: false,
+                error: error instanceof Error ? `앵커 삭제에 실패했습니다: ${error.message}` : '앵커 삭제에 실패했습니다.',
+            }));
+        }
     };
 
     const handleFocusTrack = (trackId: string) => {
         setFocusedTrackId(trackId);
+        if (cutCuePlacementTrackId && cutCueTracks.some((track) => track.id === trackId)) {
+            setCutCuePlacementTrackId(trackId);
+        }
         setRangeSelectionIds([]);
     };
 
@@ -5644,7 +7216,40 @@ export function StudioEditor({
             return;
         }
 
+        const targetCueId = getCueApiIdFromTimelineClipId(targetClip.id);
+        const splitTime = Math.round(splitAt * 1000);
+
+        if (targetCueId) {
+            try {
+                const nextTimelineData = await (async () => {
+                    await splitCue(resolvedApiBaseUrl, targetClip.track, targetCueId, { splitTime });
+                    return refreshTimelineTracks();
+                })();
+                const rightClip = nextTimelineData.timelineClips.find(
+                    (clip) =>
+                        clip.track === targetClip.track &&
+                        clip.audioId === targetClip.audioId &&
+                        Math.round(clip.start * 1000) === splitTime,
+                );
+
+                setSelectedId(rightClip?.id ?? itemId);
+                setFocusedTrackId(targetClip.track);
+                setPlayhead(splitAt);
+                setTrackLoadError(null);
+            } catch (error) {
+                await refreshTimelineTracks().catch(() => undefined);
+                setSelectedId(itemId);
+                setTrackLoadError(error instanceof Error ? `큐 분할에 실패했습니다: ${error.message}` : '큐 분할에 실패했습니다.');
+            }
+
+            return;
+        }
+
         const rightClipId = `${targetClip.id}-split-${Date.now().toString(36)}`;
+        const audioSplitTime =
+            typeof targetClip.audioStart === 'number'
+                ? targetClip.audioStart + (splitAt - targetClip.start)
+                : undefined;
 
         setTimelineData((current) => ({
             ...current,
@@ -5657,12 +7262,14 @@ export function StudioEditor({
                     {
                         ...clip,
                         duration: splitAt - clip.start,
+                        audioEnd: audioSplitTime ?? clip.audioEnd,
                     },
                     {
                         ...clip,
                         id: rightClipId,
                         start: splitAt,
                         duration: targetEnd - splitAt,
+                        audioStart: audioSplitTime ?? clip.audioStart,
                         label: `${clip.label} B`,
                         effects: [],
                     },
@@ -5674,9 +7281,28 @@ export function StudioEditor({
     };
 
     const handleSelectVisual = (clipId: string) => {
+        const clip = visualClipById.get(clipId);
+
         setMediaContextMenu(null);
+        if (typeof clip?.canvasId === 'number') {
+            setActiveCutCanvasId(clip.canvasId);
+        }
         setSelectedId(clipId);
         setRangeSelectionIds([]);
+    };
+
+    const handleSelectCutCanvas = (canvasId: number) => {
+        const firstClip = editableVisualClips.find((clip) => clip.canvasId === canvasId);
+
+        setActiveCutCanvasId(canvasId);
+        setMediaContextMenu(null);
+        setSelectedId(firstClip?.id ?? '');
+        setRangeSelectionIds([]);
+        setImageCompositionConfirmError(null);
+    };
+
+    const markImageCompositionCanvasDirty = (canvasId: number) => {
+        setDirtyImageCompositionCanvasIds((current) => (current.includes(canvasId) ? current : [...current, canvasId]));
     };
 
     const handleSelectMedia = (event: ReactMouseEvent<HTMLElement>, mediaId: number) => {
@@ -5700,6 +7326,11 @@ export function StudioEditor({
             return;
         }
 
+        if (typeof resolvedActiveCutCanvasId !== 'number') {
+            setImageCompositionConfirmError('수정할 캔버스를 먼저 선택해 주세요.');
+            return;
+        }
+
         const droppedMediaIds = parseMediaDragPayload(
             event.dataTransfer.getData(MEDIA_BATCH_DRAG_MIME),
             event.dataTransfer.getData(MEDIA_DRAG_MIME),
@@ -5720,7 +7351,7 @@ export function StudioEditor({
                 return;
             }
 
-            const droppedClip = toDroppedMediaVisualClip(media, nextVisualClips);
+            const droppedClip = toDroppedMediaVisualClip(media, nextVisualClips, resolvedActiveCutCanvasId);
 
             if (!droppedClip) {
                 return;
@@ -5734,14 +7365,16 @@ export function StudioEditor({
             return;
         }
 
-        const nextReflowedVisualClips = reflowVisualClips(nextVisualClips);
+        const nextReflowedVisualClips = reflowVisualClipsForCanvas(nextVisualClips, resolvedActiveCutCanvasId);
         const lastDroppedClipId = droppedClipIds[droppedClipIds.length - 1];
         const nextDroppedClip = nextReflowedVisualClips.find((clip) => clip.id === lastDroppedClipId);
 
+        markImageCompositionCanvasDirty(resolvedActiveCutCanvasId);
         setEditableVisualClips(nextReflowedVisualClips);
         setSelectedId(nextDroppedClip?.id ?? lastDroppedClipId);
         setRangeSelectionIds([]);
         setMediaContextMenu(null);
+        setImageCompositionConfirmError(null);
     };
 
     const handleOpenMediaContextMenu = (event: ReactMouseEvent<HTMLElement>, media: MediaListItem) => {
@@ -5781,7 +7414,18 @@ export function StudioEditor({
             const nextVisualClips = toVisualClips(nextCanvasItems);
 
             setMediaItems(nextMediaItems);
+            setCanvasItems(nextCanvasItems);
             setEditableVisualClips(nextVisualClips);
+            setDirtyImageCompositionCanvasIds([]);
+            setActiveCutCanvasId((current) => {
+                const nextCanvasIds = new Set(nextCanvasItems.map((item) => item.id));
+
+                if (typeof current === 'number' && nextCanvasIds.has(current)) {
+                    return current;
+                }
+
+                return nextVisualClips.find((clip) => typeof clip.canvasId === 'number')?.canvasId ?? nextCanvasItems[0]?.id ?? null;
+            });
             setMediaContextMenu(null);
             setRangeSelectionIds((current) => current.filter((id) => id !== deletedClipId));
             setEffectsById((current) => {
@@ -5844,11 +7488,19 @@ export function StudioEditor({
         event.preventDefault();
         event.stopPropagation();
 
+        const targetCanvasId = editableVisualClips.find((clip) => clip.id === visualCutPointerEdit.clipId)?.canvasId;
+
+        if (typeof targetCanvasId !== 'number') {
+            return;
+        }
+
+        markImageCompositionCanvasDirty(targetCanvasId);
+
         if (visualCutPointerEdit.mode === 'duration') {
             const nextDuration = Math.max(1, Number((visualCutPointerEdit.originalDuration + (event.clientY - visualCutPointerEdit.pointerStartY) / 80).toFixed(2)));
 
             setEditableVisualClips((current) =>
-                reflowVisualClips(
+                reflowVisualClipsForCanvas(
                     current.map((clip) =>
                         clip.id === visualCutPointerEdit.clipId
                             ? {
@@ -5857,6 +7509,7 @@ export function StudioEditor({
                               }
                             : clip,
                     ),
+                    targetCanvasId,
                 ),
             );
             return;
@@ -5865,7 +7518,7 @@ export function StudioEditor({
         setEditableVisualClips((current) => {
             const targetIndex = visualCutPointerEdit.originalIndex + Math.round((event.clientY - visualCutPointerEdit.pointerStartY) / visualCutPointerEdit.originalBlockHeight);
 
-            return moveVisualClip(current, visualCutPointerEdit.clipId, targetIndex);
+            return moveVisualClipWithinCanvas(current, visualCutPointerEdit.clipId, targetIndex, targetCanvasId);
         });
     };
 
@@ -5924,6 +7577,60 @@ export function StudioEditor({
             return;
         }
 
+        if (itemKind === 'video') {
+            const targetClip = visualClipById.get(itemId);
+
+            if (!targetClip) {
+                return;
+            }
+
+            const currentEnd = targetClip.start + targetClip.duration;
+            const maxDuration = getVideoTimelineClipMaxDurationSeconds(targetClip);
+            const minDuration = getTimelineResizeMinDurationSeconds(maxDuration, MIN_TIMELINE_ITEM_DURATION_SECONDS);
+            const nextClip =
+                edge === 'start'
+                    ? (() => {
+                          const nextStart = getTimelineEditSeconds(clamp(targetClip.start + deltaSeconds, 0, currentEnd - minDuration), isSnapEnabled);
+                          const nextTiming = clampTimelineAudioResizeTiming({
+                              edge: 'start',
+                              start: nextStart,
+                              duration: Math.max(minDuration, currentEnd - nextStart),
+                              itemEnd: currentEnd,
+                              maxDuration,
+                              minDuration,
+                          });
+
+                          return {
+                              ...targetClip,
+                              hasTimelineControls: true,
+                              start: nextTiming.start,
+                              duration: nextTiming.duration,
+                          };
+                      })()
+                    : (() => {
+                          const nextEnd = getTimelineEditSeconds(Math.max(targetClip.start + minDuration, currentEnd + deltaSeconds), isSnapEnabled);
+                          const nextTiming = clampTimelineAudioResizeTiming({
+                              edge: 'end',
+                              start: targetClip.start,
+                              duration: Math.max(minDuration, nextEnd - targetClip.start),
+                              itemEnd: nextEnd,
+                              maxDuration,
+                              minDuration,
+                          });
+
+                          return {
+                              ...targetClip,
+                              hasTimelineControls: true,
+                              duration: nextTiming.duration,
+                          };
+                      })();
+            const nextVisualClips = editableVisualClips.map((clip) => (clip.id === itemId ? nextClip : clip));
+
+            setEditableVisualClips(nextVisualClips);
+            void persistVideoTimelineUpdate(nextClip, nextVisualClips);
+            return;
+        }
+
         const targetClip = audioClipById.get(itemId);
 
         if (targetClip && lockedTrackIds.includes(targetClip.track)) {
@@ -5935,23 +7642,41 @@ export function StudioEditor({
         }
 
         const currentEnd = targetClip.start + targetClip.duration;
+        const maxDuration = getTimelineAudioClipMaxDurationSeconds(targetClip);
+        const minDuration = getTimelineResizeMinDurationSeconds(maxDuration, MIN_TIMELINE_ITEM_DURATION_SECONDS);
         const nextClip =
             edge === 'start'
                 ? (() => {
-                      const nextStart = getTimelineEditSeconds(clamp(targetClip.start + deltaSeconds, 0, currentEnd - MIN_TIMELINE_ITEM_DURATION_SECONDS), isSnapEnabled);
+                      const nextStart = getTimelineEditSeconds(clamp(targetClip.start + deltaSeconds, 0, currentEnd - minDuration), isSnapEnabled);
+                      const nextTiming = clampTimelineAudioResizeTiming({
+                          edge: 'start',
+                          start: nextStart,
+                          duration: Math.max(minDuration, currentEnd - nextStart),
+                          itemEnd: currentEnd,
+                          maxDuration,
+                          minDuration,
+                      });
 
                       return {
                           ...targetClip,
-                          start: nextStart,
-                          duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd - nextStart),
+                          start: nextTiming.start,
+                          duration: nextTiming.duration,
                       };
                   })()
                 : (() => {
-                      const nextEnd = getTimelineEditSeconds(Math.max(targetClip.start + MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd + deltaSeconds), isSnapEnabled);
+                      const nextEnd = getTimelineEditSeconds(Math.max(targetClip.start + minDuration, currentEnd + deltaSeconds), isSnapEnabled);
+                      const nextTiming = clampTimelineAudioResizeTiming({
+                          edge: 'end',
+                          start: targetClip.start,
+                          duration: Math.max(minDuration, nextEnd - targetClip.start),
+                          itemEnd: nextEnd,
+                          maxDuration,
+                          minDuration,
+                      });
 
                       return {
                           ...targetClip,
-                          duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, nextEnd - targetClip.start),
+                          duration: nextTiming.duration,
                       };
                   })();
 
@@ -5960,6 +7685,52 @@ export function StudioEditor({
             timelineClips: current.timelineClips.map((clip) => (clip.id === itemId ? nextClip : clip)),
         }));
         void persistCueTimingUpdate(nextClip);
+    };
+
+    const handleUpdateVideoClipControls = (clipId: string, patch: VideoClipControlPatch, options: { persist?: boolean } = {}) => {
+        const targetClip = visualClipById.get(clipId);
+
+        if (!targetClip || targetClip.mediaType !== 'video') {
+            return;
+        }
+
+        const nextClip = {
+            ...targetClip,
+            ...(typeof patch.sourceStart === 'number'
+                ? { sourceStart: Number.isFinite(patch.sourceStart) ? Math.max(0, Number(patch.sourceStart.toFixed(2))) : targetClip.sourceStart }
+                : {}),
+            ...(typeof patch.sourceEnd === 'number'
+                ? { sourceEnd: Number.isFinite(patch.sourceEnd) && patch.sourceEnd > 0 ? Math.max(0, Number(patch.sourceEnd.toFixed(2))) : undefined }
+                : {}),
+            ...(typeof patch.volume === 'number'
+                ? { volume: Number.isFinite(patch.volume) ? clamp(Number(patch.volume.toFixed(2)), 0, 1) : targetClip.volume }
+                : {}),
+            ...(typeof patch.isMuted === 'boolean' ? { isMuted: patch.isMuted } : {}),
+        };
+        const sourceStart = nextClip.sourceStart ?? 0;
+        const normalizedClip =
+            typeof nextClip.sourceEnd === 'number' && nextClip.sourceEnd <= sourceStart
+                ? {
+                      ...nextClip,
+                      sourceEnd: Number((sourceStart + MIN_TIMELINE_ITEM_DURATION_SECONDS).toFixed(2)),
+                  }
+                : nextClip;
+        const maxDuration = getVideoTimelineClipMaxDurationSeconds(normalizedClip);
+        const durationCappedClip =
+            typeof maxDuration === 'number' && normalizedClip.duration > maxDuration
+                ? {
+                      ...normalizedClip,
+                      hasTimelineControls: true,
+                      duration: Number(maxDuration.toFixed(2)),
+                  }
+                : normalizedClip;
+        const nextVisualClips = editableVisualClips.map((clip) => (clip.id === clipId ? durationCappedClip : clip));
+
+        setEditableVisualClips(nextVisualClips);
+
+        if (options.persist) {
+            void persistVideoTimelineUpdate(durationCappedClip, nextVisualClips);
+        }
     };
 
     const handleNudgeScrollPosition = (itemId: string, edge: 'start' | 'end', deltaPx: number) => {
@@ -5991,21 +7762,6 @@ export function StudioEditor({
 
         setScrollEvents((current) => current.map((scrollEvent) => (scrollEvent.id === itemId ? nextScrollEvent : scrollEvent)));
         void persistScrollEventUpdate(nextScrollEvent);
-    };
-
-    const handleStepVisualDuration = (clipId: string, deltaSeconds: number) => {
-        setEditableVisualClips((current) =>
-            reflowVisualClips(
-                current.map((clip) =>
-                    clip.id === clipId
-                        ? {
-                              ...clip,
-                              duration: Math.max(1, Number((clip.duration + deltaSeconds).toFixed(2))),
-                          }
-                        : clip,
-                ),
-            ),
-        );
     };
 
     const handleDeleteTimelineItem = async (itemKind: TimelineItemKind, itemId: string) => {
@@ -6209,11 +7965,16 @@ export function StudioEditor({
                     fileName: item.fileName,
                     failures: failures.length > 0 ? [...failures] : undefined,
                 });
-                await createMedia(resolvedApiBaseUrl, episodeId, {
-                    mediaName: item.fileName,
-                    mediaType: item.mediaType,
-                    mediaUrl: uploadUrl.publicUrl,
-                });
+                const duration = item.mediaType === 'video' ? await getVideoDuration(item.file) : undefined;
+                await createMedia(
+                    resolvedApiBaseUrl,
+                    episodeId,
+                    buildMediaRegistrationRequest({
+                        duration,
+                        item,
+                        mediaUrl: uploadUrl.publicUrl,
+                    }),
+                );
                 successCount += 1;
             } catch (error) {
                 failures.push({
@@ -6231,7 +7992,18 @@ export function StudioEditor({
             const nextVisualClips = toVisualClips(nextCanvasItems);
 
             setMediaItems(nextMediaItems);
+            setCanvasItems(nextCanvasItems);
             setEditableVisualClips(nextVisualClips);
+            setDirtyImageCompositionCanvasIds([]);
+            setActiveCutCanvasId((current) => {
+                const nextCanvasIds = new Set(nextCanvasItems.map((item) => item.id));
+
+                if (typeof current === 'number' && nextCanvasIds.has(current)) {
+                    return current;
+                }
+
+                return nextVisualClips.find((clip) => typeof clip.canvasId === 'number')?.canvasId ?? nextCanvasItems[0]?.id ?? null;
+            });
             setSelectedId((current) => {
                 if (!current || (isVisualClipId(current) && !nextVisualClips.some((clip) => clip.id === current))) {
                     return nextVisualClips[0]?.id ?? '';
@@ -6361,11 +8133,23 @@ export function StudioEditor({
     };
 
     const handleScrub = (seconds: number) => {
-        const nextSeconds = Math.max(0, seconds);
+        const scrubState = getTimelineScrubState({
+            seconds,
+            timelineDurationSeconds,
+            manualTimelineDurationSeconds,
+            isPlaying,
+        });
 
-        setIsPlaying(false);
-        setManualTimelineDurationSeconds((current) => Math.max(current, Math.ceil(nextSeconds)));
-        setPlayhead(clamp(nextSeconds, 0, Math.max(timelineDurationSeconds, nextSeconds)));
+        setIsPlaying(scrubState.isPlaying);
+        setManualTimelineDurationSeconds((current) =>
+            getTimelineScrubState({
+                seconds,
+                timelineDurationSeconds,
+                manualTimelineDurationSeconds: current,
+                isPlaying,
+            }).manualTimelineDurationSeconds,
+        );
+        setPlayhead(scrubState.playhead);
     };
 
     const handleStartTimelinePointerEdit = ({
@@ -6375,6 +8159,8 @@ export function StudioEditor({
         mode,
     }: TimelinePointerEditRequest) => {
         const captureTarget = getTimelinePointerCaptureTarget(event.currentTarget);
+        const targetAudioClip = itemKind === 'audio' ? audioClipById.get(item.id) : undefined;
+        const targetVideoClip = itemKind === 'video' ? visualClipById.get(item.id) : undefined;
 
         event.preventDefault();
         event.stopPropagation();
@@ -6382,7 +8168,11 @@ export function StudioEditor({
         setIsPlaying(false);
         setSelectedId(item.id);
         setRangeSelectionIds([]);
-        setFocusedTrackId((audioClipById.get(item.id) ?? scrollEventById.get(item.id))?.track ?? focusedTrackId);
+        setFocusedTrackId(
+            itemKind === 'video'
+                ? VIDEO_TIMELINE_TRACK_ID
+                : (audioClipById.get(item.id) ?? scrollEventById.get(item.id))?.track ?? focusedTrackId,
+        );
         setTimelinePointerEdit({
             itemId: item.id,
             itemKind,
@@ -6390,6 +8180,11 @@ export function StudioEditor({
             pointerStartX: event.clientX,
             originalStart: item.start,
             originalDuration: item.duration,
+            maxDuration: targetAudioClip
+                ? getTimelineAudioClipMaxDurationSeconds(targetAudioClip)
+                : targetVideoClip
+                  ? getVideoTimelineClipMaxDurationSeconds(targetVideoClip)
+                  : undefined,
         });
     };
 
@@ -6409,6 +8204,14 @@ export function StudioEditor({
                     scrollEvent.id === timelinePointerEdit.itemId
                         ? { ...scrollEvent, start: timing.start, duration: timing.duration }
                         : scrollEvent,
+                ),
+            );
+        } else if (timelinePointerEdit.itemKind === 'video') {
+            setEditableVisualClips((current) =>
+                current.map((clip) =>
+                    clip.id === timelinePointerEdit.itemId
+                        ? { ...clip, hasTimelineControls: true, start: timing.start, duration: timing.duration }
+                        : clip,
                 ),
             );
         } else {
@@ -6452,6 +8255,23 @@ export function StudioEditor({
                 setPlayhead(timing.start);
                 void persistScrollEventUpdate(nextScrollEvent);
             }
+        } else if (timelinePointerEdit.itemKind === 'video') {
+            const targetClip = visualClipById.get(timelinePointerEdit.itemId);
+
+            if (targetClip) {
+                const timing = getTimelineEditTiming(timelinePointerEdit, event.clientX, pxPerSecond, timelineDurationSeconds, isSnapEnabled);
+                const nextClip = {
+                    ...targetClip,
+                    hasTimelineControls: true,
+                    start: timing.start,
+                    duration: timing.duration,
+                };
+                const nextVisualClips = editableVisualClips.map((clip) => (clip.id === timelinePointerEdit.itemId ? nextClip : clip));
+
+                setEditableVisualClips(nextVisualClips);
+                setPlayhead(timing.start);
+                void persistVideoTimelineUpdate(nextClip, nextVisualClips);
+            }
         } else {
             const targetClip = audioClipById.get(timelinePointerEdit.itemId);
 
@@ -6473,6 +8293,91 @@ export function StudioEditor({
         }
 
         setTimelinePointerEdit(null);
+    };
+
+    const handleStartTimelineAnchorEdit = ({
+        event,
+        anchor,
+    }: TimelineAnchorPointerEditRequest) => {
+        const captureTarget = getTimelinePointerCaptureTarget(event.currentTarget);
+
+        event.preventDefault();
+        event.stopPropagation();
+        captureTarget.setPointerCapture(event.pointerId);
+        setIsPlaying(false);
+        setSelectedId(getAnchorSelectionId(anchor.id));
+        setRangeSelectionIds([]);
+        setFocusedTrackId(String(anchor.trackId));
+        setPlayhead(toTimelineSeconds(anchor.time));
+        setTimelineAnchorPointerEdit({
+            anchor,
+            pointerStartX: event.clientX,
+            originalTimeSeconds: toTimelineSeconds(anchor.time),
+            hasMoved: false,
+        });
+    };
+
+    const handleMoveTimelineAnchorEdit = (event: ReactPointerEvent<HTMLElement>) => {
+        if (!timelineAnchorPointerEdit) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const request = getTimelineAnchorEditRequest(timelineAnchorPointerEdit, event.clientX, pxPerSecond, timelineDurationSeconds, isSnapEnabled);
+
+        if (!request) {
+            return;
+        }
+
+        const nextAnchor = applyAnchorMutation(timelineAnchorPointerEdit.anchor, request);
+        const nextTimeSeconds = toTimelineSeconds(nextAnchor.time);
+
+        setTimelineAnchorPointerEdit((current) =>
+            current ? { ...current, hasMoved: current.hasMoved || request.time !== current.anchor.time } : current,
+        );
+        setAnchors((current) => replaceAnchor(current, nextAnchor));
+        setPlayhead(nextTimeSeconds);
+        setManualTimelineDurationSeconds((current) => Math.max(current, Math.ceil(nextTimeSeconds)));
+    };
+
+    const handleEndTimelineAnchorEdit = (event: ReactPointerEvent<HTMLElement>) => {
+        if (!timelineAnchorPointerEdit) {
+            return;
+        }
+
+        const captureTarget = getTimelinePointerCaptureTarget(event.currentTarget);
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (captureTarget.hasPointerCapture(event.pointerId)) {
+            captureTarget.releasePointerCapture(event.pointerId);
+        }
+
+        const request = getTimelineAnchorEditRequest(timelineAnchorPointerEdit, event.clientX, pxPerSecond, timelineDurationSeconds, isSnapEnabled);
+
+        if (!request) {
+            if (timelineAnchorPointerEdit.hasMoved) {
+                setAnchors((current) => replaceAnchor(current, timelineAnchorPointerEdit.anchor));
+            }
+
+            setTimelineAnchorPointerEdit(null);
+            return;
+        }
+
+        if (timelineAnchorPointerEdit.hasMoved || request.time !== timelineAnchorPointerEdit.anchor.time) {
+            const nextAnchor = applyAnchorMutation(timelineAnchorPointerEdit.anchor, request);
+            const nextTimeSeconds = toTimelineSeconds(nextAnchor.time);
+
+            setAnchors((current) => replaceAnchor(current, nextAnchor));
+            setPlayhead(nextTimeSeconds);
+            setManualTimelineDurationSeconds((current) => Math.max(current, Math.ceil(nextTimeSeconds)));
+            void persistAnchorUpdate(timelineAnchorPointerEdit.anchor, request);
+        }
+
+        setTimelineAnchorPointerEdit(null);
     };
 
     const handleStartTimelineHeightResize = (event: ReactPointerEvent<HTMLElement>) => {
@@ -6622,6 +8527,7 @@ export function StudioEditor({
         setSelectedId(getAnchorSelectionId(anchor.id));
         setRangeSelectionIds([]);
         setFocusedTrackId(String(anchor.trackId));
+        setPlayhead(toTimelineSeconds(anchor.time));
         setPreviewAnchorPointerEdit({
             anchor,
             pointerStartY: event.clientY,
@@ -6687,6 +8593,95 @@ export function StudioEditor({
         setPreviewAnchorPointerEdit(null);
     };
 
+    const handleStartPreviewCueEdit = ({ event, marker }: PreviewCuePointerEditRequest) => {
+        const captureTarget = getTimelinePointerCaptureTarget(event.currentTarget);
+        const activeCueVisualClips = filterPreviewCanvasItems(editableVisualClips, activeStageCanvasId);
+
+        event.preventDefault();
+        event.stopPropagation();
+        captureTarget.setPointerCapture(event.pointerId);
+        setIsPlaying(false);
+        setSelectedId(marker.cueId);
+        setRangeSelectionIds([]);
+        setFocusedTrackId(marker.trackId);
+        setPlayhead(toTimelineSeconds(marker.cue.startTime));
+        setPreviewCuePointerEdit({
+            cue: marker.cue,
+            trackId: marker.trackId,
+            pointerStartY: event.clientY,
+            coordinateHeightPx: previewStripHeightPx,
+            visualClips: activeCueVisualClips,
+            visualSegments: previewVisualSegments,
+            originalStartPixel: marker.top,
+            originalEndPixel: marker.endTop,
+            hasMoved: false,
+        });
+    };
+
+    const handleMovePreviewCueEdit = (event: ReactPointerEvent<HTMLElement>) => {
+        if (!previewCuePointerEdit) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const request = getPreviewCueEditRequest(previewCuePointerEdit, event.clientY);
+
+        if (!request) {
+            return;
+        }
+
+        const nextCue = applyCuePositionMutation(previewCuePointerEdit.cue, request);
+
+        setPreviewCuePointerEdit((current) => (current ? { ...current, hasMoved: true } : current));
+        setTracks((current) => replaceCueInTracks(current, previewCuePointerEdit.trackId, nextCue));
+        setTimelineData((current) => replaceCuePositionInTimelineData(current, nextCue, request));
+    };
+
+    const handleEndPreviewCueEdit = (event: ReactPointerEvent<HTMLElement>) => {
+        if (!previewCuePointerEdit) {
+            return;
+        }
+
+        const captureTarget = getTimelinePointerCaptureTarget(event.currentTarget);
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (captureTarget.hasPointerCapture(event.pointerId)) {
+            captureTarget.releasePointerCapture(event.pointerId);
+        }
+
+        const request = getPreviewCueEditRequest(previewCuePointerEdit, event.clientY);
+
+        if (!request) {
+            if (previewCuePointerEdit.hasMoved) {
+                void refreshTimelineTracks();
+            }
+
+            setPreviewCuePointerEdit(null);
+            return;
+        }
+
+        const didMove =
+            previewCuePointerEdit.hasMoved ||
+            request.startCanvasMediaId !== previewCuePointerEdit.cue.startCanvasMediaId ||
+            request.endCanvasMediaId !== previewCuePointerEdit.cue.endCanvasMediaId ||
+            request.startPosition !== previewCuePointerEdit.cue.startPosition ||
+            request.endPosition !== previewCuePointerEdit.cue.endPosition;
+
+        if (didMove) {
+            const nextCue = applyCuePositionMutation(previewCuePointerEdit.cue, request);
+
+            setTracks((current) => replaceCueInTracks(current, previewCuePointerEdit.trackId, nextCue));
+            setTimelineData((current) => replaceCuePositionInTimelineData(current, nextCue, request));
+            void persistCuePositionUpdate(previewCuePointerEdit, request);
+        }
+
+        setPreviewCuePointerEdit(null);
+    };
+
     const handleSaveCueScript = async () => {
         const selectedClip = audioClipById.get(selectedId);
         const nextScript = cueScriptDraft.trim();
@@ -6706,10 +8701,18 @@ export function StudioEditor({
             return;
         }
 
+        const selectedCue = tracks
+            .flatMap((track) => track.cues ?? [])
+            .find((cue) => String(cue.id) === cueId);
+        const cueTrackId = resolveCueTimelineTrackId({
+            parentTrackId: selectedClip.track,
+            cueTrackId: selectedCue?.trackId,
+        });
+
         try {
             setIsSavingCueScript(true);
             setCueScriptError(null);
-            await updateCue(resolvedApiBaseUrl, selectedClip.track, cueId, {
+            await updateCue(resolvedApiBaseUrl, cueTrackId, cueId, {
                 script: nextScript,
             });
 
@@ -6724,6 +8727,19 @@ export function StudioEditor({
                         : clip,
                 ),
             }));
+            setTracks((current) =>
+                current.map((track) =>
+                    String(track.id) === cueTrackId || (track.cues ?? []).some((cue) => String(cue.id) === cueId)
+                        ? {
+                              ...track,
+                              cues: (track.cues ?? []).map((cue) => (String(cue.id) === cueId ? { ...cue, script: nextScript } : cue)),
+                          }
+                        : track,
+                ),
+            );
+            setDialogueCues((current) =>
+                current.map((cue) => (String(cue.id) === cueId ? { ...cue, script: nextScript } : cue)),
+            );
             setCueScriptDraft(nextScript);
             setTrackLoadError(null);
         } catch (error) {
@@ -6766,6 +8782,7 @@ export function StudioEditor({
             const updatedTrack = tracks.find((track) => String(track.id) === targetTrackId);
             const createdCue = [...(updatedTrack?.cues ?? [])].sort((a, b) => b.id - a.id)[0];
 
+            setTracks(tracks);
             setTimelineData({
                 audioTracks: nextTimelineData.audioTracks,
                 timelineClips: nextTimelineData.timelineClips,
@@ -6781,28 +8798,153 @@ export function StudioEditor({
         }
     };
 
-    const handleToggleAnchorPlacement = () => {
+    const handleToggleCutCuePlacement = () => {
+        if (cutCuePlacementTrackId) {
+            setCutCuePlacementTrackId(null);
+            return;
+        }
+
+        if (!cutCueTargetTrackId) {
+            setTrackLoadError('큐를 추가할 보이스 트랙을 먼저 생성해 주세요.');
+            return;
+        }
+
+        setAnchorPlacementTrackId(null);
+        setCutCuePlacementTrackId(cutCueTargetTrackId);
+        setFocusedTrackId(cutCueTargetTrackId);
+        setPreviewMode('cutEdit');
+        setTrackLoadError(null);
+    };
+
+    const handlePlaceCutCue = async (stripPositionPx: number, stripHeightPx: number) => {
+        const targetTrackId = cutCueTargetTrackId;
+        const targetTrack = audioTrackById.get(targetTrackId);
+
+        if (!cutCuePlacementTrackId || !targetTrackId) {
+            setTrackLoadError('큐 위치를 등록할 보이스 트랙을 선택해 주세요.');
+            return;
+        }
+        if (!targetTrack || isScrollTrackKind(targetTrack.kind) || !targetTrack.characterId) {
+            setTrackLoadError('큐는 캐릭터가 연결된 보이스 트랙에만 추가할 수 있습니다.');
+            return;
+        }
+
+        const request = toClickedCuePositionRequest({
+            stripHeightPx,
+            stripPositionPx,
+            visualClips: filterPreviewCanvasItems(editableVisualClips, resolvedActiveCutCanvasId),
+            visualSegments: previewVisualSegments,
+        });
+
+        if (!request) {
+            setTrackLoadError('큐를 추가할 캔버스 미디어 위치를 확인할 수 없습니다. 컷 편집 변경사항을 먼저 저장해 주세요.');
+            return;
+        }
+
+        try {
+            setIsAddingCutCue(true);
+            setIsPlaying(false);
+            await createCue(resolvedApiBaseUrl, targetTrackId, {
+                script: '대사 입력 대기',
+                ...request,
+                volume: 1,
+            });
+
+            const tracks = await listTracks(resolvedApiBaseUrl, episodeId);
+            const nextTimelineData = toTimelineData(tracks);
+            const updatedTrack = tracks.find((track) => String(track.id) === targetTrackId);
+            const createdCue = [...(updatedTrack?.cues ?? [])].sort((a, b) => b.id - a.id)[0];
+
+            setTracks(tracks);
+            setTimelineData({
+                audioTracks: nextTimelineData.audioTracks,
+                timelineClips: nextTimelineData.timelineClips,
+            });
+            setScrollEvents(nextTimelineData.scrollEvents);
+            setFocusedTrackId(targetTrackId);
+            setSelectedId(createdCue ? `cue-${createdCue.id}` : '');
+            setRangeSelectionIds([]);
+            setCutCuePlacementTrackId(null);
+            setTrackLoadError(null);
+        } catch (error) {
+            setTrackLoadError(error instanceof Error ? `컷 큐 추가에 실패했습니다: ${error.message}` : '컷 큐 추가에 실패했습니다.');
+        } finally {
+            setIsAddingCutCue(false);
+        }
+    };
+
+    const handleToggleAnchorPlacement = async () => {
+        if (isAddingAnchor) {
+            return;
+        }
         if (anchorPlacementTrackId) {
             setAnchorPlacementTrackId(null);
             return;
         }
 
         const selectedScrollEvent = scrollEventById.get(selectedId);
-        const focusedTrack = audioTrackById.get(focusedTrackId);
-        const fallbackScrollTrack = timelineData.audioTracks.find((track) => isScrollTrackKind(track.kind));
-        const targetTrackId =
-            selectedScrollEvent?.track ??
-            (focusedTrack && isScrollTrackKind(focusedTrack.kind) ? focusedTrack.id : undefined) ??
-            fallbackScrollTrack?.id;
+        const targetTrackId = resolveAnchorPlacementTrackId({
+            selectedScrollTrackId: selectedScrollEvent?.track,
+            focusedTrackId,
+            tracks: timelineData.audioTracks,
+        });
 
-        if (!targetTrackId) {
-            setTrackLoadError('앵커를 추가할 스크롤 트랙을 선택해 주세요.');
+        if (targetTrackId) {
+            setCutCuePlacementTrackId(null);
+            setAnchorPlacementTrackId(targetTrackId);
+            setPreviewMode('cutEdit');
+            setTrackLoadError(null);
             return;
         }
 
-        setAnchorPlacementTrackId(targetTrackId);
-        setPreviewMode('motion');
-        setTrackLoadError(null);
+        const trackName = getDefaultTrackName('scroll');
+
+        try {
+            setIsAddingAnchor(true);
+            setTrackLoadError(null);
+
+            await createTrack(resolvedApiBaseUrl, episodeId, {
+                name: trackName,
+                type: 'scroll',
+                isMuted: false,
+            });
+
+            const tracks = await listTracks(resolvedApiBaseUrl, episodeId);
+            const nextTimelineData = toTimelineData(tracks);
+            const nextAnchors = await listAnchorsForTracks(
+                resolvedApiBaseUrl,
+                nextTimelineData.audioTracks.filter((track) => isScrollTrackKind(track.kind)).map((track) => track.id),
+            );
+            const createdTrack =
+                [...tracks]
+                    .filter((track) => track.name === trackName && isScrollTrackKind(track.type))
+                    .sort((a, b) => b.id - a.id)[0] ?? tracks.find((track) => isScrollTrackKind(track.type));
+
+            if (!createdTrack) {
+                throw new Error('Created scroll track was not found.');
+            }
+
+            setTracks(tracks);
+            setTimelineData({
+                audioTracks: nextTimelineData.audioTracks,
+                timelineClips: nextTimelineData.timelineClips,
+            });
+            setScrollEvents(nextTimelineData.scrollEvents);
+            setAnchors(nextAnchors);
+            setCutCuePlacementTrackId(null);
+            setAnchorPlacementTrackId(String(createdTrack.id));
+            setFocusedTrackId(String(createdTrack.id));
+            setPreviewMode('cutEdit');
+            setTrackLoadError(null);
+        } catch (error) {
+            setTrackLoadError(
+                error instanceof Error
+                    ? `앵커용 스크롤 트랙을 생성하지 못했습니다: ${error.message}`
+                    : '앵커용 스크롤 트랙을 생성하지 못했습니다.',
+            );
+        } finally {
+            setIsAddingAnchor(false);
+        }
     };
 
     const handlePlaceAnchor = async (stripPositionPx: number, stripHeightPx: number) => {
@@ -6843,90 +8985,45 @@ export function StudioEditor({
         }
     };
 
-    const handleSelectImageCompositionLayer = (layerId: string) => {
-        const layer = imageCompositionDraft.layers.find((item) => item.id === layerId);
-
-        setImageCompositionDraft((current) => selectImageCompositionLayer(current, layerId));
-
-        if (layer) {
-            setSelectedId(layer.clipId);
-            setRangeSelectionIds([]);
-        }
-    };
-
-    const markImageCompositionCanvasDirty = (canvasId?: number) => {
-        if (typeof canvasId !== 'number') {
-            return;
-        }
-
-        setDirtyImageCompositionCanvasIds((current) => (current.includes(canvasId) ? current : [...current, canvasId]));
-    };
-
-    const handleUpdateImageCompositionLayer = (layerId: string, patch: ImageCompositionLayerPatch) => {
-        const layer = imageCompositionDraft.layers.find((item) => item.id === layerId);
-
-        setImageCompositionConfirmError(null);
-        markImageCompositionCanvasDirty(layer?.canvasId);
-        setImageCompositionDraft((current) => updateImageCompositionLayer(current, layerId, patch));
-    };
-
-    const handleMoveImageCompositionLayer = (layerId: string, direction: 'up' | 'down') => {
-        const layer = imageCompositionDraft.layers.find((item) => item.id === layerId);
-
-        setImageCompositionConfirmError(null);
-        markImageCompositionCanvasDirty(layer?.canvasId);
-        setImageCompositionDraft((current) => moveImageCompositionLayer(current, layerId, direction));
-    };
-
-    const handleRemoveImageCompositionLayer = (layerId: string) => {
-        const layer = imageCompositionDraft.layers.find((item) => item.id === layerId);
-        const nextDraft = removeImageCompositionLayer(imageCompositionDraft, layerId);
-        const nextSelectedLayer = nextDraft.layers.find((item) => item.id === nextDraft.selectedLayerId);
-
-        setImageCompositionConfirmError(null);
-        markImageCompositionCanvasDirty(layer?.canvasId);
-        setImageCompositionDraft(nextDraft);
-
-        if (layer) {
-            setEditableVisualClips((current) => reflowVisualClips(current.filter((clip) => clip.id !== layer.clipId)));
-            setRangeSelectionIds((current) => current.filter((id) => id !== layer.clipId));
-            setSelectedId((current) => (current === layer.clipId ? nextSelectedLayer?.clipId ?? '' : current));
-        }
-    };
-
     const handleConfirmImageComposition = async () => {
         if (isConfirmingImageComposition) {
             return;
         }
 
-        const dirtyCanvasIds = [...dirtyImageCompositionCanvasIds];
-        const newCanvasMedias = toCanvasCreateMedias(imageCompositionDraft, { canvasId: null });
-
-        if (dirtyCanvasIds.length === 0 && newCanvasMedias.length === 0) {
+        if (typeof resolvedActiveCutCanvasId !== 'number') {
+            setImageCompositionConfirmError('수정할 캔버스를 먼저 선택해 주세요.');
             return;
         }
+
+        if (!dirtyImageCompositionCanvasIdSet.has(resolvedActiveCutCanvasId)) {
+            return;
+        }
+
+        const canvasMedias = toCanvasCreateMedias(imageCompositionDraft, { canvasId: resolvedActiveCutCanvasId });
 
         try {
             setIsConfirmingImageComposition(true);
             setImageCompositionConfirmError(null);
 
-            for (const canvasId of dirtyCanvasIds) {
-                await updateCanvas(resolvedApiBaseUrl, episodeId, canvasId, {
-                    medias: toCanvasCreateMedias(imageCompositionDraft, { canvasId }),
-                });
-            }
-
-            if (newCanvasMedias.length > 0) {
-                await createCanvas(resolvedApiBaseUrl, episodeId, { medias: newCanvasMedias });
-            }
+            await updateCanvas(resolvedApiBaseUrl, episodeId, resolvedActiveCutCanvasId, { medias: canvasMedias });
 
             const nextCanvasItems = await listCanvases(resolvedApiBaseUrl, episodeId);
             const nextVisualClips = toVisualClips(nextCanvasItems);
             const nextImageCompositionSources = toImageCompositionSources(nextVisualClips);
             const confirmedAt = new Date().toISOString();
 
+            setCanvasItems(nextCanvasItems);
             setEditableVisualClips(nextVisualClips);
-            setDirtyImageCompositionCanvasIds([]);
+            setDirtyImageCompositionCanvasIds((current) => current.filter((canvasId) => canvasId !== resolvedActiveCutCanvasId));
+            setActiveCutCanvasId((current) => {
+                const nextCanvasIds = new Set(nextCanvasItems.map((item) => item.id));
+
+                if (typeof current === 'number' && nextCanvasIds.has(current)) {
+                    return current;
+                }
+
+                return nextVisualClips.find((clip) => typeof clip.canvasId === 'number')?.canvasId ?? nextCanvasItems[0]?.id ?? null;
+            });
             setSelectedId((current) => {
                 if (!current || (isVisualClipId(current) && !nextVisualClips.some((clip) => clip.id === current))) {
                     return nextVisualClips[0]?.id ?? '';
@@ -7000,6 +9097,9 @@ export function StudioEditor({
             });
             setScrollEvents(nextTimelineData.scrollEvents);
             setFocusedTrackId(createdTrack ? String(createdTrack.id) : nextTimelineData.audioTracks[0]?.id ?? '');
+            if (previewMode === 'cutEdit' && createdTrack && !isScrollTrackKind(createdTrack.type) && createdTrack.characterId) {
+                setCutCuePlacementTrackId(String(createdTrack.id));
+            }
             setTrackLoadError(null);
             setIsTrackModalOpen(false);
             setNewTrackName('');
@@ -7049,7 +9149,7 @@ export function StudioEditor({
                 </div>
             </header>
             <main
-                className={`odx-body ${previewMode === 'cutEdit' ? 'is-editing-cuts' : ''} ${inspectorResize ? 'is-inspector-resizing' : ''}`}
+                className={`odx-body ${previewMode === 'cutEdit' ? 'is-editing-cuts' : ''} ${shouldShowCutEditInspector ? 'has-cut-edit-inspector' : ''} ${inspectorResize ? 'is-inspector-resizing' : ''}`}
                 style={
                     {
                         '--odx-inspector-width': `${inspectorWidth}px`,
@@ -7100,38 +9200,51 @@ export function StudioEditor({
                     onToggleCharacterCreate={handleToggleCharacterCreate}
                 />
                 <PreviewCanvas
+                    activeCutCanvasId={resolvedActiveCutCanvasId}
                     activeVisual={activeVisual}
-                    anchors={anchors}
+                    anchors={stageAnchors}
                     canConfirmImageComposition={canConfirmImageComposition}
-                    effects={getItemEffects(activeVisual, effectsById)}
-                    imageCompositionDraft={imageCompositionDraft}
+                    canvasOptions={previewCanvasOptions}
+                    canvasSummaries={canvasSummaries}
+                    cuePlacementTrackId={cutCueTargetTrackId}
+                    cueTracks={cutEditCueTracks}
+                    effects={getItemEffects(previewActiveVisual, effectsById)}
+                    focusedTrackId={focusedTrackId}
                     imageCompositionConfirmError={imageCompositionConfirmError}
                     isAddingAnchor={isAddingAnchor}
+                    isAddingCue={isAddingCutCue}
                     isAnchorPlacementMode={isAnchorPlacementMode}
+                    isCuePlacementMode={isCutCuePlacementMode}
                     isConfirmingImageComposition={isConfirmingImageComposition}
                     isPreviewAudioEnabled={isPreviewAudioEnabled}
                     isPreviewFullscreen={isPreviewFullscreen}
                     isPreviewLocked={isPreviewLocked}
+                    isPlaying={isPlaying}
+                    onFocusTrack={handleFocusTrack}
                     onImageCompositionConfirm={handleConfirmImageComposition}
-                    onImageCompositionLayerMove={handleMoveImageCompositionLayer}
-                    onImageCompositionLayerPatch={handleUpdateImageCompositionLayer}
-                    onImageCompositionLayerRemove={handleRemoveImageCompositionLayer}
-                    onImageCompositionLayerSelect={handleSelectImageCompositionLayer}
                     onMediaDrop={handleDropMediaOnCutEditor}
+                    onOpenTrackModal={handleOpenTrackModal}
                     onPreviewModeChange={setPreviewMode}
                     onPreviewStripHeightChange={setPreviewStripHeightPx}
                     onPreviewVisualSegmentsChange={setPreviewVisualSegments}
                     onPreviewZoomChange={(zoom) => setPreviewZoom(clamp(zoom, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM))}
                     onPreviewZoomStep={(delta) => setPreviewZoom((current) => clamp(current + delta, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM))}
                     onPlaceAnchor={handlePlaceAnchor}
+                    onPlaceCue={handlePlaceCutCue}
                     onSelectAnchor={handleSelectAnchor}
+                    onSelectCue={(cueId) => handleSelectItem(`cue-${cueId}`)}
+                    onSelectCutCanvas={handleSelectCutCanvas}
+                    onSelectPreviewCanvas={setSelectedPreviewCanvasId}
                     onSelectVisual={handleSelectVisual}
-                    onStepVisualDuration={handleStepVisualDuration}
                     onToggleAnchorPlacement={handleToggleAnchorPlacement}
+                    onToggleCuePlacement={handleToggleCutCuePlacement}
                     onSelectScrollEvent={handleSelectItem}
                     onPreviewAnchorEditEnd={handleEndPreviewAnchorEdit}
                     onPreviewAnchorEditMove={handleMovePreviewAnchorEdit}
                     onPreviewAnchorEditStart={handleStartPreviewAnchorEdit}
+                    onPreviewCueEditEnd={handleEndPreviewCueEdit}
+                    onPreviewCueEditMove={handleMovePreviewCueEdit}
+                    onPreviewCueEditStart={handleStartPreviewCueEdit}
                     onPreviewScrollEditEnd={handleEndPreviewScrollEdit}
                     onPreviewScrollEditMove={handleMovePreviewScrollEdit}
                     onPreviewScrollEditStart={handleStartPreviewScrollEdit}
@@ -7142,28 +9255,39 @@ export function StudioEditor({
                     onVisualCutEditMove={handleMoveVisualCutEdit}
                     onVisualCutEditStart={handleStartVisualCutEdit}
                     playhead={playhead}
+                    playbackScrollEvents={stagePlaybackScrollEvents}
+                    previewActiveVisual={previewActiveVisual}
                     previewMode={previewMode}
+                    previewVisualClips={previewVisualClips}
                     previewZoom={previewZoom}
                     previewStripHeightPx={previewStripHeightPx}
                     previewVisualSegments={previewVisualSegments}
                     previewAnchorEditingId={previewAnchorPointerEdit?.anchor.id ?? null}
+                    previewCueEditingId={previewCuePointerEdit?.cue.id ?? null}
                     previewScrollEditingId={previewScrollPointerEdit?.eventId ?? null}
-                    scrollEvents={scrollEvents}
+                    scrollEvents={stageScrollEvents}
                     selectedId={selectedId}
+                    selectedPreviewCanvasId={resolvedPreviewCanvasId}
                     visualCutEditingId={visualCutPointerEdit?.clipId ?? null}
                     visualClips={editableVisualClips}
                 />
                 <InspectorPanel
                     activeVisual={activeVisual}
+                    anchors={anchors}
+                    anchorEventDraft={anchorEventDraft}
                     characterById={characterById}
                     cueScriptState={cueScriptState}
                     effects={selectedEffects}
+                    onAnchorEventDraftChange={handleAnchorEventDraftChange}
+                    onDeleteAnchor={handleDeleteAnchor}
+                    onDeleteAnchorEvent={handleDeleteAnchorEvent}
                     onCueScriptDraftChange={setCueScriptDraft}
                     onSaveCueScript={handleSaveCueScript}
+                    onSaveAnchorEvent={handleSaveAnchorEvent}
                     onDeleteTimelineItem={handleDeleteTimelineItem}
                     onNudgeScrollPosition={handleNudgeScrollPosition}
                     onStepTimelineItem={handleStepTimelineItem}
-                    onStepVisualDuration={handleStepVisualDuration}
+                    onUpdateVideoClipControls={handleUpdateVideoClipControls}
                     onResizeStart={handleStartInspectorResize}
                     previewStripHeightPx={previewStripHeightPx}
                     previewVisualSegments={previewVisualSegments}
@@ -7197,6 +9321,9 @@ export function StudioEditor({
                     onSplitTimelineItem={handleSplitTimelineItem}
                     onTimelineHeightResizeStart={handleStartTimelineHeightResize}
                     onTimelineSidebarResizeStart={handleStartTimelineSidebarResize}
+                    onTimelineAnchorEditEnd={handleEndTimelineAnchorEdit}
+                    onTimelineAnchorEditMove={handleMoveTimelineAnchorEdit}
+                    onTimelineAnchorEditStart={handleStartTimelineAnchorEdit}
                     onTimelinePointerEditEnd={handleEndTimelinePointerEdit}
                     onTimelinePointerEditMove={handleMoveTimelinePointerEdit}
                     onTimelinePointerEditStart={handleStartTimelinePointerEdit}
@@ -7215,10 +9342,12 @@ export function StudioEditor({
                     soloTrackIds={soloTrackIds}
                     trackLoadError={trackLoadError}
                     trackContextMenu={trackContextMenu}
+                    timelineAnchorEditingId={timelineAnchorPointerEdit?.anchor.id ?? null}
                     timelineTool={timelineTool}
                     timelineHeight={timelineHeight}
                     timelineSidebarWidth={timelineSidebarWidth}
                     timelineClips={timelineData.timelineClips}
+                    videoClips={videoTimelineClips}
                     deletingTrackId={deletingTrackId}
                 />
             </main>

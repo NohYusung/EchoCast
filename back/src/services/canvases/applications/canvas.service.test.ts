@@ -57,7 +57,7 @@ describe('CanvasService', () => {
                     mediaUrl: 'https://assets.example.com/canvas-2.png',
                 })
             );
-            await dataSource.manager.save([
+            const [firstCanvasMedia, secondCanvasMedia] = await dataSource.manager.save([
                 new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 }),
                 new CanvasMedia({ canvasId: canvas.id, mediaId: secondMedia.id, index: 1 }),
             ]);
@@ -73,6 +73,7 @@ describe('CanvasService', () => {
                     {
                         id: canvas.id,
                         episodeId: episode.id,
+                        canvasMediaId: firstCanvasMedia.id,
                         mediaId: media.id,
                         mediaName: 'canvas.png',
                         mediaType: 'image',
@@ -80,6 +81,7 @@ describe('CanvasService', () => {
                         index: 0,
                         medias: [
                             {
+                                canvasMediaId: firstCanvasMedia.id,
                                 mediaId: media.id,
                                 mediaName: 'canvas.png',
                                 mediaType: 'image',
@@ -87,6 +89,7 @@ describe('CanvasService', () => {
                                 index: 0,
                             },
                             {
+                                canvasMediaId: secondCanvasMedia.id,
                                 mediaId: secondMedia.id,
                                 mediaName: 'canvas-2.png',
                                 mediaType: 'image',
@@ -162,6 +165,7 @@ describe('CanvasService', () => {
                 medias: [
                     {
                         id: media.id,
+                        canvasMediaId: storedCanvas.canvasMedias[0].id,
                         episodeId: episode.id,
                         canvasId: storedCanvas.id,
                         mediaName: 'confirmed-composition.png',
@@ -218,6 +222,12 @@ describe('CanvasService', () => {
                     {
                         mediaId: media.id,
                         index: 0,
+                        startTime: 1500,
+                        endTime: 7800,
+                        sourceStartTime: 1000,
+                        sourceEndTime: 7300,
+                        volume: 0.7,
+                        isMuted: true,
                     },
                 ],
             });
@@ -225,6 +235,7 @@ describe('CanvasService', () => {
             assert.deepEqual(result.medias, [
                 {
                     id: media.id,
+                    canvasMediaId: result.medias[0].canvasMediaId,
                     episodeId: episode.id,
                     canvasId: result.id,
                     mediaName: 'confirmed-video.mp4',
@@ -232,6 +243,12 @@ describe('CanvasService', () => {
                     mediaUrl: 'https://assets.example.com/confirmed-video.mp4',
                     duration: 2400,
                     index: 0,
+                    startTime: 1500,
+                    endTime: 7800,
+                    sourceStartTime: 1000,
+                    sourceEndTime: 7300,
+                    volume: 0.7,
+                    isMuted: true,
                 },
             ]);
         } finally {
@@ -361,6 +378,7 @@ describe('CanvasService', () => {
             assert.equal(result.total, 1);
             assert.deepEqual(result.items[0].medias, [
                 {
+                    canvasMediaId: result.items[0].medias[0].canvasMediaId,
                     mediaId: secondMedia.id,
                     mediaName: 'second.png',
                     mediaType: 'image',
@@ -368,11 +386,94 @@ describe('CanvasService', () => {
                     index: 0,
                 },
                 {
+                    canvasMediaId: result.items[0].medias[1].canvasMediaId,
                     mediaId: firstMedia.id,
                     mediaName: 'first.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/first.png',
                     index: 1,
+                },
+            ]);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('updates canvas media timeline controls', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [CanvasMedia, Canvas, Character, Episode, Media, Product],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(
+                new Product({
+                    title: 'Canvas timeline controls product',
+                })
+            );
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Canvas timeline controls episode',
+                })
+            );
+            const canvasRepository = new CanvasRepository(dataSource);
+            const mediaRepository = new MediaRepository(dataSource);
+            const canvasMediaRepository = new CanvasMediaRepository(dataSource);
+            const canvasService = new CanvasService(canvasRepository, mediaRepository, canvasMediaRepository);
+            const media = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'timeline-video.mp4',
+                    mediaType: 'video',
+                    mediaUrl: 'https://assets.example.com/timeline-video.mp4',
+                    duration: 12000,
+                })
+            );
+            const created = await canvasService.create({
+                episodeId: episode.id,
+                medias: [{ mediaId: media.id, index: 0 }],
+            });
+
+            await canvasService.update({
+                episodeId: episode.id,
+                canvasId: created.id,
+                medias: [
+                    {
+                        mediaId: media.id,
+                        index: 0,
+                        startTime: 2500,
+                        endTime: 9400,
+                        sourceStartTime: 1500,
+                        sourceEndTime: 8400,
+                        volume: 0.35,
+                        isMuted: true,
+                    },
+                ],
+            });
+
+            const result = await canvasService.list({ episodeId: episode.id });
+
+            assert.equal(result.total, 1);
+            assert.deepEqual(result.items[0].medias, [
+                {
+                    canvasMediaId: result.items[0].medias[0].canvasMediaId,
+                    mediaId: media.id,
+                    mediaName: 'timeline-video.mp4',
+                    mediaType: 'video',
+                    mediaUrl: 'https://assets.example.com/timeline-video.mp4',
+                    duration: 12000,
+                    index: 0,
+                    startTime: 2500,
+                    endTime: 9400,
+                    sourceStartTime: 1500,
+                    sourceEndTime: 8400,
+                    volume: 0.35,
+                    isMuted: true,
                 },
             ]);
         } finally {

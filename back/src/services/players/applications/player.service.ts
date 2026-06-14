@@ -70,9 +70,12 @@ type PlayerDraft = {
         characterId?: string;
         trackId: string;
         audioId?: string;
+        startCanvasMediaId?: string;
+        endCanvasMediaId?: string;
         startTime: number;
         endTime: number;
-        ttsVoiceId?: string;
+        startPosition: number;
+        endPosition: number;
         ttsUrl?: string;
         volume: number;
     }>;
@@ -309,6 +312,16 @@ export class PlayerService extends DddService {
                         (hasExplicitScrollMapping ? undefined : scrolls[index]);
                     const fallbackStartTime = Number((index * fallbackVisualDuration).toFixed(3));
                     const fallbackEndTime = Number(((index + 1) * fallbackVisualDuration).toFixed(3));
+                    const hasCanvasMediaTiming =
+                        typeof canvasMedia.startTime === 'number' &&
+                        typeof canvasMedia.endTime === 'number' &&
+                        canvasMedia.endTime > canvasMedia.startTime;
+                    const startTime = hasCanvasMediaTiming
+                        ? canvasMedia.startTime!
+                        : scroll?.startTime ?? fallbackStartTime;
+                    const endTime = hasCanvasMediaTiming
+                        ? canvasMedia.endTime!
+                        : scroll?.endTime ?? Math.max(fallbackEndTime, fallbackStartTime + 1);
 
                     return {
                         id:
@@ -317,12 +330,16 @@ export class PlayerService extends DddService {
                                 : `visual-${canvas.id}-${media.id}`,
                         trackId: visualTrack?.id ?? `visual-${episode.id}`,
                         kind: 'visual' as const,
-                        startTime: scroll?.startTime ?? fallbackStartTime,
-                        endTime: scroll?.endTime ?? Math.max(fallbackEndTime, fallbackStartTime + 1),
+                        startTime,
+                        endTime,
                         canvasId: toId(canvas.id),
                         index: mediaIndex,
                         mediaId: toId(media.id),
                         layerId: index,
+                        trimStartTime:
+                            typeof canvasMedia.sourceStartTime === 'number' ? canvasMedia.sourceStartTime : undefined,
+                        trimEndTime: typeof canvasMedia.sourceEndTime === 'number' ? canvasMedia.sourceEndTime : undefined,
+                        volume: canvasMedia.isMuted ? 0 : canvasMedia.volume,
                     };
                 }),
                 ...cues.map((cue) => ({
@@ -369,9 +386,12 @@ export class PlayerService extends DddService {
                 characterId: cue.characterId ? toId(cue.characterId) : undefined,
                 trackId: toId(cue.trackId),
                 audioId: cue.audioId ? toId(cue.audioId) : undefined,
+                startCanvasMediaId: cue.startCanvasMediaId ? toId(cue.startCanvasMediaId) : undefined,
+                endCanvasMediaId: cue.endCanvasMediaId ? toId(cue.endCanvasMediaId) : undefined,
                 startTime: cue.startTime,
                 endTime: cue.endTime,
-                ttsVoiceId: cue.ttsVoiceId ? toId(cue.ttsVoiceId) : undefined,
+                startPosition: cue.startPosition,
+                endPosition: cue.endPosition,
                 volume: cue.volume,
             })),
             scrolls: scrolls.map((scroll) => ({

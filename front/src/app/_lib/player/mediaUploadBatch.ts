@@ -12,6 +12,13 @@ export type MediaUploadQueueItem<TFile> = {
     key: string;
 };
 
+export type MediaRegistrationRequest = {
+    mediaName: string;
+    mediaType: UploadableMediaType;
+    mediaUrl: string;
+    duration?: number;
+};
+
 export type FileUploadUrlRequest = {
     key: string;
     contentType: string;
@@ -94,6 +101,23 @@ export function buildFileUploadUrlRequests<TFile extends { name: string; type?: 
         key: item.key,
         contentType: getUploadContentType(item.file),
     }));
+}
+
+export function buildMediaRegistrationRequest<TFile>({
+    duration,
+    item,
+    mediaUrl,
+}: {
+    duration?: number;
+    item: Pick<MediaUploadQueueItem<TFile>, 'fileName' | 'mediaType'>;
+    mediaUrl: string;
+}): MediaRegistrationRequest {
+    return {
+        mediaName: item.fileName,
+        mediaType: item.mediaType,
+        mediaUrl,
+        ...(item.mediaType === 'video' && typeof duration === 'number' ? { duration } : {}),
+    };
 }
 
 export async function uploadFileToPresignedUrl(presignedUrl: string, file: Blob, contentType: string) {

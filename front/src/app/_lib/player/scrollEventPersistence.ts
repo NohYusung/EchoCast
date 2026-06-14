@@ -51,6 +51,15 @@ export type DraggedScrollAnchorMutationSource = {
     stripPositionPx: number;
     visualSegments: readonly PreviewScrollVisualSegment[];
 };
+export type TimelineDraggedScrollAnchorMutationSource = {
+    anchor: {
+        canvasId: number;
+        index: number;
+        time: number;
+        position: number;
+    };
+    timeSeconds: number;
+};
 
 export function getScrollEventApiId(event: { id: string; scrollId?: number }) {
     if (typeof event.scrollId === 'number' && Number.isFinite(event.scrollId)) {
@@ -174,6 +183,18 @@ export function toDraggedScrollAnchorMutationRequest({
         canvasId: anchor.canvasId,
         index: anchor.index,
         playhead: originalAnchor.time / 1000,
+        position: anchor.position,
+    });
+}
+
+export function toTimelineDraggedScrollAnchorMutationRequest({
+    anchor,
+    timeSeconds,
+}: TimelineDraggedScrollAnchorMutationSource): ScrollAnchorMutationRequest | undefined {
+    return toSingleScrollAnchorMutationRequest({
+        canvasId: anchor.canvasId,
+        index: anchor.index,
+        playhead: timeSeconds,
         position: anchor.position,
     });
 }

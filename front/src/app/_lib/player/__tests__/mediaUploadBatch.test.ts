@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
     buildFileUploadUrlRequests,
     buildMediaUploadQueue,
+    buildMediaRegistrationRequest,
     toMediaUploadFailureMessage,
     uploadFileToPresignedUrl,
 } from '../mediaUploadBatch';
@@ -73,6 +74,43 @@ test('buildFileUploadUrlRequests includes explicit content types for each upload
             contentType: 'video/mp4',
         },
     ]);
+});
+
+test('buildMediaRegistrationRequest includes video duration when metadata was resolved', () => {
+    assert.deepEqual(
+        buildMediaRegistrationRequest({
+            item: {
+                fileName: 'clip.mp4',
+                mediaType: 'video',
+            },
+            mediaUrl: 'https://assets.example.com/clip.mp4',
+            duration: 12345,
+        }),
+        {
+            mediaName: 'clip.mp4',
+            mediaType: 'video',
+            mediaUrl: 'https://assets.example.com/clip.mp4',
+            duration: 12345,
+        },
+    );
+});
+
+test('buildMediaRegistrationRequest omits image duration', () => {
+    assert.deepEqual(
+        buildMediaRegistrationRequest({
+            item: {
+                fileName: 'cover.png',
+                mediaType: 'image',
+            },
+            mediaUrl: 'https://assets.example.com/cover.png',
+            duration: 12345,
+        }),
+        {
+            mediaName: 'cover.png',
+            mediaType: 'image',
+            mediaUrl: 'https://assets.example.com/cover.png',
+        },
+    );
 });
 
 test('uploadFileToPresignedUrl sends the signed content type header', async (t) => {

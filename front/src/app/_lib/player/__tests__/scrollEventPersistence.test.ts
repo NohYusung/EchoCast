@@ -5,6 +5,7 @@ import {
     toClickedScrollAnchorMutationRequest,
     toDraggedScrollAnchorMutationRequest,
     toSingleScrollAnchorMutationRequest,
+    toTimelineDraggedScrollAnchorMutationRequest,
     toScrollAnchorMutationRequests,
     toScrollEventMutationRequest,
 } from '../scrollEventPersistence';
@@ -155,6 +156,26 @@ test('toDraggedScrollAnchorMutationRequest preserves anchor time while remapping
             index: 3,
             time: 5100,
             position: 25,
+        },
+    );
+});
+
+test('toTimelineDraggedScrollAnchorMutationRequest remaps anchor time while preserving canvas position', () => {
+    assert.deepEqual(
+        toTimelineDraggedScrollAnchorMutationRequest({
+            anchor: {
+                canvasId: 10,
+                index: 0,
+                time: 5100,
+                position: 80,
+            },
+            timeSeconds: 7.3,
+        }),
+        {
+            canvasId: 10,
+            index: 0,
+            time: 7300,
+            position: 80,
         },
     );
 });

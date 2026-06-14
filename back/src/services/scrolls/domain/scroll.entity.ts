@@ -1,5 +1,5 @@
 import { DddAggregate } from '../../../libs/ddd';
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Anchor } from '../../anchors/domain/anchor.entity';
 import { Track } from '../../tracks/domain/track.entity';
 
@@ -27,7 +27,7 @@ export class Scroll extends DddAggregate {
     @JoinColumn({ name: 'trackId' })
     track!: Track;
 
-    @ManyToOne(() => Anchor, { nullable: false })
+    @OneToOne(() => Anchor, { nullable: false })
     @JoinColumn({ name: 'startAnchorId' })
     startAnchor!: Anchor;
 

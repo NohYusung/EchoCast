@@ -6,6 +6,12 @@ export type ImageCompositionSource = {
     label: string;
     mediaUrl: string;
     order: number;
+    startTime?: number;
+    endTime?: number;
+    sourceStartTime?: number;
+    sourceEndTime?: number;
+    volume?: number;
+    isMuted?: boolean;
 };
 
 export type ImageCompositionLayer = {
@@ -23,6 +29,12 @@ export type ImageCompositionLayer = {
     opacity: number;
     zIndex: number;
     isVisible: boolean;
+    startTime?: number;
+    endTime?: number;
+    sourceStartTime?: number;
+    sourceEndTime?: number;
+    volume?: number;
+    isMuted?: boolean;
 };
 
 export type ImageCompositionDraft = {
@@ -43,6 +55,12 @@ export type ImageCompositionCanvasMedia = {
     y: number;
     scale: number;
     opacity: number;
+    startTime?: number;
+    endTime?: number;
+    sourceStartTime?: number;
+    sourceEndTime?: number;
+    volume?: number;
+    isMuted?: boolean;
 };
 
 const MIN_POSITION = 0;
@@ -89,6 +107,12 @@ export function syncImageCompositionDraft(
                 opacity: existing?.opacity ?? 1,
                 zIndex: shouldUseSourceOrder ? index : existing?.zIndex ?? index,
                 isVisible: existing?.isVisible ?? true,
+                startTime: source.startTime ?? existing?.startTime,
+                endTime: source.endTime ?? existing?.endTime,
+                sourceStartTime: source.sourceStartTime ?? existing?.sourceStartTime,
+                sourceEndTime: source.sourceEndTime ?? existing?.sourceEndTime,
+                volume: source.volume ?? existing?.volume,
+                isMuted: source.isMuted ?? existing?.isMuted,
             };
         })
         .sort((a, b) => a.zIndex - b.zIndex || a.clipId.localeCompare(b.clipId))
@@ -231,6 +255,12 @@ export function toCanvasCreateMedias(
             y: layer.y,
             scale: layer.scale,
             opacity: layer.opacity,
+            ...(typeof layer.startTime === 'number' ? { startTime: layer.startTime } : {}),
+            ...(typeof layer.endTime === 'number' ? { endTime: layer.endTime } : {}),
+            ...(typeof layer.sourceStartTime === 'number' ? { sourceStartTime: layer.sourceStartTime } : {}),
+            ...(typeof layer.sourceEndTime === 'number' ? { sourceEndTime: layer.sourceEndTime } : {}),
+            ...(typeof layer.volume === 'number' ? { volume: layer.volume } : {}),
+            ...(typeof layer.isMuted === 'boolean' ? { isMuted: layer.isMuted } : {}),
         }));
 }
 

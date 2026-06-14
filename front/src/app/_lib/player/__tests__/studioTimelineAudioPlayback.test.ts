@@ -60,6 +60,39 @@ test('syncStudioTimelineAudioPlayback plays an active audio clip at the playhead
     assert.equal(createdAudios[0].volume, 0.42);
 });
 
+test('syncStudioTimelineAudioPlayback seeks from the cue source audio offset', () => {
+    const audioByClipId: StudioTimelineAudioState = new Map();
+    const createdAudios: FakeTimelineAudio[] = [];
+
+    syncStudioTimelineAudioPlayback({
+        audioByClipId,
+        clips: [
+            {
+                id: 'cue-2',
+                track: 'voice-track',
+                start: 12,
+                duration: 4,
+                audioStart: 30,
+                audioEnd: 34,
+                audioUrl: 'https://assets.example.com/voice.wav',
+            },
+        ],
+        createAudio: () => {
+            const audio = new FakeTimelineAudio();
+            createdAudios.push(audio);
+            return audio;
+        },
+        isPlaying: true,
+        mutedTrackIds: [],
+        playhead: 13.25,
+        soloTrackIds: [],
+    });
+
+    assert.equal(createdAudios.length, 1);
+    assert.equal(createdAudios[0].currentTime, 31.25);
+    assert.equal(createdAudios[0].paused, false);
+});
+
 test('syncStudioTimelineAudioPlayback pauses clips on muted or non-solo tracks', () => {
     const audio = new FakeTimelineAudio();
     audio.paused = false;

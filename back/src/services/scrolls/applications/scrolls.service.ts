@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
 import { AnchorRepository } from '../../anchors/repository/anchor.repository';
+import { PauseRepository } from '../../pauses/repository/pause.repository';
 import { Scroll } from '../domain/scroll.entity';
 import { ScrollRepository } from '../repository/scroll.repository';
 
@@ -24,7 +25,8 @@ function toScrollResponse(scroll: Scroll) {
 export class ScrollsService extends DddService {
     constructor(
         private readonly scrollRepository: ScrollRepository,
-        private readonly anchorRepository: AnchorRepository
+        private readonly anchorRepository: AnchorRepository,
+        private readonly pauseRepository?: PauseRepository
     ) {
         super();
     }
@@ -39,6 +41,7 @@ export class ScrollsService extends DddService {
         endAnchorId: number;
     }) {
         const [startAnchor, endAnchor] = await this.getScrollAnchors({ trackId, startAnchorId, endAnchorId });
+        await this.validateAnchorEventAvailability({ trackId, startAnchorId });
 
         const scroll = new Scroll({
             trackId,
@@ -92,6 +95,7 @@ export class ScrollsService extends DddService {
             startAnchorId: nextStartAnchorId,
             endAnchorId: nextEndAnchorId,
         });
+        await this.validateAnchorEventAvailability({ trackId, startAnchorId: nextStartAnchorId, scrollId });
 
         scroll.update({ startAnchorId, endAnchorId });
         scroll.startAnchor = startAnchor;
@@ -144,5 +148,30 @@ export class ScrollsService extends DddService {
         }
 
         return [startAnchor, endAnchor] as const;
+    }
+
+    private async validateAnchorEventAvailability({
+        trackId,
+        startAnchorId,
+        scrollId,
+    }: {
+        trackId: number;
+        startAnchorId: number;
+        scrollId?: number;
+    }) {
+        const [existingScroll] = await this.scrollRepository.find({ trackId, startAnchorId });
+
+        if (existingScroll && existingScroll.id !== scrollId) {
+            throw new BadRequestException('Anchor already owns a scroll event.');
+        }
+        if (!this.pauseRepository) {
+            return;
+        }
+
+        const [existingPause] = await this.pauseRepository.find({ trackId, anchorId: startAnchorId });
+
+        if (existingPause) {
+            throw new BadRequestException('Anchor already owns a pause event.');
+        }
     }
 }

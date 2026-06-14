@@ -8,6 +8,7 @@ import { Character } from '../services/characters/domain/character.entity';
 import { Cue } from '../services/cues/domain/cue.entity';
 import { Episode } from '../services/episodes/domain/episode.entity';
 import { Media } from '../services/medias/domain/media.entity';
+import { Pause } from '../services/pauses/domain/pause.entity';
 import { Product } from '../services/products/domain/product.entity';
 import { Record } from '../services/records/domain/record.entity';
 import { Scroll } from '../services/scrolls/domain/scroll.entity';
@@ -24,6 +25,7 @@ export default [
     Cue,
     Episode,
     Media,
+    Pause,
     Product,
     Record,
     Scroll,

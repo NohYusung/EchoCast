@@ -73,6 +73,8 @@ test('POST /episodes/:episodeId/audios creates audio and GET /episodes/:episodeI
         assert.equal(dropResponse.body.data.cue.audioId, initialAudio.id);
         assert.equal(dropResponse.body.data.cue.startTime, 1200);
         assert.equal(dropResponse.body.data.cue.endTime, 4200);
+        assert.equal(dropResponse.body.data.cue.audioStartTime, 0);
+        assert.equal(dropResponse.body.data.cue.audioEndTime, 3000);
 
         const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/audios`).expect(200);
         const { items, total } = listResponse.body.data;
@@ -102,7 +104,12 @@ test('POST /episodes/:episodeId/audios creates audio and GET /episodes/:episodeI
 
         const tracksResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
         type TrackCueWithAudioResponse = {
+            id: number;
             audioId?: number;
+            startTime?: number;
+            endTime?: number;
+            audioStartTime?: number;
+            audioEndTime?: number;
             audio?: {
                 audioUrl?: string;
                 name?: string;
@@ -116,6 +123,36 @@ test('POST /episodes/:episodeId/audios creates audio and GET /episodes/:episodeI
         const droppedCue = track.cues.find((cue: TrackCueWithAudioResponse) => cue.audioId === initialAudio.id);
         assert.equal(droppedCue?.audio?.audioUrl, audioUrl);
         assert.equal(droppedCue?.audio?.name, 'impact.wav');
+
+        const splitResponse = await request(app.getHttpServer())
+            .post(`/tracks/${track.id}/cues/${dropResponse.body.data.cue.id}/split`)
+            .send({
+                splitTime: 2700,
+            })
+            .expect(201);
+
+        assert.deepEqual(splitResponse.body, { data: {} });
+
+        const splitTracksResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
+        const splitTrack = splitTracksResponse.body.data.items.find(
+            (item: { id: number; cues: TrackCueWithAudioResponse[] }) => item.id === track.id
+        );
+        assert.ok(splitTrack);
+
+        const splitCues = splitTrack.cues
+            .filter((cue: TrackCueWithAudioResponse) => cue.audioId === initialAudio.id)
+            .sort((a: TrackCueWithAudioResponse, b: TrackCueWithAudioResponse) => (a.startTime ?? 0) - (b.startTime ?? 0));
+
+        assert.equal(splitCues.length, 2);
+        assert.equal(splitCues[0].id, dropResponse.body.data.cue.id);
+        assert.equal(splitCues[0].startTime, 1200);
+        assert.equal(splitCues[0].endTime, 2700);
+        assert.equal(splitCues[0].audioStartTime, 0);
+        assert.equal(splitCues[0].audioEndTime, 1500);
+        assert.equal(splitCues[1].startTime, 2700);
+        assert.equal(splitCues[1].endTime, 4200);
+        assert.equal(splitCues[1].audioStartTime, 1500);
+        assert.equal(splitCues[1].audioEndTime, 3000);
 
         const secondDropResponse = await request(app.getHttpServer())
             .post(`/episodes/${episode.id}/audios/${initialAudio.id}/drop-to-track`)
@@ -138,7 +175,7 @@ test('POST /episodes/:episodeId/audios creates audio and GET /episodes/:episodeI
         );
 
         assert.ok(updatedTrack);
-        assert.equal(updatedTrack.cues.filter((cue: { audioId?: number }) => cue.audioId === initialAudio.id).length, 2);
+        assert.equal(updatedTrack.cues.filter((cue: { audioId?: number }) => cue.audioId === initialAudio.id).length, 3);
     } finally {
         await app.close();
     }

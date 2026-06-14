@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
     getPreviewScrollAnchor,
     getPreviewScrollOffset,
+    getPreviewScrollOffsetForAnchor,
     getPreviewScrollPixel,
     getSelectedPreviewVisual,
     getPreviewScrollPosition,
@@ -91,6 +92,65 @@ test('getPreviewScrollPosition interpolates between media-local anchors', () => 
     );
 });
 
+test('getPreviewScrollPosition holds the last event position between scroll events', () => {
+    assert.equal(
+        getPreviewScrollPosition({
+            playhead: 15,
+            scrollEvents: [
+                {
+                    start: 10,
+                    duration: 2,
+                    canvasId: 11,
+                    startIndex: 0,
+                    endIndex: 1,
+                    startPosition: 0,
+                    endPosition: 50,
+                },
+                {
+                    start: 20,
+                    duration: 2,
+                    canvasId: 11,
+                    startIndex: 1,
+                    endIndex: 1,
+                    startPosition: 50,
+                    endPosition: 100,
+                },
+            ],
+            stripHeightPx: 800,
+            visualSegments: [
+                { id: 'clip-1', canvasId: 11, index: 0, top: 0, height: 300 },
+                { id: 'clip-2', canvasId: 11, index: 1, top: 300, height: 500 },
+            ],
+        }),
+        550,
+    );
+});
+
+test('getPreviewScrollPosition keeps position during fixed pause events', () => {
+    assert.equal(
+        getPreviewScrollPosition({
+            playhead: 13,
+            scrollEvents: [
+                {
+                    start: 12,
+                    duration: 4,
+                    canvasId: 11,
+                    startIndex: 1,
+                    endIndex: 1,
+                    startPosition: 40,
+                    endPosition: 40,
+                },
+            ],
+            stripHeightPx: 800,
+            visualSegments: [
+                { id: 'clip-1', canvasId: 11, index: 0, top: 0, height: 300 },
+                { id: 'clip-2', canvasId: 11, index: 1, top: 300, height: 500 },
+            ],
+        }),
+        500,
+    );
+});
+
 test('getPreviewScrollOffset centers the active media-local anchor in the viewport', () => {
     assert.equal(
         getPreviewScrollOffset({
@@ -114,6 +174,23 @@ test('getPreviewScrollOffset centers the active media-local anchor in the viewpo
             ],
         }),
         250,
+    );
+});
+
+test('getPreviewScrollOffsetForAnchor centers a selected anchor even when no scroll event is active', () => {
+    assert.equal(
+        getPreviewScrollOffsetForAnchor({
+            canvasId: 11,
+            index: 1,
+            position: 30,
+            stripHeightPx: 800,
+            viewportHeightPx: 200,
+            visualSegments: [
+                { id: 'clip-1', canvasId: 11, index: 0, top: 0, height: 300 },
+                { id: 'clip-2', canvasId: 11, index: 1, top: 300, height: 500 },
+            ],
+        }),
+        350,
     );
 });
 

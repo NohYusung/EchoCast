@@ -142,6 +142,8 @@ export class AudioService extends DddService {
                     audioId: audio.id,
                     startTime,
                     endTime: resolvedEndTime,
+                    audioStartTime: 0,
+                    audioEndTime: resolvedEndTime - startTime,
                     volume,
                 })
             );
@@ -164,9 +166,14 @@ export class AudioService extends DddService {
                 characterId: result.cue.characterId,
                 trackId: result.cue.trackId,
                 audioId: result.cue.audioId,
+                startCanvasMediaId: result.cue.startCanvasMediaId,
+                endCanvasMediaId: result.cue.endCanvasMediaId,
                 startTime: result.cue.startTime,
                 endTime: result.cue.endTime,
-                ttsVoiceId: result.cue.ttsVoiceId,
+                audioStartTime: result.cue.audioStartTime,
+                audioEndTime: result.cue.audioEndTime,
+                startPosition: result.cue.startPosition,
+                endPosition: result.cue.endPosition,
                 volume: result.cue.volume,
             },
             audio: {

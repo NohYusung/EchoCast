@@ -11,8 +11,11 @@ import { Character } from '../../characters/domain/character.entity';
 import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Media } from '../../medias/domain/media.entity';
+import { Pause } from '../../pauses/domain/pause.entity';
+import { PauseRepository } from '../../pauses/repository/pause.repository';
 import { Product } from '../../products/domain/product.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
+import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
 import { Track } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
 import { Anchor } from '../domain/anchor.entity';
@@ -23,7 +26,7 @@ describe('AnchorService', () => {
     it('creates an anchor for a track and canvas in the same episode', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Pause, Product, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -49,7 +52,9 @@ describe('AnchorService', () => {
             const anchorService = new AnchorService(
                 new AnchorRepository(dataSource),
                 new TrackRepository(dataSource),
-                new CanvasRepository(dataSource)
+                new CanvasRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new PauseRepository(dataSource)
             );
 
             const createdAnchor = await anchorService.create({
@@ -76,7 +81,7 @@ describe('AnchorService', () => {
     it('rejects missing tracks and canvases from a different episode', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Pause, Product, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -109,7 +114,9 @@ describe('AnchorService', () => {
             const anchorService = new AnchorService(
                 new AnchorRepository(dataSource),
                 new TrackRepository(dataSource),
-                new CanvasRepository(dataSource)
+                new CanvasRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new PauseRepository(dataSource)
             );
 
             await assert.rejects(
@@ -142,7 +149,7 @@ describe('AnchorService', () => {
     it('updates an anchor after validating canvas ownership and position bounds', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Pause, Product, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -186,7 +193,9 @@ describe('AnchorService', () => {
             const anchorService = new AnchorService(
                 new AnchorRepository(dataSource),
                 new TrackRepository(dataSource),
-                new CanvasRepository(dataSource)
+                new CanvasRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new PauseRepository(dataSource)
             );
 
             await anchorService.update({
@@ -229,6 +238,223 @@ describe('AnchorService', () => {
                         anchorId: 999999,
                         position: 10,
                     }),
+                NotFoundException
+            );
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('lets an anchor own either a scroll event or a pause event', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Pause, Product, Scroll, Track],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Anchor event product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Anchor event episode',
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Anchor event track',
+                    type: 'scroll',
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const startAnchor = await dataSource.manager.save(
+                new Anchor({
+                    trackId: track.id,
+                    canvasId: canvas.id,
+                    time: 1000,
+                    position: 20,
+                    index: 0,
+                })
+            );
+            const endAnchor = await dataSource.manager.save(
+                new Anchor({
+                    trackId: track.id,
+                    canvasId: canvas.id,
+                    time: 3000,
+                    position: 70,
+                    index: 1,
+                })
+            );
+            const anchorService = new AnchorService(
+                new AnchorRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new PauseRepository(dataSource)
+            );
+
+            await anchorService.upsertEvent({
+                trackId: track.id,
+                anchorId: startAnchor.id,
+                type: 'scroll',
+                endAnchorId: endAnchor.id,
+            });
+
+            const scrollEventList = await anchorService.list({ trackId: track.id });
+            const scrollOwner = scrollEventList.items.find((item) => item.id === startAnchor.id);
+
+            assert.ok(scrollOwner?.event);
+            assert.equal(scrollOwner.event.type, 'scroll');
+            if (scrollOwner.event.type !== 'scroll') {
+                throw new Error('Expected scroll event.');
+            }
+            assert.equal(scrollOwner.event.startAnchorId, startAnchor.id);
+            assert.equal(scrollOwner.event.endAnchorId, endAnchor.id);
+
+            await anchorService.upsertEvent({
+                trackId: track.id,
+                anchorId: startAnchor.id,
+                type: 'pause',
+                duration: 1800,
+            });
+
+            const pauseEventList = await anchorService.list({ trackId: track.id });
+            const pauseOwner = pauseEventList.items.find((item) => item.id === startAnchor.id);
+            const scrollCount = await dataSource.manager.count(Scroll);
+
+            assert.equal(scrollCount, 0);
+            assert.ok(pauseOwner?.event);
+            assert.equal(pauseOwner.event.type, 'pause');
+            if (pauseOwner.event.type !== 'pause') {
+                throw new Error('Expected pause event.');
+            }
+            assert.deepEqual(pauseOwner.event, {
+                type: 'pause',
+                id: pauseOwner.event.id,
+                pauseId: pauseOwner.event.id,
+                anchorId: startAnchor.id,
+                duration: 1800,
+                canvasId: canvas.id,
+                index: 0,
+                time: 1000,
+                position: 20,
+            });
+
+            await anchorService.deleteEvent({ trackId: track.id, anchorId: startAnchor.id });
+
+            const deletedEventList = await anchorService.list({ trackId: track.id });
+            const emptyOwner = deletedEventList.items.find((item) => item.id === startAnchor.id);
+            const storedAnchor = await dataSource.manager.findOneByOrFail(Anchor, { id: startAnchor.id });
+
+            assert.equal(emptyOwner?.event, null);
+            assert.equal(storedAnchor.id, startAnchor.id);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('deletes an anchor separately and clears dependent scroll and pause events', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Pause, Product, Scroll, Track],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Anchor delete product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Anchor delete episode',
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Anchor delete track',
+                    type: 'scroll',
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const startAnchor = await dataSource.manager.save(
+                new Anchor({
+                    trackId: track.id,
+                    canvasId: canvas.id,
+                    time: 1000,
+                    position: 10,
+                    index: 0,
+                })
+            );
+            const endAnchor = await dataSource.manager.save(
+                new Anchor({
+                    trackId: track.id,
+                    canvasId: canvas.id,
+                    time: 3000,
+                    position: 80,
+                    index: 1,
+                })
+            );
+            const pauseAnchor = await dataSource.manager.save(
+                new Anchor({
+                    trackId: track.id,
+                    canvasId: canvas.id,
+                    time: 5000,
+                    position: 40,
+                    index: 2,
+                })
+            );
+            const anchorService = new AnchorService(
+                new AnchorRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new PauseRepository(dataSource)
+            );
+
+            await anchorService.upsertEvent({
+                trackId: track.id,
+                anchorId: startAnchor.id,
+                type: 'scroll',
+                endAnchorId: endAnchor.id,
+            });
+            await anchorService.delete({ trackId: track.id, anchorId: endAnchor.id });
+
+            const deletedEndAnchor = await dataSource.manager.findOne(Anchor, {
+                where: { id: endAnchor.id },
+                withDeleted: true,
+            });
+            const visibleEndAnchor = await dataSource.manager.findOneBy(Anchor, { id: endAnchor.id });
+            const visibleStartAnchor = await dataSource.manager.findOneByOrFail(Anchor, { id: startAnchor.id });
+
+            assert.ok(deletedEndAnchor?.deletedAt);
+            assert.equal(visibleEndAnchor, null);
+            assert.equal(visibleStartAnchor.id, startAnchor.id);
+            assert.equal(await dataSource.manager.count(Scroll), 0);
+
+            await anchorService.upsertEvent({
+                trackId: track.id,
+                anchorId: pauseAnchor.id,
+                type: 'pause',
+                duration: 1200,
+            });
+            await anchorService.delete({ trackId: track.id, anchorId: pauseAnchor.id });
+
+            const deletedPauseAnchor = await dataSource.manager.findOne(Anchor, {
+                where: { id: pauseAnchor.id },
+                withDeleted: true,
+            });
+
+            assert.ok(deletedPauseAnchor?.deletedAt);
+            assert.equal(await dataSource.manager.count(Pause), 0);
+            await assert.rejects(
+                () => anchorService.delete({ trackId: track.id, anchorId: 999999 }),
                 NotFoundException
             );
         } finally {

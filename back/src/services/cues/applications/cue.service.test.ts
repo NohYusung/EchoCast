@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { Anchor } from '../../anchors/domain/anchor.entity';
 import { Audio } from '../../audios/domain/audio.entity';
 import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
+import { CanvasMediaRepository } from '../../canvas-medias/repository/canvas-media.repository';
 import { Canvas } from '../../canvases/domain/canvas.entity';
 import { Character } from '../../characters/domain/character.entity';
 import { Media } from '../../medias/domain/media.entity';
@@ -27,6 +28,14 @@ async function createCueServiceDataSource() {
     });
     await dataSource.initialize();
     return dataSource;
+}
+
+function createCueService(dataSource: DataSource) {
+    return new CueService(
+        new CueRepository(dataSource),
+        new TrackRepository(dataSource),
+        new CanvasMediaRepository(dataSource)
+    );
 }
 
 describe('CueService', () => {
@@ -56,13 +65,26 @@ describe('CueService', () => {
                     characterId: character.id,
                 })
             );
-            const cueService = new CueService(new CueRepository(dataSource), new TrackRepository(dataSource));
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const media = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'cue-strip.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/cue-strip.png',
+                })
+            );
+            const canvasMedia = await dataSource.manager.save(
+                new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 })
+            );
+            const cueService = createCueService(dataSource);
 
             const created = await cueService.create({
                 trackId: track.id,
                 script: '새 큐 대사',
-                startTime: 1200,
-                endTime: 5200,
+                startCanvasMediaId: canvasMedia.id,
+                startPosition: 12.5,
+                endPosition: 64,
                 volume: 0.8,
             });
 
@@ -72,11 +94,19 @@ describe('CueService', () => {
                 },
             });
             assert.equal(created.script, '새 큐 대사');
+            assert.equal(created.startCanvasMediaId, canvasMedia.id);
+            assert.equal(created.endCanvasMediaId, canvasMedia.id);
+            assert.equal(created.startPosition, 12.5);
+            assert.equal(created.endPosition, 64);
             assert.equal(storedCue.trackId, track.id);
             assert.equal(storedCue.script, '새 큐 대사');
             assert.equal(storedCue.characterId, character.id);
-            assert.equal(storedCue.startTime, 1200);
-            assert.equal(storedCue.endTime, 5200);
+            assert.equal(storedCue.startCanvasMediaId, canvasMedia.id);
+            assert.equal(storedCue.endCanvasMediaId, canvasMedia.id);
+            assert.equal(storedCue.startTime, 0);
+            assert.equal(storedCue.endTime, 1000);
+            assert.equal(storedCue.startPosition, 12.5);
+            assert.equal(storedCue.endPosition, 64);
             assert.equal(storedCue.volume, 0.8);
         } finally {
             await dataSource.destroy();
@@ -87,7 +117,7 @@ describe('CueService', () => {
         const dataSource = await createCueServiceDataSource();
 
         try {
-            const cueService = new CueService(new CueRepository(dataSource), new TrackRepository(dataSource));
+            const cueService = createCueService(dataSource);
 
             await assert.rejects(
                 () =>
@@ -123,7 +153,7 @@ describe('CueService', () => {
                     type: 'record',
                 })
             );
-            const cueService = new CueService(new CueRepository(dataSource), new TrackRepository(dataSource));
+            const cueService = createCueService(dataSource);
 
             await assert.rejects(
                 () =>
@@ -183,7 +213,7 @@ describe('CueService', () => {
                     volume: 0.8,
                 }),
             ]);
-            const cueService = new CueService(new CueRepository(dataSource), new TrackRepository(dataSource));
+            const cueService = createCueService(dataSource);
 
             const result = await cueService.list({ trackId: track.id });
 
@@ -224,6 +254,18 @@ describe('CueService', () => {
                     characterId: character.id,
                 })
             );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const media = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'cue-update-strip.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/cue-update-strip.png',
+                })
+            );
+            const canvasMedia = await dataSource.manager.save(
+                new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 })
+            );
             const cue = await dataSource.manager.save(
                 new Cue({
                     script: '수정 전 대사',
@@ -234,7 +276,7 @@ describe('CueService', () => {
                     volume: 1,
                 })
             );
-            const cueService = new CueService(new CueRepository(dataSource), new TrackRepository(dataSource));
+            const cueService = createCueService(dataSource);
 
             await cueService.update({
                 trackId: track.id,
@@ -242,6 +284,9 @@ describe('CueService', () => {
                 script: '  수정 후 대사  ',
                 startTime: 1500,
                 endTime: 4500,
+                startCanvasMediaId: canvasMedia.id,
+                startPosition: 22,
+                endPosition: 88,
                 volume: 0.7,
             });
 
@@ -253,9 +298,109 @@ describe('CueService', () => {
             assert.equal(storedCue.script, '수정 후 대사');
             assert.equal(storedCue.characterId, character.id);
             assert.equal(storedCue.trackId, track.id);
+            assert.equal(storedCue.startCanvasMediaId, canvasMedia.id);
+            assert.equal(storedCue.endCanvasMediaId, canvasMedia.id);
             assert.equal(storedCue.startTime, 1500);
             assert.equal(storedCue.endTime, 4500);
+            assert.equal(storedCue.startPosition, 22);
+            assert.equal(storedCue.endPosition, 88);
             assert.equal(storedCue.volume, 0.7);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('splits an audio cue into two cues that share audioId with separate source ranges', async () => {
+        const dataSource = await createCueServiceDataSource();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Cue split product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Cue split episode',
+                })
+            );
+            const audio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'audio',
+                    name: 'long-voice.wav',
+                    audioUrl: 'https://assets.example.com/long-voice.wav',
+                    duration: 10000,
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Cue split track',
+                    type: 'audio',
+                })
+            );
+            const cue = await dataSource.manager.save(
+                new Cue({
+                    script: '긴 오디오 큐',
+                    trackId: track.id,
+                    audioId: audio.id,
+                    startTime: 1000,
+                    endTime: 9000,
+                    audioStartTime: 2000,
+                    audioEndTime: 10000,
+                    volume: 0.9,
+                })
+            );
+            const cueService = createCueService(dataSource);
+
+            const result = await cueService.split({
+                trackId: track.id,
+                cueId: cue.id,
+                splitTime: 5000,
+            });
+            const storedCues = await dataSource.manager.find(Cue, {
+                where: {
+                    trackId: track.id,
+                    audioId: audio.id,
+                },
+                order: {
+                    startTime: 'ASC',
+                },
+            });
+
+            assert.equal(result.left.id, cue.id);
+            assert.notEqual(result.right.id, cue.id);
+            assert.equal(storedCues.length, 2);
+            assert.deepEqual(
+                storedCues.map((item) => ({
+                    id: item.id,
+                    audioId: item.audioId,
+                    startTime: item.startTime,
+                    endTime: item.endTime,
+                    audioStartTime: item.audioStartTime,
+                    audioEndTime: item.audioEndTime,
+                    volume: item.volume,
+                })),
+                [
+                    {
+                        id: cue.id,
+                        audioId: audio.id,
+                        startTime: 1000,
+                        endTime: 5000,
+                        audioStartTime: 2000,
+                        audioEndTime: 6000,
+                        volume: 0.9,
+                    },
+                    {
+                        id: result.right.id,
+                        audioId: audio.id,
+                        startTime: 5000,
+                        endTime: 9000,
+                        audioStartTime: 6000,
+                        audioEndTime: 10000,
+                        volume: 0.9,
+                    },
+                ]
+            );
         } finally {
             await dataSource.destroy();
         }
@@ -296,7 +441,7 @@ describe('CueService', () => {
                     endTime: 3000,
                 })
             );
-            const cueService = new CueService(new CueRepository(dataSource), new TrackRepository(dataSource));
+            const cueService = createCueService(dataSource);
 
             await cueService.delete({ trackId: track.id, cueId: cue.id });
 

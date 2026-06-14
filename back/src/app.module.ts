@@ -9,6 +9,7 @@ import { CueModule } from './services/cues/cue.module';
 import { EpisodeModule } from './services/episodes/episode.module';
 import { FileModule } from './services/files/file.module';
 import { MediaModule } from './services/medias/media.module';
+import { PauseModule } from './services/pauses/pause.module';
 import { PlayerModule } from './services/players/player.module';
 import { ProductModule } from './services/products/product.module';
 import { RecordModule } from './services/records/record.module';
@@ -29,6 +30,7 @@ import { TrackModule } from './services/tracks/track.module';
         CanvasModule,
         RecordModule,
         PlayerModule,
+        PauseModule,
         ScrollsModule,
         FileModule,
     ],

@@ -25,6 +25,12 @@ describe('CanvasMedia', () => {
             assert.equal(columnNames.includes('canvasId'), true);
             assert.equal(columnNames.includes('mediaId'), true);
             assert.equal(columnNames.includes('index'), true);
+            assert.equal(columnNames.includes('startTime'), true);
+            assert.equal(columnNames.includes('endTime'), true);
+            assert.equal(columnNames.includes('sourceStartTime'), true);
+            assert.equal(columnNames.includes('sourceEndTime'), true);
+            assert.equal(columnNames.includes('volume'), true);
+            assert.equal(columnNames.includes('isMuted'), true);
 
             const product = await dataSource.manager.save(new Product({ title: 'CanvasMedia product' }));
             const episode = await dataSource.manager.save(
@@ -45,10 +51,26 @@ describe('CanvasMedia', () => {
             );
 
             const canvasMedia = await dataSource.manager.save(
-                new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 2 })
+                new CanvasMedia({
+                    canvasId: canvas.id,
+                    mediaId: media.id,
+                    index: 2,
+                    startTime: 1000,
+                    endTime: 4200,
+                    sourceStartTime: 500,
+                    sourceEndTime: 3700,
+                    volume: 0.65,
+                    isMuted: true,
+                })
             );
 
             assert.equal(canvasMedia.index, 2);
+            assert.equal(canvasMedia.startTime, 1000);
+            assert.equal(canvasMedia.endTime, 4200);
+            assert.equal(canvasMedia.sourceStartTime, 500);
+            assert.equal(canvasMedia.sourceEndTime, 3700);
+            assert.equal(canvasMedia.volume, 0.65);
+            assert.equal(canvasMedia.isMuted, true);
         } finally {
             await dataSource.destroy();
         }

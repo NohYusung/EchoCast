@@ -8,7 +8,7 @@
         "start:dev": "nest start --watch",
         "start:prod": "node dist/main",
         "typecheck": "tsc -p tsconfig.json --noEmit",
-        "test": "NODE_ENV=test npm run build && NODE_ENV=test node --test --test-concurrency=1 \"dist/libs/**/*.test.js\" \"dist/databases/**/*.test.js\" \"dist/services/anchors/**/*.test.js\" \"dist/services/products/**/*.test.js\" \"dist/services/characters/**/*.test.js\" \"dist/services/episodes/**/*.test.js\" \"dist/services/files/**/*.test.js\" \"dist/services/tracks/**/*.test.js\" \"dist/services/cues/**/*.test.js\" \"dist/services/medias/**/*.test.js\" \"dist/services/canvas-medias/**/*.test.js\" \"dist/services/canvases/**/*.test.js\" \"dist/services/records/**/*.test.js\" \"dist/services/players/**/*.test.js\" \"dist/services/audios/**/*.test.js\" \"dist/services/scrolls/**/*.test.js\""
+        "test": "NODE_ENV=test npm run build && NODE_ENV=test node --test --test-concurrency=1 \"dist/libs/**/*.test.js\" \"dist/databases/**/*.test.js\" \"dist/services/anchors/**/*.test.js\" \"dist/services/products/**/*.test.js\" \"dist/services/characters/**/*.test.js\" \"dist/services/episodes/**/*.test.js\" \"dist/services/files/**/*.test.js\" \"dist/services/tracks/**/*.test.js\" \"dist/services/cues/**/*.test.js\" \"dist/services/medias/**/*.test.js\" \"dist/services/canvas-medias/**/*.test.js\" \"dist/services/canvases/**/*.test.js\" \"dist/services/records/**/*.test.js\" \"dist/services/players/**/*.test.js\" \"dist/services/audios/**/*.test.js\" \"dist/services/scrolls/**/*.test.js\" \"dist/services/pauses/**/*.test.js\""
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1065.0",

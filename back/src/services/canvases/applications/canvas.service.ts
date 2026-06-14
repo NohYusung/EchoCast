@@ -9,6 +9,12 @@ import { CanvasRepository } from '../repository/canvas.repository';
 type CanvasMediaInput = {
     mediaId: number;
     index?: number;
+    startTime?: number;
+    endTime?: number;
+    sourceStartTime?: number;
+    sourceEndTime?: number;
+    volume?: number;
+    isMuted?: boolean;
 };
 
 @Injectable()
@@ -37,6 +43,12 @@ export class CanvasService extends DddService {
                 canvasId: canvas.id,
                 mediaId: mediaItem.id,
                 index: medias[index]?.index,
+                startTime: medias[index]?.startTime,
+                endTime: medias[index]?.endTime,
+                sourceStartTime: medias[index]?.sourceStartTime,
+                sourceEndTime: medias[index]?.sourceEndTime,
+                volume: medias[index]?.volume,
+                isMuted: medias[index]?.isMuted,
             });
             canvasMedia.canvas = canvas;
             canvasMedia.media = mediaItem;
@@ -74,8 +86,11 @@ export class CanvasService extends DddService {
                     mediaName: media?.mediaName,
                     mediaType: media?.mediaType,
                     mediaUrl: media?.mediaUrl,
+                    canvasMediaId: canvasMedia?.id,
                     index: canvasMedia?.index,
+                    ...toCanvasMediaTimelineControls(canvasMedia),
                     medias: canvasMedias.map((canvasMediaItem) => ({
+                        canvasMediaId: canvasMediaItem.id,
                         mediaId: canvasMediaItem.media.id,
                         mediaName: canvasMediaItem.media.mediaName,
                         mediaType: canvasMediaItem.media.mediaType,
@@ -84,6 +99,7 @@ export class CanvasService extends DddService {
                             ? { duration: canvasMediaItem.media.duration }
                             : {}),
                         index: canvasMediaItem.index,
+                        ...toCanvasMediaTimelineControls(canvasMediaItem),
                     })),
                 };
             })
@@ -117,6 +133,12 @@ export class CanvasService extends DddService {
                 canvasId: canvas.id,
                 mediaId: mediaItem.id,
                 index: medias[index]?.index,
+                startTime: medias[index]?.startTime,
+                endTime: medias[index]?.endTime,
+                sourceStartTime: medias[index]?.sourceStartTime,
+                sourceEndTime: medias[index]?.sourceEndTime,
+                volume: medias[index]?.volume,
+                isMuted: medias[index]?.isMuted,
             });
             canvasMedia.canvas = canvas;
             canvasMedia.media = mediaItem;
@@ -150,6 +172,7 @@ function toCanvasDetail(canvas: Canvas, canvasMedias: CanvasMedia[]) {
         episodeId: canvas.episodeId,
         medias: canvasMedias.map((canvasMedia) => ({
             id: canvasMedia.media.id,
+            canvasMediaId: canvasMedia.id,
             episodeId: canvasMedia.media.episodeId,
             canvasId: canvas.id,
             mediaName: canvasMedia.media.mediaName,
@@ -157,6 +180,22 @@ function toCanvasDetail(canvas: Canvas, canvasMedias: CanvasMedia[]) {
             mediaUrl: canvasMedia.media.mediaUrl,
             ...(typeof canvasMedia.media.duration === 'number' ? { duration: canvasMedia.media.duration } : {}),
             index: canvasMedia.index,
+            ...toCanvasMediaTimelineControls(canvasMedia),
         })),
+    };
+}
+
+function toCanvasMediaTimelineControls(canvasMedia: CanvasMedia | undefined) {
+    if (!canvasMedia) {
+        return {};
+    }
+
+    return {
+        ...(typeof canvasMedia.startTime === 'number' ? { startTime: canvasMedia.startTime } : {}),
+        ...(typeof canvasMedia.endTime === 'number' ? { endTime: canvasMedia.endTime } : {}),
+        ...(typeof canvasMedia.sourceStartTime === 'number' ? { sourceStartTime: canvasMedia.sourceStartTime } : {}),
+        ...(typeof canvasMedia.sourceEndTime === 'number' ? { sourceEndTime: canvasMedia.sourceEndTime } : {}),
+        ...(typeof canvasMedia.volume === 'number' ? { volume: canvasMedia.volume } : {}),
+        ...(typeof canvasMedia.isMuted === 'boolean' ? { isMuted: canvasMedia.isMuted } : {}),
     };
 }

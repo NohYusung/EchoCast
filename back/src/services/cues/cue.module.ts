@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { DatabasesModule } from '../../databases';
+import { CanvasMediaRepository } from '../canvas-medias/repository/canvas-media.repository';
 import { TrackModule } from '../tracks/track.module';
 import { TrackRepository } from '../tracks/repository/track.repository';
 import { CueService } from './applications/cue.service';
@@ -17,10 +18,18 @@ import { CueRepository } from './repository/cue.repository';
             useFactory: (dataSource: DataSource) => new CueRepository(dataSource),
         },
         {
+            provide: CanvasMediaRepository,
+            inject: [DataSource],
+            useFactory: (dataSource: DataSource) => new CanvasMediaRepository(dataSource),
+        },
+        {
             provide: CueService,
-            inject: [CueRepository, TrackRepository],
-            useFactory: (cueRepository: CueRepository, trackRepository: TrackRepository) =>
-                new CueService(cueRepository, trackRepository),
+            inject: [CueRepository, TrackRepository, CanvasMediaRepository],
+            useFactory: (
+                cueRepository: CueRepository,
+                trackRepository: TrackRepository,
+                canvasMediaRepository: CanvasMediaRepository
+            ) => new CueService(cueRepository, trackRepository, canvasMediaRepository),
         },
     ],
     exports: [CueRepository, CueService],

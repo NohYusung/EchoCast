@@ -11,7 +11,7 @@ export class CanvasMediaRepository extends DddRepository<CanvasMedia> {
 
     async find(
         conditions: {
-            id?: number;
+            id?: number | FindOperator<number>;
             canvasId?: number | FindOperator<number>;
             mediaId?: number | FindOperator<number>;
             index?: number;

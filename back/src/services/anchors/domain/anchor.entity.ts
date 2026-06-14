@@ -39,13 +39,6 @@ export class Anchor extends DddAggregate {
     @JoinColumn({ name: 'canvasId' })
     canvas!: Canvas;
 
-    /*
-    AGENT
-    - canvas-media도메인과 relation 
-    - index 칼럼 삭제. 
-    - canvas-media 도메인이 index 칼럼과 canvas,media 정보를 모두가지고있기때문에 위치 추정이 가능하다.  
-    */
-
     constructor(args?: Ctor) {
         super();
         if (args) {

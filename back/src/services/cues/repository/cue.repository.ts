@@ -16,9 +16,14 @@ export class CueRepository extends DddRepository<Cue> {
             characterId?: number;
             trackId?: number | FindOperator<number>;
             audioId?: number | FindOperator<number>;
+            startCanvasMediaId?: number | FindOperator<number>;
+            endCanvasMediaId?: number | FindOperator<number>;
             startTime?: number;
             endTime?: number;
-            ttsVoiceId?: number;
+            audioStartTime?: number;
+            audioEndTime?: number;
+            startPosition?: number;
+            endPosition?: number;
         },
         options?: TypeormRelationOptions<Cue>
     ) {
@@ -29,9 +34,14 @@ export class CueRepository extends DddRepository<Cue> {
                 characterId: conditions.characterId,
                 trackId: conditions.trackId,
                 audioId: conditions.audioId,
+                startCanvasMediaId: conditions.startCanvasMediaId,
+                endCanvasMediaId: conditions.endCanvasMediaId,
                 startTime: conditions.startTime,
                 endTime: conditions.endTime,
-                ttsVoiceId: conditions.ttsVoiceId,
+                audioStartTime: conditions.audioStartTime,
+                audioEndTime: conditions.audioEndTime,
+                startPosition: conditions.startPosition,
+                endPosition: conditions.endPosition,
             }),
             ...convertOptions(options),
         });
@@ -43,9 +53,14 @@ export class CueRepository extends DddRepository<Cue> {
         characterId?: number;
         trackId?: number;
         audioId?: number;
+        startCanvasMediaId?: number;
+        endCanvasMediaId?: number;
         startTime?: number;
         endTime?: number;
-        ttsVoiceId?: number;
+        audioStartTime?: number;
+        audioEndTime?: number;
+        startPosition?: number;
+        endPosition?: number;
     }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Cue>({
@@ -54,9 +69,14 @@ export class CueRepository extends DddRepository<Cue> {
                 characterId: conditions.characterId,
                 trackId: conditions.trackId,
                 audioId: conditions.audioId,
+                startCanvasMediaId: conditions.startCanvasMediaId,
+                endCanvasMediaId: conditions.endCanvasMediaId,
                 startTime: conditions.startTime,
                 endTime: conditions.endTime,
-                ttsVoiceId: conditions.ttsVoiceId,
+                audioStartTime: conditions.audioStartTime,
+                audioEndTime: conditions.audioEndTime,
+                startPosition: conditions.startPosition,
+                endPosition: conditions.endPosition,
             }),
         });
     }

@@ -38,6 +38,12 @@ export class TrackCueResponseDto {
     audioId?: number;
 
     @Expose()
+    startCanvasMediaId?: number;
+
+    @Expose()
+    endCanvasMediaId?: number;
+
+    @Expose()
     @Type(() => TrackCueAudioResponseDto)
     audio?: TrackCueAudioResponseDto;
 
@@ -48,7 +54,16 @@ export class TrackCueResponseDto {
     endTime!: number;
 
     @Expose()
-    ttsVoiceId?: number;
+    audioStartTime?: number;
+
+    @Expose()
+    audioEndTime?: number;
+
+    @Expose()
+    startPosition!: number;
+
+    @Expose()
+    endPosition!: number;
 
     @Expose()
     volume!: number;

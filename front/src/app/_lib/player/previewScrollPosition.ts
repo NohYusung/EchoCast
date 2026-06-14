@@ -132,13 +132,30 @@ export function getPreviewScrollPosition({
     visualSegments?: readonly PreviewScrollVisualSegment[];
 }) {
     const coordinateHeightPx = getCoordinateHeight(stripHeightPx);
-    const activeScrollEvent = scrollEvents.find((event) => playhead >= event.start && playhead < event.start + event.duration);
+    const orderedEvents = [...scrollEvents].sort((a, b) => a.start - b.start);
+    const activeScrollEvent = orderedEvents.find((event) => playhead >= event.start && playhead < event.start + event.duration);
 
     if (!activeScrollEvent) {
+        const lastCompletedEvent = [...orderedEvents].reverse().find((event) => playhead >= event.start + event.duration);
+
+        if (!lastCompletedEvent) {
+            return undefined;
+        }
+
+        return getPreviewScrollPixel({
+            canvasId: lastCompletedEvent.canvasId,
+            index: lastCompletedEvent.endIndex,
+            position: lastCompletedEvent.endPosition,
+            stripHeightPx: coordinateHeightPx,
+            visualSegments,
+        });
+    }
+
+    if (!Number.isFinite(activeScrollEvent.duration) || activeScrollEvent.duration <= 0) {
         return undefined;
     }
 
-    const progress = activeScrollEvent.duration > 0 ? clamp((playhead - activeScrollEvent.start) / activeScrollEvent.duration, 0, 1) : 0;
+    const progress = clamp((playhead - activeScrollEvent.start) / activeScrollEvent.duration, 0, 1);
     const startPx = getPreviewScrollPixel({
         canvasId: activeScrollEvent.canvasId,
         index: activeScrollEvent.startIndex,
@@ -180,12 +197,58 @@ export function getPreviewScrollOffset({
         return undefined;
     }
 
+    return getPreviewScrollOffsetForPixel({
+        pixel: anchorPixel,
+        stripHeightPx,
+        viewportHeightPx,
+    });
+}
+
+export function getPreviewScrollOffsetForAnchor({
+    canvasId,
+    index,
+    position,
+    stripHeightPx,
+    viewportHeightPx,
+    visualSegments = [],
+}: {
+    canvasId?: number | string;
+    index?: number;
+    position: number;
+    stripHeightPx: number;
+    viewportHeightPx: number;
+    visualSegments?: readonly PreviewScrollVisualSegment[];
+}) {
+    const anchorPixel = getPreviewScrollPixel({
+        canvasId,
+        index,
+        position,
+        stripHeightPx,
+        visualSegments,
+    });
+
+    return getPreviewScrollOffsetForPixel({
+        pixel: anchorPixel,
+        stripHeightPx,
+        viewportHeightPx,
+    });
+}
+
+export function getPreviewScrollOffsetForPixel({
+    pixel,
+    stripHeightPx,
+    viewportHeightPx,
+}: {
+    pixel: number;
+    stripHeightPx: number;
+    viewportHeightPx: number;
+}) {
     const coordinateHeightPx = getCoordinateHeight(stripHeightPx);
     const viewportHeight = getCoordinateHeight(viewportHeightPx);
     const viewportCenterPx = viewportHeight / 2;
     const maxOffsetPx = Math.max(0, coordinateHeightPx - viewportHeight);
 
-    return clamp(Math.round(anchorPixel - viewportCenterPx), 0, maxOffsetPx);
+    return clamp(Math.round(pixel - viewportCenterPx), 0, maxOffsetPx);
 }
 
 export function getSelectedPreviewVisual<TVisual extends PreviewSelectableVisual>(visualClips: readonly TVisual[], selectedId: string) {

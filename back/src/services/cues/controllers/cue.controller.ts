@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Dependencies, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
 import { CueService } from '../applications/cue.service';
-import { CueCreateDto, CueUpdateDto } from './dto';
+import { CueCreateDto, CueSplitDto, CueUpdateDto } from './dto';
 
 @Dependencies(CueService)
 @Controller()
@@ -13,12 +13,37 @@ export class CueController {
     @Post('/tracks/:trackId/cues')
     async create(@Param('trackId', ParseIntPipe) trackId: number, @Body() body: CueCreateDto) {
         // 1. Destructure body, params, query
-        const { script, startTime, endTime, ttsVoiceId, volume } = body;
+        const {
+            script,
+            startTime,
+            endTime,
+            audioId,
+            audioStartTime,
+            audioEndTime,
+            startCanvasMediaId,
+            endCanvasMediaId,
+            startPosition,
+            endPosition,
+            volume,
+        } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.cueService.create({ trackId, script, startTime, endTime, ttsVoiceId, volume });
+        await this.cueService.create({
+            trackId,
+            script,
+            startTime,
+            endTime,
+            audioId,
+            audioStartTime,
+            audioEndTime,
+            startCanvasMediaId,
+            endCanvasMediaId,
+            startPosition,
+            endPosition,
+            volume,
+        });
 
         // 4. Send response
         return { data: {} };
@@ -50,12 +75,59 @@ export class CueController {
         @Body() body: CueUpdateDto
     ) {
         // 1. Destructure body, params, query
-        const { script, startTime, endTime, ttsVoiceId, volume } = body;
+        const {
+            script,
+            startTime,
+            endTime,
+            audioId,
+            audioStartTime,
+            audioEndTime,
+            startCanvasMediaId,
+            endCanvasMediaId,
+            startPosition,
+            endPosition,
+            volume,
+        } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.cueService.update({ trackId, cueId, script, startTime, endTime, ttsVoiceId, volume });
+        await this.cueService.update({
+            trackId,
+            cueId,
+            script,
+            startTime,
+            endTime,
+            audioId,
+            audioStartTime,
+            audioEndTime,
+            startCanvasMediaId,
+            endCanvasMediaId,
+            startPosition,
+            endPosition,
+            volume,
+        });
+
+        // 4. Send response
+        return { data: {} };
+    }
+
+    /**
+     * 큐 분할
+     */
+    @Post('/tracks/:trackId/cues/:cueId/split')
+    async split(
+        @Param('trackId', ParseIntPipe) trackId: number,
+        @Param('cueId', ParseIntPipe) cueId: number,
+        @Body() body: CueSplitDto
+    ) {
+        // 1. Destructure body, params, query
+        const { splitTime } = body;
+
+        // 2. Get context
+
+        // 3. Get result
+        await this.cueService.split({ trackId, cueId, splitTime });
 
         // 4. Send response
         return { data: {} };

@@ -408,6 +408,87 @@ describe('PlayerService', () => {
         }
     });
 
+    it('maps canvas media video controls to manifest visual items', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Anchor,
+                Artist,
+                Audio,
+                CanvasMedia,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Visual video controls product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Visual video controls episode',
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const media = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'controlled-video.mp4',
+                    mediaType: 'video',
+                    mediaUrl: 'https://assets.example.com/controlled-video.mp4',
+                    duration: 12000,
+                })
+            );
+            await dataSource.manager.save(
+                new CanvasMedia({
+                    canvasId: canvas.id,
+                    mediaId: media.id,
+                    index: 0,
+                    startTime: 2000,
+                    endTime: 9000,
+                    sourceStartTime: 1000,
+                    sourceEndTime: 8000,
+                    volume: 0.55,
+                    isMuted: false,
+                })
+            );
+
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+            const visualItem = manifest.items.find((item) => item.mediaId === String(media.id));
+
+            assert.ok(visualItem);
+            assert.equal(visualItem.startTime, 2000);
+            assert.equal(visualItem.endTime, 9000);
+            assert.equal(visualItem.trimStartTime, 1000);
+            assert.equal(visualItem.trimEndTime, 8000);
+            assert.equal(visualItem.volume, 0.55);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
     it('maps scroll timing to visual media by canvas id and media index when explicit mapping exists', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',

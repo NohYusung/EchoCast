@@ -4,6 +4,8 @@ export type StudioTimelineAudioClip = {
     start: number;
     duration: number;
     audioUrl?: string;
+    audioStart?: number;
+    audioEnd?: number;
     volume?: number;
 };
 
@@ -102,7 +104,7 @@ export function syncStudioTimelineAudioPlayback({
             continue;
         }
 
-        const targetTime = Math.max(0, playhead - clip.start);
+        const targetTime = Math.max(0, clip.audioStart ?? 0) + Math.max(0, playhead - clip.start);
         if (Math.abs(entry.audio.currentTime - targetTime) > seekToleranceSeconds) {
             entry.audio.currentTime = targetTime;
         }
