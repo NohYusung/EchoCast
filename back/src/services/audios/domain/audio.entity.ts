@@ -1,5 +1,5 @@
 import { DddAggregate } from '../../../libs/ddd';
-import { Column, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 
@@ -37,8 +37,8 @@ export class Audio extends DddAggregate {
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
 
-    @OneToOne(() => Cue, (cue) => cue.audio)
-    cue?: Cue;
+    @OneToMany(() => Cue, (cue) => cue.audio)
+    cues?: Cue[];
 
     constructor(args?: Ctor) {
         super();

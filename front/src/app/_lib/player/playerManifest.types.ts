@@ -6,12 +6,26 @@ export interface PlayerManifestItem {
     kind: PlayerItemKind;
     startTime: number;
     endTime: number;
+    canvasId?: string | number;
+    index?: number;
     mediaId?: string;
     cueId?: string;
     layerId: number;
     trimStartTime?: number;
     trimEndTime?: number;
     volume: number;
+}
+
+export interface PlayerManifestScroll {
+    id: string;
+    trackId: string;
+    canvasId?: string | number;
+    startIndex: number;
+    endIndex: number;
+    startTime: number;
+    endTime: number;
+    startPosition: number;
+    endPosition: number;
 }
 
 export interface CueManifest {
@@ -56,6 +70,7 @@ export interface PlayerManifest {
         isMuted: boolean;
     }>;
     items: PlayerManifestItem[];
+    scrolls?: PlayerManifestScroll[];
     cues: CueManifest[];
     media: Array<{
         id: string;

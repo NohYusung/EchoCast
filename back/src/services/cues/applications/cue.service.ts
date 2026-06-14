@@ -56,17 +56,23 @@ export class CueService extends DddService {
         });
         await this.cueRepository.entityManager.save(cue);
 
-        return {
-            id: cue.id,
-            script: cue.script,
-            characterId: cue.characterId,
-            trackId: cue.trackId,
-            audioId: cue.audioId,
-            startTime: cue.startTime,
-            endTime: cue.endTime,
-            ttsVoiceId: cue.ttsVoiceId,
-            volume: cue.volume,
-        };
+        return toCueResponse(cue);
+    }
+
+    async list({ trackId }: { trackId: number }) {
+        const [track] = await this.trackRepository.find({ id: trackId });
+
+        if (!track) {
+            throw new NotFoundException('Track not found.');
+        }
+
+        const [cues, total] = await Promise.all([
+            this.cueRepository.find({ trackId }, { options: { sort: 'startTime', order: 'ASC' } }),
+            this.cueRepository.count({ trackId }),
+        ]);
+        const items = cues.map(toCueResponse);
+
+        return { items, total };
     }
 
     async update({
@@ -132,4 +138,18 @@ export class CueService extends DddService {
 
         await this.cueRepository.softRemove([cue]);
     }
+}
+
+function toCueResponse(cue: Cue) {
+    return {
+        id: cue.id,
+        script: cue.script,
+        characterId: cue.characterId,
+        trackId: cue.trackId,
+        audioId: cue.audioId,
+        startTime: cue.startTime,
+        endTime: cue.endTime,
+        ttsVoiceId: cue.ttsVoiceId,
+        volume: cue.volume,
+    };
 }

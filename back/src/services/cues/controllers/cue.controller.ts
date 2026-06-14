@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Dependencies, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Dependencies, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
 import { CueService } from '../applications/cue.service';
 import { CueCreateDto, CueUpdateDto } from './dto';
 
@@ -22,6 +22,22 @@ export class CueController {
 
         // 4. Send response
         return { data: {} };
+    }
+
+    /**
+     * 큐 목록 조회
+     */
+    @Get('/tracks/:trackId/cues')
+    async list(@Param('trackId', ParseIntPipe) trackId: number) {
+        // 1. Destructure body, params, query
+
+        // 2. Get context
+
+        // 3. Get result
+        const data = await this.cueService.list({ trackId });
+
+        // 4. Send response
+        return { data };
     }
 
     /**

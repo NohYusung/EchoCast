@@ -1,7 +1,7 @@
 import { DddAggregate } from '../../../libs/ddd';
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
-import { Media } from '../../medias/domain/media.entity';
 
 type Ctor = {
     episodeId: number;
@@ -19,14 +19,8 @@ export class Canvas extends DddAggregate {
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
 
-    /*
-    AGENT
-    - manytomany로 수정. 
-    - 한 미디어는 여러개의 캔버스 위에 올라가는게 가능하고, 
-    - 한 캔버스는  여러개의 미디어를 갖는다. 
-    */
-    @OneToMany(() => Media, (media) => media.canvas)
-    medias!: Media[];
+    @OneToMany(() => CanvasMedia, (canvasMedia) => canvasMedia.canvas)
+    canvasMedias!: CanvasMedia[];
 
     constructor(args?: Ctor) {
         super();

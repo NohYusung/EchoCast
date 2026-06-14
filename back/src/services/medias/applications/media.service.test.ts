@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Canvas } from '../../canvases/domain/canvas.entity';
 import { CanvasRepository } from '../../canvases/repository/canvas.repository';
 import { Character } from '../../characters/domain/character.entity';
@@ -16,7 +17,7 @@ describe('MediaService', () => {
     it('creates media without creating a canvas and soft deletes it from the episode media list', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Canvas, Character, Episode, Media, Product],
+            entities: [CanvasMedia, Canvas, Character, Episode, Media, Product],
             synchronize: true,
             logging: false,
         });
@@ -43,7 +44,6 @@ describe('MediaService', () => {
                 mediaName: 'media.png',
                 mediaType: 'image',
                 mediaUrl: 'https://assets.example.com/media.png',
-                index: 0,
             });
             const createdMediaList = await mediaService.list({ episodeId: episode.id });
             const remainingCanvases = await canvasRepository.find({
@@ -59,7 +59,6 @@ describe('MediaService', () => {
                         mediaName: 'media.png',
                         mediaType: 'image',
                         mediaUrl: 'https://assets.example.com/media.png',
-                        index: 0,
                     },
                 ],
                 total: 1,
@@ -77,10 +76,61 @@ describe('MediaService', () => {
         }
     });
 
+    it('stores video duration when media is registered as a video', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [CanvasMedia, Canvas, Character, Episode, Media, Product],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(
+                new Product({
+                    title: 'Media video duration product',
+                })
+            );
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Media video duration episode',
+                })
+            );
+            const mediaRepository = new MediaRepository(dataSource);
+            const mediaService = new MediaService(mediaRepository);
+
+            await mediaService.create({
+                episodeId: episode.id,
+                mediaName: 'clip.mp4',
+                mediaType: 'video',
+                mediaUrl: 'https://assets.example.com/clip.mp4',
+                duration: 2400,
+            });
+
+            const mediaList = await mediaService.list({ episodeId: episode.id });
+
+            assert.deepEqual(mediaList.items, [
+                {
+                    id: mediaList.items[0].id,
+                    episodeId: episode.id,
+                    canvasId: undefined,
+                    mediaName: 'clip.mp4',
+                    mediaType: 'video',
+                    mediaUrl: 'https://assets.example.com/clip.mp4',
+                    duration: 2400,
+                },
+            ]);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
     it('throws NotFoundException when the media is not registered in the episode', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Canvas, Character, Episode, Media, Product],
+            entities: [CanvasMedia, Canvas, Character, Episode, Media, Product],
             synchronize: true,
             logging: false,
         });

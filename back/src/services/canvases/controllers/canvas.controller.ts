@@ -1,6 +1,6 @@
-import { Body, Controller, Dependencies, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Dependencies, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
 import { CanvasService } from '../applications/canvas.service';
-import { CanvasCreateDto } from './dto';
+import { CanvasCreateDto, CanvasUpdateDto } from './dto';
 
 @Dependencies(CanvasService)
 @Controller()
@@ -38,5 +38,26 @@ export class CanvasController {
 
         // 4. Send response
         return { data };
+    }
+
+    /**
+     * 캔버스 정보 수정
+     */
+    @Put('/episodes/:episodeId/canvases/:canvasId')
+    async update(
+        @Param('episodeId', ParseIntPipe) episodeId: number,
+        @Param('canvasId', ParseIntPipe) canvasId: number,
+        @Body() body: CanvasUpdateDto
+    ) {
+        // 1. Destructure body, params, query
+        const { medias = [] } = body;
+
+        // 2. Get context
+
+        // 3. Get result
+        await this.canvasService.update({ episodeId, canvasId, medias });
+
+        // 4. Send response
+        return { data: {} };
     }
 }

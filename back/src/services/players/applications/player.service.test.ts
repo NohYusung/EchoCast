@@ -2,9 +2,11 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { DataSource } from 'typeorm';
+import { Anchor } from '../../anchors/domain/anchor.entity';
 import { Artist } from '../../artists/domain/artist.entity';
 import { Audio } from '../../audios/domain/audio.entity';
 import { AudioRepository } from '../../audios/repository/audio.repository';
+import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Canvas } from '../../canvases/domain/canvas.entity';
 import { CanvasRepository } from '../../canvases/repository/canvas.repository';
 import { Character } from '../../characters/domain/character.entity';
@@ -28,8 +30,10 @@ describe('PlayerService', () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [
+                Anchor,
                 Artist,
                 Audio,
+                CanvasMedia,
                 Canvas,
                 Character,
                 Cue,
@@ -89,30 +93,48 @@ describe('PlayerService', () => {
             const media = await dataSource.manager.save(
                 new Media({
                     episodeId: episode.id,
-                    canvasId: canvas.id,
                     mediaName: 'visual.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/visual.png',
-                    index: 0,
                 })
             );
             const secondMedia = await dataSource.manager.save(
                 new Media({
                     episodeId: episode.id,
-                    canvasId: canvas.id,
                     mediaName: 'visual-2.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/visual-2.png',
-                    index: 1,
                 })
             );
+            await dataSource.manager.save([
+                new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 }),
+                new CanvasMedia({ canvasId: canvas.id, mediaId: secondMedia.id, index: 1 }),
+            ]);
             await dataSource.manager.save(
                 new Scroll({
                     trackId: visualTrack.id,
-                    startTime: 0,
-                    endTime: 3000,
-                    startPosition: 0,
-                    endPosition: 400,
+                    startAnchorId: (
+                        await dataSource.manager.save(
+                            new Anchor({
+                                trackId: visualTrack.id,
+                                canvasId: canvas.id,
+                                time: 0,
+                                index: 0,
+                                position: 0,
+                            })
+                        )
+                    ).id,
+                    endAnchorId: (
+                        await dataSource.manager.save(
+                            new Anchor({
+                                trackId: visualTrack.id,
+                                canvasId: canvas.id,
+                                time: 3000,
+                                index: 1,
+                                position: 80,
+                            })
+                        )
+                    ).id,
                 })
             );
             const cue = await dataSource.manager.save(
@@ -170,10 +192,38 @@ describe('PlayerService', () => {
             assert.equal(draft.scripts[0].id, draft.cues[0].scriptId);
             assert.equal(draft.cues[0].id, String(cue.id));
             assert.equal(draft.records[0].audioUrl, 'https://assets.example.com/record.wav');
+            assert.deepEqual(draft.scrolls, [
+                {
+                    id: '1',
+                    trackId: String(visualTrack.id),
+                    canvasId: String(canvas.id),
+                    startIndex: 0,
+                    endIndex: 1,
+                    startTime: 0,
+                    endTime: 3000,
+                    startPosition: 0,
+                    endPosition: 80,
+                },
+            ]);
 
             assert.equal(manifest.episodeId, String(episode.id));
             assert.equal(manifest.durationMs, 3000);
             assert.equal(manifest.cues[0].approvedRecordUrl, 'https://assets.example.com/record.wav');
+            assert.equal(manifest.items.find((item) => item.mediaId === String(media.id))?.canvasId, String(canvas.id));
+            assert.equal(manifest.items.find((item) => item.mediaId === String(secondMedia.id))?.index, 1);
+            assert.deepEqual(manifest.scrolls, [
+                {
+                    id: '1',
+                    trackId: String(visualTrack.id),
+                    canvasId: String(canvas.id),
+                    startIndex: 0,
+                    endIndex: 1,
+                    startTime: 0,
+                    endTime: 3000,
+                    startPosition: 0,
+                    endPosition: 80,
+                },
+            ]);
             assert.deepEqual(manifest.tts, []);
         } finally {
             await dataSource.destroy();
@@ -184,8 +234,10 @@ describe('PlayerService', () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [
+                Anchor,
                 Artist,
                 Audio,
+                CanvasMedia,
                 Canvas,
                 Character,
                 Cue,
@@ -226,16 +278,15 @@ describe('PlayerService', () => {
                 })
             );
             const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
-            await dataSource.manager.save(
+            const media = await dataSource.manager.save(
                 new Media({
                     episodeId: episode.id,
-                    canvasId: canvas.id,
                     mediaName: 'synthetic-visual.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/synthetic-visual.png',
-                    index: 0,
                 })
             );
+            await dataSource.manager.save(new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 }));
             const cue = await dataSource.manager.save(
                 new Cue({
                     script: '합성 비주얼 트랙 테스트',
@@ -277,8 +328,10 @@ describe('PlayerService', () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [
+                Anchor,
                 Artist,
                 Audio,
+                CanvasMedia,
                 Canvas,
                 Character,
                 Cue,
@@ -308,33 +361,32 @@ describe('PlayerService', () => {
             const firstMedia = await dataSource.manager.save(
                 new Media({
                     episodeId: episode.id,
-                    canvasId: firstCanvas.id,
                     mediaName: 'first.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/first.png',
-                    index: 0,
                 })
             );
             const thirdMedia = await dataSource.manager.save(
                 new Media({
                     episodeId: episode.id,
-                    canvasId: firstCanvas.id,
                     mediaName: 'third.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/third.png',
-                    index: 2,
                 })
             );
             const secondMedia = await dataSource.manager.save(
                 new Media({
                     episodeId: episode.id,
-                    canvasId: secondCanvas.id,
                     mediaName: 'second.png',
                     mediaType: 'image',
                     mediaUrl: 'https://assets.example.com/second.png',
-                    index: 1,
                 })
             );
+            await dataSource.manager.save([
+                new CanvasMedia({ canvasId: firstCanvas.id, mediaId: firstMedia.id, index: 0 }),
+                new CanvasMedia({ canvasId: firstCanvas.id, mediaId: thirdMedia.id, index: 2 }),
+                new CanvasMedia({ canvasId: secondCanvas.id, mediaId: secondMedia.id, index: 1 }),
+            ]);
 
             const playerService = new PlayerService(
                 new EpisodeRepository(dataSource),
@@ -351,6 +403,145 @@ describe('PlayerService', () => {
             const visualMediaIds = manifest.items.filter((item) => item.kind === 'visual').map((item) => item.mediaId);
 
             assert.deepEqual(visualMediaIds, [String(firstMedia.id), String(secondMedia.id), String(thirdMedia.id)]);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('maps scroll timing to visual media by canvas id and media index when explicit mapping exists', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Anchor,
+                Artist,
+                Audio,
+                CanvasMedia,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Explicit scroll map product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Explicit scroll map episode',
+                })
+            );
+            const scrollTrack = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Scroll',
+                    type: 'scroll',
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const firstMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'first.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/first.png',
+                })
+            );
+            const secondMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'second.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/second.png',
+                })
+            );
+            await dataSource.manager.save([
+                new CanvasMedia({ canvasId: canvas.id, mediaId: firstMedia.id, index: 0 }),
+                new CanvasMedia({ canvasId: canvas.id, mediaId: secondMedia.id, index: 1 }),
+            ]);
+            await dataSource.manager.save([
+                new Scroll({
+                    trackId: scrollTrack.id,
+                    startAnchorId: (
+                        await dataSource.manager.save(
+                            new Anchor({
+                                trackId: scrollTrack.id,
+                                canvasId: canvas.id,
+                                time: 1000,
+                                index: 1,
+                                position: 10,
+                            })
+                        )
+                    ).id,
+                    endAnchorId: (
+                        await dataSource.manager.save(
+                            new Anchor({
+                                trackId: scrollTrack.id,
+                                canvasId: canvas.id,
+                                time: 2000,
+                                index: 1,
+                                position: 20,
+                            })
+                        )
+                    ).id,
+                }),
+                new Scroll({
+                    trackId: scrollTrack.id,
+                    startAnchorId: (
+                        await dataSource.manager.save(
+                            new Anchor({
+                                trackId: scrollTrack.id,
+                                canvasId: canvas.id,
+                                time: 7000,
+                                index: 0,
+                                position: 70,
+                            })
+                        )
+                    ).id,
+                    endAnchorId: (
+                        await dataSource.manager.save(
+                            new Anchor({
+                                trackId: scrollTrack.id,
+                                canvasId: canvas.id,
+                                time: 9000,
+                                index: 0,
+                                position: 90,
+                            })
+                        )
+                    ).id,
+                }),
+            ]);
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+            const visualByMediaId = new Map(
+                manifest.items
+                    .filter((item) => item.kind === 'visual')
+                    .map((item) => [item.mediaId, item])
+            );
+
+            assert.equal(visualByMediaId.get(String(firstMedia.id))?.startTime, 7000);
+            assert.equal(visualByMediaId.get(String(firstMedia.id))?.endTime, 9000);
+            assert.equal(visualByMediaId.get(String(secondMedia.id))?.startTime, 1000);
+            assert.equal(visualByMediaId.get(String(secondMedia.id))?.endTime, 2000);
         } finally {
             await dataSource.destroy();
         }

@@ -23,6 +23,8 @@ test('buildPlayerScenes preserves canvas visuals that share the same timeline wi
                 kind: 'visual',
                 startTime: 0,
                 endTime: 4000,
+                canvasId: 'canvas-1',
+                index: 1,
                 mediaId: 'media-2',
                 layerId: 0,
                 volume: 1,
@@ -33,6 +35,8 @@ test('buildPlayerScenes preserves canvas visuals that share the same timeline wi
                 kind: 'visual',
                 startTime: 0,
                 endTime: 4000,
+                canvasId: 'canvas-1',
+                index: 0,
                 mediaId: 'media-1',
                 layerId: 1,
                 volume: 1,
@@ -59,13 +63,15 @@ test('buildPlayerScenes preserves canvas visuals that share the same timeline wi
 
     assert.deepEqual(
         scenes.map((scene) => ({
+            canvasId: scene.canvasId,
+            index: scene.index,
             mediaId: scene.mediaId,
             startTime: scene.startTime,
             endTime: scene.endTime,
         })),
         [
-            { mediaId: 'media-2', startTime: 0, endTime: 4000 },
-            { mediaId: 'media-1', startTime: 0, endTime: 4000 },
+            { canvasId: 'canvas-1', index: 1, mediaId: 'media-2', startTime: 0, endTime: 4000 },
+            { canvasId: 'canvas-1', index: 0, mediaId: 'media-1', startTime: 0, endTime: 4000 },
         ],
     );
     assert.equal(shouldDriveStripScrollFromScenes(scenes), false);

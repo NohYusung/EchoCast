@@ -38,7 +38,7 @@ test('DELETE /episodes/:episodeId/medias/:mediaId removes a registered media fro
         const mediaUrl = `https://assets.example.com/media-${Date.now()}.png`;
         await request(app.getHttpServer())
             .post(`/episodes/${episode.id}/medias`)
-            .send({ mediaName: 'media.png', mediaType: 'image', mediaUrl, index: 0 })
+            .send({ mediaName: 'media.png', mediaType: 'image', mediaUrl })
             .expect(201);
 
         const beforeDeleteResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/medias`).expect(200);
@@ -47,6 +47,7 @@ test('DELETE /episodes/:episodeId/medias/:mediaId removes a registered media fro
         );
         assert.ok(media);
         assert.equal(media.mediaName, 'media.png');
+        assert.equal(Object.hasOwn(media, 'index'), false);
 
         const deleteResponse = await request(app.getHttpServer())
             .delete(`/episodes/${episode.id}/medias/${media.id}`)
@@ -58,6 +59,56 @@ test('DELETE /episodes/:episodeId/medias/:mediaId removes a registered media fro
 
         assert.equal(afterDeleteResponse.body.data.total, 0);
         assert.deepEqual(afterDeleteResponse.body.data.items, []);
+    } finally {
+        await app.close();
+    }
+});
+
+test('POST /episodes/:episodeId/medias stores video duration and GET returns it', async () => {
+    const moduleRef = await Test.createTestingModule({
+        imports: [AppModule],
+    }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+
+    await app.init();
+
+    try {
+        const productTitle = `미디어 길이 테스트 작품 ${Date.now()}`;
+        await request(app.getHttpServer()).post('/products').send({ title: productTitle }).expect(201);
+
+        const productsResponse = await request(app.getHttpServer()).get('/products').expect(200);
+        const product = productsResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.title === productTitle
+        );
+        assert.ok(product);
+
+        const episodeTitle = `미디어 길이 테스트 에피소드 ${Date.now()}`;
+        await request(app.getHttpServer())
+            .post(`/products/${product.id}/episodes`)
+            .send({ episodeNumber: 1, title: episodeTitle })
+            .expect(201);
+
+        const episodesResponse = await request(app.getHttpServer()).get(`/products/${product.id}/episodes`).expect(200);
+        const episode = episodesResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.title === episodeTitle
+        );
+        assert.ok(episode);
+
+        const mediaUrl = `https://assets.example.com/video-${Date.now()}.mp4`;
+        await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/medias`)
+            .send({ mediaName: 'video.mp4', mediaType: 'video', mediaUrl, duration: 2400 })
+            .expect(201);
+
+        const mediasResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/medias`).expect(200);
+        const media = mediasResponse.body.data.items.find(
+            (item: { mediaName: string; mediaUrl: string }) => item.mediaUrl === mediaUrl
+        );
+
+        assert.ok(media);
+        assert.equal(media.mediaName, 'video.mp4');
+        assert.equal(media.duration, 2400);
+        assert.equal(Object.hasOwn(media, 'index'), false);
     } finally {
         await app.close();
     }

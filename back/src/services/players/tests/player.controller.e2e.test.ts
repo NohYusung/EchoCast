@@ -6,6 +6,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../../app.module';
 import { Artist } from '../../artists/domain/artist.entity';
+import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Canvas } from '../../canvases/domain/canvas.entity';
 import { Character } from '../../characters/domain/character.entity';
 import { Cue } from '../../cues/domain/cue.entity';
@@ -50,13 +51,12 @@ test('GET player manifest endpoint exposes episode playback content without draf
         const media = await dataSource.manager.save(
             new Media({
                 episodeId: episode.id,
-                canvasId: canvas.id,
                 mediaName: 'api-visual.png',
                 mediaType: 'image',
                 mediaUrl: 'https://assets.example.com/api-visual.png',
-                index: 0,
             })
         );
+        await dataSource.manager.save(new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 }));
         const cue = await dataSource.manager.save(
             new Cue({
                 script: 'API 대사',

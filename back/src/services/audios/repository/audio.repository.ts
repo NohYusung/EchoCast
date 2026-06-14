@@ -53,7 +53,7 @@ export class AudioRepository extends DddRepository<Audio> {
     }
 
     async findByEpisodeId(episodeId: number) {
-        return this.find({ episodeId }, { relations: { cue: true }, options: { sort: 'id', order: 'ASC' } });
+        return this.find({ episodeId }, { relations: { cues: true }, options: { sort: 'id', order: 'ASC' } });
     }
 
     async countByEpisodeId(episodeId: number) {

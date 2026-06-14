@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { ConfigsModule } from './configs';
+import { AnchorModule } from './services/anchors/anchor.module';
 import { AudioModule } from './services/audios/audio.module';
 import { CanvasModule } from './services/canvases/canvas.module';
 import { CharacterModule } from './services/characters/characater.module';
@@ -17,6 +18,7 @@ import { TrackModule } from './services/tracks/track.module';
 @Module({
     imports: [
         ConfigsModule,
+        AnchorModule,
         AudioModule,
         ProductModule,
         CharacterModule,

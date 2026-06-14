@@ -1,6 +1,8 @@
 export type ImageCompositionSource = {
     clipId: string;
+    canvasId?: number;
     mediaId: number;
+    mediaType: 'image' | 'video';
     label: string;
     mediaUrl: string;
     order: number;
@@ -9,7 +11,9 @@ export type ImageCompositionSource = {
 export type ImageCompositionLayer = {
     id: string;
     clipId: string;
+    canvasId?: number;
     mediaId: number;
+    mediaType: 'image' | 'video';
     label: string;
     mediaUrl: string;
     sourceOrder: number;
@@ -32,7 +36,7 @@ export type ImageCompositionLayerPatch = Partial<Pick<ImageCompositionLayer, 'x'
 export type ImageCompositionCanvasMedia = {
     mediaId: number;
     mediaName: string;
-    mediaType: 'image';
+    mediaType: 'image' | 'video';
     mediaUrl: string;
     index: number;
     x: number;
@@ -73,7 +77,9 @@ export function syncImageCompositionDraft(
             return {
                 id: existing?.id ?? `image-layer-${source.clipId}`,
                 clipId: source.clipId,
+                canvasId: source.canvasId ?? existing?.canvasId,
                 mediaId: source.mediaId,
+                mediaType: source.mediaType,
                 label: source.label,
                 mediaUrl: source.mediaUrl,
                 sourceOrder: index,
@@ -87,10 +93,12 @@ export function syncImageCompositionDraft(
         })
         .sort((a, b) => a.zIndex - b.zIndex || a.clipId.localeCompare(b.clipId))
         .map((layer, index) => ({ ...layer, zIndex: index }));
-    const sourceSignature = sources.map((source) => `${source.clipId}:${source.mediaUrl}`).join('|');
+    const sourceSignature = sources
+        .map((source) => `${source.clipId}:${source.canvasId ?? 'new'}:${source.mediaType}:${source.mediaUrl}`)
+        .join('|');
     const currentSignature = [...current.layers]
         .sort((a, b) => (a.sourceOrder ?? a.zIndex) - (b.sourceOrder ?? b.zIndex) || a.clipId.localeCompare(b.clipId))
-        .map((layer) => `${layer.clipId}:${layer.mediaUrl}`)
+        .map((layer) => `${layer.clipId}:${layer.canvasId ?? 'new'}:${layer.mediaType}:${layer.mediaUrl}`)
         .join('|');
     const selectedLayerId = layers.some((layer) => layer.id === current.selectedLayerId)
         ? current.selectedLayerId
@@ -161,6 +169,27 @@ export function moveImageCompositionLayer(
     };
 }
 
+export function removeImageCompositionLayer(draft: ImageCompositionDraft, layerId: string): ImageCompositionDraft {
+    const layers = [...draft.layers].sort((a, b) => a.zIndex - b.zIndex || a.clipId.localeCompare(b.clipId));
+    const removedIndex = layers.findIndex((layer) => layer.id === layerId);
+
+    if (removedIndex < 0) {
+        return draft;
+    }
+
+    const nextLayers = layers.filter((layer) => layer.id !== layerId).map((layer, index) => ({ ...layer, zIndex: index }));
+    const nextSelectedLayerId =
+        draft.selectedLayerId === layerId || !nextLayers.some((layer) => layer.id === draft.selectedLayerId)
+            ? nextLayers[Math.min(removedIndex, nextLayers.length - 1)]?.id ?? ''
+            : draft.selectedLayerId;
+
+    return {
+        layers: nextLayers,
+        selectedLayerId: nextSelectedLayerId,
+        status: 'editing',
+    };
+}
+
 export function confirmImageCompositionDraft(draft: ImageCompositionDraft, confirmedAt: string): ImageCompositionDraft {
     return {
         ...draft,
@@ -169,14 +198,33 @@ export function confirmImageCompositionDraft(draft: ImageCompositionDraft, confi
     };
 }
 
-export function toCanvasCreateMedias(draft: ImageCompositionDraft): ImageCompositionCanvasMedia[] {
+export function toCanvasCreateMedias(
+    draft: ImageCompositionDraft,
+    options: { canvasId?: number | null } = {},
+): ImageCompositionCanvasMedia[] {
+    const hasCanvasFilter = Object.prototype.hasOwnProperty.call(options, 'canvasId');
+
     return [...draft.layers]
-        .filter((layer) => layer.isVisible)
+        .filter((layer) => {
+            if (!layer.isVisible) {
+                return false;
+            }
+
+            if (!hasCanvasFilter) {
+                return true;
+            }
+
+            if (options.canvasId === null) {
+                return typeof layer.canvasId !== 'number';
+            }
+
+            return layer.canvasId === options.canvasId;
+        })
         .sort((a, b) => a.zIndex - b.zIndex || a.clipId.localeCompare(b.clipId))
         .map((layer, index) => ({
             mediaId: layer.mediaId,
             mediaName: layer.label,
-            mediaType: 'image',
+            mediaType: layer.mediaType,
             mediaUrl: layer.mediaUrl,
             index,
             x: layer.x,

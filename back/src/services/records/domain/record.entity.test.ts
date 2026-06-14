@@ -2,11 +2,15 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { DataSource } from 'typeorm';
+import { Anchor } from '../../anchors/domain/anchor.entity';
 import { Artist } from '../../artists/domain/artist.entity';
 import { Audio } from '../../audios/domain/audio.entity';
+import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
+import { Canvas } from '../../canvases/domain/canvas.entity';
 import { Character } from '../../characters/domain/character.entity';
 import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
+import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { Track } from '../../tracks/domain/track.entity';
@@ -16,7 +20,7 @@ describe('Record', () => {
     it('stores an artist recorded file with cue and artist relations', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Artist, Audio, Character, Cue, Episode, Product, Record, Scroll, Track],
+            entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -86,7 +90,7 @@ describe('Record', () => {
     it('stores a record without duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Artist, Audio, Character, Cue, Episode, Product, Record, Scroll, Track],
+            entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Scroll, Track],
             synchronize: true,
             logging: false,
         });

@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { Anchor } from '../../anchors/domain/anchor.entity';
 import { Audio } from '../../audios/domain/audio.entity';
+import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
+import { Canvas } from '../../canvases/domain/canvas.entity';
 import { Character } from '../../characters/domain/character.entity';
+import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
@@ -17,7 +21,7 @@ import { CueService } from './cue.service';
 async function createCueServiceDataSource() {
     const dataSource = new DataSource({
         type: 'sqljs',
-        entities: [Audio, Character, Cue, Episode, Product, Scroll, Track],
+        entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
         synchronize: true,
         logging: false,
     });
@@ -131,6 +135,64 @@ describe('CueService', () => {
                     }),
                 (error: unknown) => error instanceof BadRequestException
             );
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('lists cues for a track ordered by start time', async () => {
+        const dataSource = await createCueServiceDataSource();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Cue list product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Cue list episode',
+                })
+            );
+            const character = await dataSource.manager.save(
+                new Character({
+                    productId: product.id,
+                    name: 'Cue list character',
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Cue list track',
+                    type: 'record',
+                    characterId: character.id,
+                })
+            );
+            await dataSource.manager.save([
+                new Cue({
+                    script: '두 번째 큐',
+                    characterId: character.id,
+                    trackId: track.id,
+                    startTime: 2000,
+                    endTime: 3000,
+                }),
+                new Cue({
+                    script: '첫 번째 큐',
+                    characterId: character.id,
+                    trackId: track.id,
+                    startTime: 500,
+                    endTime: 1200,
+                    volume: 0.8,
+                }),
+            ]);
+            const cueService = new CueService(new CueRepository(dataSource), new TrackRepository(dataSource));
+
+            const result = await cueService.list({ trackId: track.id });
+
+            assert.equal(result.total, 2);
+            assert.equal(result.items[0].script, '첫 번째 큐');
+            assert.equal(result.items[0].startTime, 500);
+            assert.equal(result.items[0].volume, 0.8);
+            assert.equal(result.items[1].script, '두 번째 큐');
+            assert.equal(result.items[1].startTime, 2000);
         } finally {
             await dataSource.destroy();
         }

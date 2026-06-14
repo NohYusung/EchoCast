@@ -7,6 +7,7 @@ import {
     confirmImageCompositionDraft,
     createEmptyImageCompositionDraft,
     moveImageCompositionLayer,
+    removeImageCompositionLayer,
     selectImageCompositionLayer,
     syncImageCompositionDraft,
     toCanvasCreateMedias,
@@ -18,18 +19,59 @@ import {
     type ImageCompositionSource,
 } from './imageComposition';
 import { getAudioDuration } from './audioDuration';
+import { getAudioUploadCandidateKind, prepareAudioUploadFile } from './audioFileExtraction';
+import {
+    stopStudioTimelineAudioPlayback,
+    syncStudioTimelineAudioPlayback,
+    type StudioTimelineAudioState,
+} from './studioTimelineAudioPlayback';
+import {
+    buildFileUploadUrlRequests,
+    buildMediaUploadQueue,
+    getUploadContentType,
+    toMediaUploadFailureMessage,
+    uploadFileToPresignedUrl,
+    type FileUploadUrlRequest,
+    type MediaUploadFailure,
+} from './mediaUploadBatch';
+import {
+    buildMediaDragPayload,
+    getNextMediaSelection,
+    parseMediaDragPayload,
+} from './mediaDragSelection';
+import { getCueApiIdFromTimelineClipId, toCueMutationTarget, toCueTimingUpdateRequest } from './cueTimelinePersistence';
 import type { PlayerDraft } from './playerDraft.types';
 import type { PlayerManifest } from './playerManifest.types';
-import { getPreviewScrollPosition, getSelectedPreviewVisual } from './previewScrollPosition';
+import {
+    getPreviewScrollAnchor,
+    getPreviewScrollOffset,
+    getPreviewScrollPixel,
+    getPreviewScrollPosition,
+    getSelectedPreviewVisual,
+    type PreviewScrollAnchor,
+    type PreviewScrollVisualSegment,
+} from './previewScrollPosition';
+import {
+    getScrollEventApiId,
+    toClickedScrollAnchorMutationRequest,
+    toDraggedScrollAnchorMutationRequest,
+    toScrollAnchorMutationRequests,
+    toScrollEventMutationRequest,
+    type ScrollAnchorMutationRequest,
+    type ScrollEventMutationRequest,
+} from './scrollEventPersistence';
 import { getTimelineSidebarResizeWidth } from './timelineResize';
+import { getTrackDeleteUrl, toTrackMutationTarget } from './trackPersistence';
 
 const TIMELINE_DURATION_SECONDS = 72;
 const TIMELINE_TRACK_HEIGHT = 58;
 const PREVIEW_CUT_HEIGHT = 198;
 const PREVIEW_SCROLL_STRIP_HEIGHT_PX = 2400;
 const INITIAL_PLAYHEAD_SECONDS = 18.4;
-const MIN_PX_PER_SECOND = 8;
-const MAX_PX_PER_SECOND = 46;
+const DEFAULT_PX_PER_SECOND = 16;
+const MIN_PX_PER_SECOND = 0.6;
+const MAX_PX_PER_SECOND = 80;
+const MIN_TIMELINE_GRIDLINE_PX = 56;
 const MIN_PREVIEW_ZOOM = 0.75;
 const MAX_PREVIEW_ZOOM = 1.55;
 const PREVIEW_ZOOM_STEP = 0.05;
@@ -43,10 +85,16 @@ const MAX_TIMELINE_PANEL_HEIGHT = 620;
 const DEFAULT_TIMELINE_SIDEBAR_WIDTH = 184;
 const MIN_TIMELINE_SIDEBAR_WIDTH = 150;
 const MAX_TIMELINE_SIDEBAR_WIDTH = 340;
+const DEFAULT_INSPECTOR_WIDTH = 312;
+const MIN_INSPECTOR_WIDTH = 260;
+const MAX_INSPECTOR_WIDTH = 560;
 const MIN_TIMELINE_ITEM_DURATION_SECONDS = 0.5;
 const TIMELINE_RESIZE_EXTENSION_SECONDS = 24;
 const TIMELINE_SNAP_SECONDS = 0.5;
+const TIMELINE_GRID_STEPS_SECONDS = [1, 2, 5, 10, 30, 60, 120] as const;
+const SCROLL_POSITION_STEP_PX = 24;
 const MEDIA_DRAG_MIME = 'application/x-tooned-media-id';
+const MEDIA_BATCH_DRAG_MIME = 'application/x-tooned-media-ids';
 const AUDIO_DRAG_MIME = 'application/x-tooned-audio-id';
 const DROPPED_MEDIA_DURATION_SECONDS = 4;
 
@@ -60,6 +108,7 @@ type MediaType = 'audio' | 'video' | 'image';
 type CharacterRole = 'starring' | 'supporting' | 'minor' | 'narrator' | 'unknown';
 type EffectId = 'fadeIn' | 'fadeOut' | 'zoom' | 'shake' | 'spark';
 type IconName =
+    | 'anchor'
     | 'asset'
     | 'bolt'
     | 'caption'
@@ -135,17 +184,28 @@ type TimelineClip = {
     duration: number;
     label: string;
     sublabel: string;
+    audioId?: number;
+    audioUrl?: string;
     characterId?: CharacterId;
     effects?: EffectId[];
+    volume?: number;
 };
 
 type ScrollEventClip = TimelineClip & {
-    previewStartPx: number;
-    previewEndPx: number;
+    scrollId?: number;
+    startAnchorId?: number;
+    endAnchorId?: number;
+    canvasId?: number;
+    startIndex?: number;
+    endIndex?: number;
+    startPosition: number;
+    endPosition: number;
 };
 
 type VisualClip = {
     id: string;
+    canvasId?: number;
+    index?: number;
     mediaId: number;
     kind: 'cut' | 'video';
     start: number;
@@ -163,7 +223,18 @@ type VisualClip = {
     subtitle?: string;
 };
 
-type Selection = TimelineClip | VisualClip;
+type AnchorSelection = {
+    id: string;
+    anchorId: number;
+    trackId: string;
+    canvasId: number;
+    time: number;
+    position: number;
+    index: number;
+    label: string;
+    sublabel: string;
+};
+type Selection = TimelineClip | VisualClip | AnchorSelection;
 type TimelineItemKind = 'scroll' | 'audio';
 type TimelineEditMode = 'move' | 'resize-start' | 'resize-end';
 type TimelineToolMode = 'select' | 'split' | 'selectL' | 'selectR';
@@ -197,6 +268,10 @@ type TimelineSidebarResize = {
     pointerStartX: number;
     originalWidth: number;
 };
+type InspectorResize = {
+    pointerStartX: number;
+    originalWidth: number;
+};
 type PreviewCanvasSize = {
     width: number;
     height: number;
@@ -224,6 +299,12 @@ type MediaContextMenuState = {
     x: number;
     y: number;
 };
+type TrackContextMenuState = {
+    trackId: string;
+    trackLabel: string;
+    x: number;
+    y: number;
+};
 type TimelinePanelResizeHandlers = {
     timelineHeight: number;
     timelineSidebarWidth: number;
@@ -237,21 +318,40 @@ type PreviewScrollPointerEdit = {
     eventId: string;
     mode: PreviewScrollEditMode;
     pointerStartY: number;
-    overlayHeightPx: number;
     coordinateHeightPx: number;
-    originalStartPx: number;
-    originalEndPx: number;
+    visualSegments: PreviewScrollVisualSegment[];
+    originalStartPixel: number;
+    originalEndPixel: number;
+};
+type PreviewAnchorPointerEdit = {
+    anchor: AnchorListItem;
+    pointerStartY: number;
+    coordinateHeightPx: number;
+    visualSegments: PreviewScrollVisualSegment[];
+    originalPixel: number;
+    hasMoved: boolean;
 };
 type PreviewScrollPointerEditRequest = {
     event: ReactPointerEvent<HTMLElement>;
     item: ScrollEventClip;
     mode: PreviewScrollEditMode;
 };
+type PreviewAnchorPointerEditRequest = {
+    event: ReactPointerEvent<HTMLElement>;
+    anchor: AnchorListItem;
+    top: number;
+};
 type PreviewScrollPointerEditHandlers = {
     previewScrollEditingId: string | null;
     onPreviewScrollEditStart: (request: PreviewScrollPointerEditRequest) => void;
     onPreviewScrollEditMove: (event: ReactPointerEvent<HTMLElement>) => void;
     onPreviewScrollEditEnd: (event: ReactPointerEvent<HTMLElement>) => void;
+};
+type PreviewAnchorPointerEditHandlers = {
+    previewAnchorEditingId: number | null;
+    onPreviewAnchorEditStart: (request: PreviewAnchorPointerEditRequest) => void;
+    onPreviewAnchorEditMove: (event: ReactPointerEvent<HTMLElement>) => void;
+    onPreviewAnchorEditEnd: (event: ReactPointerEvent<HTMLElement>) => void;
 };
 type VisualCutPointerEditRequest = {
     event: ReactPointerEvent<HTMLElement>;
@@ -271,6 +371,13 @@ type TrackCueListItem = {
     characterId?: number;
     trackId: number;
     audioId?: number;
+    audio?: {
+        id: number;
+        audioType: AudioType;
+        name: string;
+        audioUrl: string;
+        duration?: number;
+    };
     startTime: number;
     endTime: number;
     ttsVoiceId?: number;
@@ -279,6 +386,11 @@ type TrackCueListItem = {
 type TrackScrollListItem = {
     id: number;
     trackId: number;
+    startAnchorId: number;
+    endAnchorId: number;
+    canvasId?: number;
+    startIndex: number;
+    endIndex: number;
     startTime: number;
     endTime: number;
     startPosition: number;
@@ -300,6 +412,23 @@ type TrackListResponse = {
         total: number;
     };
 };
+type CueListResponse = {
+    data: {
+        items: TrackCueListItem[];
+        total: number;
+    };
+};
+type DialogueCue = TrackCueListItem & {
+    trackName: string;
+};
+type DialogueLine = {
+    id: string;
+    cueId: number;
+    startTime: number;
+    time: string;
+    text: string;
+    meta: string;
+};
 type CharacterListItem = {
     id: number;
     productId: string;
@@ -319,7 +448,7 @@ type MediaListItem = {
     mediaName: string;
     mediaType: MediaType;
     mediaUrl: string;
-    index: number;
+    duration?: number;
 };
 type MediaListResponse = {
     data: {
@@ -347,6 +476,7 @@ type CanvasListMediaItem = {
     mediaName?: string;
     mediaType?: MediaType;
     mediaUrl?: string;
+    duration?: number;
     index?: number;
 };
 type CanvasListItem = {
@@ -377,9 +507,10 @@ type MediaUploadState = {
     status: 'idle' | 'uploading' | 'registering';
     fileName?: string;
     error?: string;
+    failures?: MediaUploadFailure[];
 };
 type AudioUploadState = {
-    status: 'idle' | 'uploading' | 'registering';
+    status: 'idle' | 'extracting' | 'uploading' | 'registering';
     fileName?: string;
     error?: string;
 };
@@ -428,6 +559,20 @@ type AudioDropResponse = {
         audio: AudioListItem;
     };
 };
+type AnchorListItem = {
+    id: number;
+    trackId: number;
+    canvasId: number;
+    time: number;
+    position: number;
+    index: number;
+};
+type AnchorListResponse = {
+    data: {
+        items: AnchorListItem[];
+        total: number;
+    };
+};
 type CharacterCreateDraft = {
     name: string;
     role: CharacterRole;
@@ -466,13 +611,6 @@ type TimelineToolDefinition = {
 
 const panelDefinitions: PanelDefinition[] = [
     {
-        id: 'fx',
-        label: '효과',
-        icon: 'effect',
-        title: '특수효과',
-        description: '컷과 대사 클립에 바로 얹을 수 있는 연출 프리셋입니다.',
-    },
-    {
         id: 'char',
         label: '캐릭터',
         icon: 'mic',
@@ -495,10 +633,17 @@ const panelDefinitions: PanelDefinition[] = [
     },
     {
         id: 'text',
-        label: '자막',
+        label: '대사',
         icon: 'text',
-        title: '자막 · 번역',
+        title: '대사',
         description: '대사와 나레이션을 영상 자막으로 정리합니다.',
+    },
+    {
+        id: 'fx',
+        label: '효과',
+        icon: 'effect',
+        title: '특수효과',
+        description: '컷과 대사 클립에 바로 얹을 수 있는 연출 프리셋입니다.',
     },
     {
         id: 'settings',
@@ -519,7 +664,7 @@ const previewModeDefinitions: PreviewModeDefinition[] = [
     },
     {
         id: 'motion',
-        label: '모션',
+        label: '이펙트',
     },
 ];
 const timelineToolDefinitions: TimelineToolDefinition[] = [
@@ -587,13 +732,6 @@ const effectLibrary: EffectDefinition[] = [
     },
 ];
 
-const subtitleRows = [
-    { time: '00:00.5', text: '비가 그친 오후, 교실은 이상하게 조용했다.' },
-    { time: '00:11.0', text: '방금 들었어?' },
-    { time: '00:18.8', text: '잠깐, 여기서 멈춰.' },
-    { time: '00:48.0', text: '너희에게 말할 시간이 왔구나.' },
-];
-
 const effectById = new Map(effectLibrary.map((effect) => [effect.id, effect]));
 const emptyTimelineData: TimelineData = {
     audioTracks: [],
@@ -630,6 +768,13 @@ const visualClipBackgrounds = [
 ];
 
 const iconPaths: Record<IconName, ReactNode> = {
+    anchor: (
+        <>
+            <circle cx="12" cy="12" r="7" />
+            <circle cx="12" cy="12" r="2" />
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+        </>
+    ),
     asset: (
         <>
             <rect height="14" rx="2" width="16" x="4" y="5" />
@@ -918,24 +1063,47 @@ function isTimelineTickMultiple(time: number, step: number) {
     return Math.abs(time / step - Math.round(time / step)) < 0.0001;
 }
 
-function getTimelineMinorTickStep(pxPerSecond: number) {
-    for (const seconds of [0.25, 0.5, 1, 2, 5]) {
-        if (seconds * pxPerSecond >= 7) {
+function getTimelineGridStep(pxPerSecond: number) {
+    for (const seconds of TIMELINE_GRID_STEPS_SECONDS) {
+        if (seconds * pxPerSecond >= MIN_TIMELINE_GRIDLINE_PX) {
             return seconds;
         }
     }
 
-    return 10;
+    return TIMELINE_GRID_STEPS_SECONDS[TIMELINE_GRID_STEPS_SECONDS.length - 1];
 }
 
-function getTimelineLabelStep(pxPerSecond: number) {
-    return pxPerSecond >= 30 ? 5 : 10;
+function getTimelineMinorTickStep(gridStep: number) {
+    if (gridStep <= 1) return 0.25;
+    if (gridStep <= 2) return 0.5;
+    if (gridStep <= 5) return 1;
+    if (gridStep <= 10) return 2;
+    if (gridStep <= 30) return 5;
+    if (gridStep <= 60) return 10;
+    return 30;
+}
+
+function getTimelineLabelStep(gridStep: number) {
+    if (gridStep <= 1) return 5;
+    if (gridStep <= 2) return 10;
+    if (gridStep <= 5) return 30;
+    if (gridStep <= 10) return 60;
+    if (gridStep <= 60) return 120;
+    return 120;
+}
+
+function formatTimelineGridStep(seconds: number) {
+    if (seconds >= 60) {
+        return `${seconds / 60}분`;
+    }
+
+    return `${seconds}초`;
 }
 
 function getTimelineTicks(durationSeconds: number, pxPerSecond: number): TimelineTick[] {
-    const minorStep = getTimelineMinorTickStep(pxPerSecond);
-    const labelStep = getTimelineLabelStep(pxPerSecond);
-    const midStep = labelStep / 2;
+    const gridStep = getTimelineGridStep(pxPerSecond);
+    const minorStep = getTimelineMinorTickStep(gridStep);
+    const labelStep = getTimelineLabelStep(gridStep);
     const ticks: TimelineTick[] = [];
 
     for (let time = 0; time <= durationSeconds + 0.0001; time = Number((time + minorStep).toFixed(3))) {
@@ -943,7 +1111,7 @@ function getTimelineTicks(durationSeconds: number, pxPerSecond: number): Timelin
 
         if (isTimelineTickMultiple(time, labelStep)) {
             kind = 'major';
-        } else if (isTimelineTickMultiple(time, midStep)) {
+        } else if (isTimelineTickMultiple(time, gridStep)) {
             kind = 'mid';
         }
 
@@ -1065,6 +1233,8 @@ function toVisualClips(items: CanvasListItem[]): VisualClip[] {
 
     return visualItems.map((item, index) => ({
         id: item.clipId,
+        canvasId: item.canvasId,
+        index: item.index,
         mediaId: item.mediaId,
         kind: item.mediaType === 'video' ? 'video' : 'cut',
         start: Number((index * duration).toFixed(2)),
@@ -1080,12 +1250,14 @@ function toVisualClips(items: CanvasListItem[]): VisualClip[] {
 function toImageCompositionSources(clips: VisualClip[]): ImageCompositionSource[] {
     return clips
         .filter(
-            (clip): clip is VisualClip & { mediaUrl: string; mediaType: 'image' } =>
-                clip.mediaType === 'image' && typeof clip.mediaUrl === 'string',
+            (clip): clip is VisualClip & { mediaUrl: string; mediaType: Exclude<MediaType, 'audio'> } =>
+                (clip.mediaType === 'image' || clip.mediaType === 'video') && typeof clip.mediaUrl === 'string',
         )
         .map((clip, index) => ({
             clipId: clip.id,
+            canvasId: clip.canvasId,
             mediaId: clip.mediaId,
+            mediaType: clip.mediaType,
             label: clip.label,
             mediaUrl: clip.mediaUrl,
             order: index,
@@ -1150,16 +1322,6 @@ function getMediaUploadKey(episodeId: string, file: File, mediaType: Exclude<Med
     return `episodes/${episodeId}/medias/${mediaType}/${Date.now()}-${crypto.randomUUID()}.${safeExtension}`;
 }
 
-function getAudioTypeFromFile(file: File): AudioType | null {
-    if (file.type.startsWith('audio/')) return 'audio';
-
-    const extension = file.name.split('.').filter(Boolean).pop()?.toLowerCase();
-
-    if (extension && ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'webm'].includes(extension)) return 'audio';
-
-    return null;
-}
-
 function getAudioUploadKey(episodeId: string, file: File, audioType: AudioType) {
     const extension = file.name.split('.').filter(Boolean).pop()?.replace(/[^a-z0-9]/gi, '').toLowerCase();
     const safeExtension = extension || 'mp3';
@@ -1192,13 +1354,16 @@ function toTimelineData(tracks: TrackListItem[]): TrackTimelineData {
                         track: String(track.id),
                         start,
                         duration: Math.max(end - start, 0.2),
-                        label: cue.script,
+                        label: cue.script || cue.audio?.name || '오디오',
                         sublabel: cue.audioId
                             ? `audio ${cue.audioId} · vol ${cue.volume}`
                             : cue.ttsVoiceId
                               ? `voice ${cue.ttsVoiceId} · vol ${cue.volume}`
                               : `vol ${cue.volume}`,
+                        audioId: cue.audioId,
+                        audioUrl: cue.audio?.audioUrl,
                         characterId: typeof cue.characterId === 'number' ? String(cue.characterId) : undefined,
+                        volume: cue.volume,
                     };
                 }),
         ),
@@ -1211,13 +1376,19 @@ function toTimelineData(tracks: TrackListItem[]): TrackTimelineData {
 
                     return {
                         id: `scroll-${scroll.id}`,
+                        scrollId: scroll.id,
+                        startAnchorId: scroll.startAnchorId,
+                        endAnchorId: scroll.endAnchorId,
+                        canvasId: scroll.canvasId,
+                        startIndex: scroll.startIndex,
+                        endIndex: scroll.endIndex,
                         track: String(track.id),
                         start,
                         duration: Math.max(end - start, MIN_TIMELINE_ITEM_DURATION_SECONDS),
                         label: `${track.name} ${index + 1}`,
-                        sublabel: formatPreviewScrollLabel(scroll.startPosition, scroll.endPosition),
-                        previewStartPx: scroll.startPosition,
-                        previewEndPx: scroll.endPosition,
+                        sublabel: formatScrollRangeLabel(scroll.startIndex, scroll.startPosition, scroll.endIndex, scroll.endPosition),
+                        startPosition: scroll.startPosition,
+                        endPosition: scroll.endPosition,
                     } satisfies ScrollEventClip;
                 }),
         ),
@@ -1237,6 +1408,19 @@ async function listTracks(apiBaseUrl: string, episodeId: string) {
     return result.data.items;
 }
 
+async function listTrackCues(apiBaseUrl: string, trackId: string) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/cues`, {
+        cache: 'no-store',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Cue list failed: ${response.status}`);
+    }
+
+    const result = (await response.json()) as CueListResponse;
+    return result.data.items;
+}
+
 async function createTrack(apiBaseUrl: string, episodeId: string, track: TrackCreateRequest) {
     const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/episodes/${episodeId}/tracks`, {
         method: 'POST',
@@ -1248,6 +1432,22 @@ async function createTrack(apiBaseUrl: string, episodeId: string, track: TrackCr
 
     if (!response.ok) {
         throw new Error(`Track create failed: ${response.status}`);
+    }
+}
+
+async function deleteTrack(apiBaseUrl: string, episodeId: string, trackId: string) {
+    const target = toTrackMutationTarget({ episodeId, trackId });
+
+    if (!target) {
+        throw new Error('Track delete target is invalid');
+    }
+
+    const response = await fetch(getTrackDeleteUrl(apiBaseUrl, target), {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Track delete failed: ${response.status}`);
     }
 }
 
@@ -1276,6 +1476,162 @@ async function updateCue(apiBaseUrl: string, trackId: string, cueId: string, cue
 
     if (!response.ok) {
         throw new Error(`Cue update failed: ${response.status}`);
+    }
+}
+
+async function deleteCue(apiBaseUrl: string, trackId: string, cueId: string) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/cues/${cueId}`, {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Cue delete failed: ${response.status}`);
+    }
+}
+
+async function listAnchors(apiBaseUrl: string, trackId: string) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/anchors`, {
+        cache: 'no-store',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Anchor list failed: ${response.status}`);
+    }
+
+    const result = (await response.json()) as AnchorListResponse;
+    return result.data.items;
+}
+
+async function listAnchorsForTracks(apiBaseUrl: string, trackIds: string[]) {
+    if (trackIds.length === 0) {
+        return [];
+    }
+
+    const anchorGroups = await Promise.all(trackIds.map((trackId) => listAnchors(apiBaseUrl, trackId)));
+
+    return anchorGroups.flat().sort((a, b) => a.time - b.time || a.id - b.id);
+}
+
+function getAnchorSelectionId(anchorId: number) {
+    return `anchor-${anchorId}`;
+}
+
+function toAnchorSelection(anchor: AnchorListItem): AnchorSelection {
+    return {
+        id: getAnchorSelectionId(anchor.id),
+        anchorId: anchor.id,
+        trackId: String(anchor.trackId),
+        canvasId: anchor.canvasId,
+        time: anchor.time,
+        position: anchor.position,
+        index: anchor.index,
+        label: `앵커 A${anchor.id}`,
+        sublabel: `${formatTime(toTimelineSeconds(anchor.time))} · ${formatScrollIndexedPosition(anchor.index, anchor.position)}`,
+    };
+}
+
+function sortAnchors(anchors: AnchorListItem[]) {
+    return [...anchors].sort((a, b) => a.time - b.time || a.id - b.id);
+}
+
+function applyAnchorMutation(anchor: AnchorListItem, request: ScrollAnchorMutationRequest): AnchorListItem {
+    return {
+        ...anchor,
+        canvasId: request.canvasId,
+        time: request.time,
+        position: request.position,
+        index: request.index,
+    };
+}
+
+function replaceAnchor(anchors: AnchorListItem[], nextAnchor: AnchorListItem) {
+    return sortAnchors(anchors.map((anchor) => (anchor.id === nextAnchor.id ? nextAnchor : anchor)));
+}
+
+function findMatchingAnchor(anchors: AnchorListItem[], request: ScrollAnchorMutationRequest) {
+    return [...anchors]
+        .reverse()
+        .find(
+            (anchor) =>
+                anchor.canvasId === request.canvasId &&
+                anchor.time === request.time &&
+                anchor.position === request.position &&
+                anchor.index === request.index,
+        );
+}
+
+async function createAnchor(apiBaseUrl: string, trackId: string, anchor: ScrollAnchorMutationRequest) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/anchors`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(anchor),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Anchor create failed: ${response.status}`);
+    }
+
+    const anchors = await listAnchors(apiBaseUrl, trackId);
+    const createdAnchor = findMatchingAnchor(anchors, anchor);
+
+    if (!createdAnchor) {
+        throw new Error('Created anchor was not found.');
+    }
+
+    return createdAnchor;
+}
+
+async function updateAnchor(apiBaseUrl: string, trackId: string, anchorId: number, anchor: ScrollAnchorMutationRequest) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/anchors/${anchorId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(anchor),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Anchor update failed: ${response.status}`);
+    }
+}
+
+async function createScrollEvent(apiBaseUrl: string, trackId: string, scroll: ScrollEventMutationRequest) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/scrolls`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(scroll),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Scroll create failed: ${response.status}`);
+    }
+}
+
+async function updateScrollEvent(apiBaseUrl: string, trackId: string, scrollId: number, scroll: ScrollEventMutationRequest) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/scrolls/${scrollId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(scroll),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Scroll update failed: ${response.status}`);
+    }
+}
+
+async function deleteScrollEvent(apiBaseUrl: string, trackId: string, scrollId: number) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/tracks/${trackId}/scrolls/${scrollId}`, {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Scroll delete failed: ${response.status}`);
     }
 }
 
@@ -1345,13 +1701,13 @@ async function listCanvases(apiBaseUrl: string, episodeId: string) {
     return result.data.items;
 }
 
-async function getFileUploadUrls(apiBaseUrl: string, keys: string[]) {
+async function getFileUploadUrls(apiBaseUrl: string, files: FileUploadUrlRequest[]) {
     const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/files/uploadUrls`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ keys }),
+        body: JSON.stringify({ files }),
     });
 
     if (!response.ok) {
@@ -1362,21 +1718,10 @@ async function getFileUploadUrls(apiBaseUrl: string, keys: string[]) {
     return result.data;
 }
 
-async function uploadFileToPresignedUrl(presignedUrl: string, file: File) {
-    const response = await fetch(presignedUrl, {
-        method: 'PUT',
-        body: file,
-    });
-
-    if (!response.ok) {
-        throw new Error(`File upload failed: ${response.status}`);
-    }
-}
-
 async function createMedia(
     apiBaseUrl: string,
     episodeId: string,
-    media: { mediaName: string; mediaType: Exclude<MediaType, 'audio'>; mediaUrl: string; index: number }
+    media: { mediaName: string; mediaType: Exclude<MediaType, 'audio'>; mediaUrl: string; duration?: number }
 ) {
     const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/episodes/${episodeId}/medias`, {
         method: 'POST',
@@ -1402,6 +1747,20 @@ async function createCanvas(apiBaseUrl: string, episodeId: string, canvas: { med
 
     if (!response.ok) {
         throw new Error(`Canvas create failed: ${response.status}`);
+    }
+}
+
+async function updateCanvas(apiBaseUrl: string, episodeId: string, canvasId: number, canvas: { medias: ImageCompositionCanvasMedia[] }) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/episodes/${episodeId}/canvases/${canvasId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(canvas),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Canvas update failed: ${response.status}`);
     }
 }
 
@@ -1450,7 +1809,7 @@ function getItemEffects(item: Selection | undefined, overrides: Record<string, E
         return [];
     }
 
-    return overrides[item.id] ?? item.effects ?? [];
+    return overrides[item.id] ?? ('effects' in item ? item.effects : undefined) ?? [];
 }
 
 function isTimelineClip(item: Selection): item is TimelineClip {
@@ -1458,12 +1817,20 @@ function isTimelineClip(item: Selection): item is TimelineClip {
 }
 
 function isScrollEventClip(item: Selection): item is ScrollEventClip {
-    return isTimelineClip(item) && 'previewStartPx' in item && 'previewEndPx' in item;
+    return isTimelineClip(item) && 'startPosition' in item && 'endPosition' in item;
+}
+
+function isAnchorSelection(item: Selection): item is AnchorSelection {
+    return 'anchorId' in item;
 }
 
 function getItemTypeLabel(item: Selection | undefined, trackById: Map<string, AudioTrackDefinition>) {
     if (!item) {
         return '선택 없음';
+    }
+
+    if (isAnchorSelection(item)) {
+        return 'ANCHOR';
     }
 
     if (isTimelineClip(item)) {
@@ -1483,8 +1850,9 @@ function getSelectedItem(
     visualClipById: Map<string, VisualClip>,
     audioClipById: Map<string, TimelineClip>,
     scrollEventById: Map<string, ScrollEventClip>,
+    anchorBySelectionId: Map<string, AnchorSelection>,
 ) {
-    return visualClipById.get(selectedId) ?? audioClipById.get(selectedId) ?? scrollEventById.get(selectedId);
+    return visualClipById.get(selectedId) ?? audioClipById.get(selectedId) ?? scrollEventById.get(selectedId) ?? anchorBySelectionId.get(selectedId);
 }
 
 function getClipStyle(start: number, duration: number, pxPerSecond: number): CSSProperties {
@@ -1532,7 +1900,7 @@ function getMediaTypeLabel(mediaType: MediaType) {
     return '오디오';
 }
 
-function getMediaThumbStyle(media: MediaListItem): CSSProperties {
+function getMediaThumbStyle(media: MediaListItem, fallbackIndex: number): CSSProperties {
     if (media.mediaType === 'image' && media.mediaUrl) {
         return {
             backgroundImage: `linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.28)), url(${JSON.stringify(media.mediaUrl)})`,
@@ -1541,42 +1909,61 @@ function getMediaThumbStyle(media: MediaListItem): CSSProperties {
         };
     }
 
-    return { background: visualClipBackgrounds[media.index % visualClipBackgrounds.length] };
+    return { background: visualClipBackgrounds[fallbackIndex % visualClipBackgrounds.length] };
 }
 
 function getPreviewPlayheadPixel(
     playhead: number,
     scrollEvents: ScrollEventClip[],
     stripHeightPx: number,
+    visualSegments: PreviewScrollVisualSegment[],
 ) {
-    return getPreviewScrollPosition({ playhead, scrollEvents, stripHeightPx });
+    return getPreviewScrollPosition({ playhead, scrollEvents, stripHeightPx, visualSegments });
 }
 
-function getPreviewScrollEventStyle(event: ScrollEventClip, stripHeightPx: number): CSSProperties {
-    const coordinateHeightPx = getPreviewCoordinateHeight(stripHeightPx);
-    const startPx = clamp(Math.min(event.previewStartPx, event.previewEndPx), 0, coordinateHeightPx);
-    const endPx = clamp(Math.max(event.previewStartPx, event.previewEndPx), startPx, coordinateHeightPx);
+function getScrollEventStartPixel(event: ScrollEventClip, stripHeightPx: number, visualSegments: PreviewScrollVisualSegment[]) {
+    return getPreviewScrollPixel({
+        canvasId: event.canvasId,
+        index: event.startIndex,
+        position: event.startPosition,
+        stripHeightPx,
+        visualSegments,
+    });
+}
+
+function getScrollEventEndPixel(event: ScrollEventClip, stripHeightPx: number, visualSegments: PreviewScrollVisualSegment[]) {
+    return getPreviewScrollPixel({
+        canvasId: event.canvasId,
+        index: event.endIndex,
+        position: event.endPosition,
+        stripHeightPx,
+        visualSegments,
+    });
+}
+
+function getPreviewScrollEventStyle(event: ScrollEventClip, stripHeightPx: number, visualSegments: PreviewScrollVisualSegment[]): CSSProperties {
+    const startPx = getScrollEventStartPixel(event, stripHeightPx, visualSegments);
+    const endPx = getScrollEventEndPixel(event, stripHeightPx, visualSegments);
 
     return {
-        top: `${startPx}px`,
-        height: `${Math.max(34, endPx - startPx)}px`,
+        top: `${Math.min(startPx, endPx)}px`,
+        height: `${Math.max(34, Math.abs(endPx - startPx))}px`,
     };
 }
 
-function getPreviewScrollHandleStyle(pixel: number, stripHeightPx: number): CSSProperties {
+function getPreviewScrollHandleStyle(pixel: number): CSSProperties {
     return {
-        top: `${clamp(pixel, 0, getPreviewCoordinateHeight(stripHeightPx))}px`,
+        top: `${pixel}px`,
     };
 }
 
-function getPreviewScrollBandStyle(event: ScrollEventClip, stripHeightPx: number): CSSProperties {
-    const coordinateHeightPx = getPreviewCoordinateHeight(stripHeightPx);
-    const startPx = clamp(Math.min(event.previewStartPx, event.previewEndPx), 0, coordinateHeightPx);
-    const endPx = clamp(Math.max(event.previewStartPx, event.previewEndPx), startPx, coordinateHeightPx);
+function getPreviewScrollBandStyle(event: ScrollEventClip, stripHeightPx: number, visualSegments: PreviewScrollVisualSegment[]): CSSProperties {
+    const startPx = getScrollEventStartPixel(event, stripHeightPx, visualSegments);
+    const endPx = getScrollEventEndPixel(event, stripHeightPx, visualSegments);
 
     return {
-        top: `${startPx}px`,
-        height: `${Math.max(2, endPx - startPx)}px`,
+        top: `${Math.min(startPx, endPx)}px`,
+        height: `${Math.max(2, Math.abs(endPx - startPx))}px`,
     };
 }
 
@@ -1597,47 +1984,81 @@ function getImageCompositionLayerStyle(layer: ImageCompositionLayer): CSSPropert
     };
 }
 
-function formatPreviewScrollLabel(startPx: number, endPx: number) {
-    return `${Math.round(startPx)}px -> ${Math.round(endPx)}px`;
+function formatScrollIndexedPosition(index: number | undefined, position: number) {
+    const positionLabel = `${Math.round(position)}%`;
+
+    if (typeof index !== 'number') {
+        return positionLabel;
+    }
+
+    return `${index + 1}번째 · ${positionLabel}`;
 }
 
-function getPreviewOverlayHeight(target: HTMLElement) {
-    const overlay = target.closest('.odx-preview-scroll-overlay');
-
-    if (!(overlay instanceof HTMLElement)) {
-        return 1;
-    }
-
-    return Math.max(1, overlay.getBoundingClientRect().height);
+function formatScrollRangeLabel(startIndex: number | undefined, startPosition: number, endIndex: number | undefined, endPosition: number) {
+    return `${formatScrollIndexedPosition(startIndex, startPosition)} -> ${formatScrollIndexedPosition(endIndex, endPosition)}`;
 }
 
-function getPreviewScrollEditPixels(edit: PreviewScrollPointerEdit, clientY: number) {
-    const editableHeight = Math.max(1, edit.overlayHeightPx);
-    const coordinateHeightPx = getPreviewCoordinateHeight(edit.coordinateHeightPx);
-    const deltaPx = Math.round(((clientY - edit.pointerStartY) / editableHeight) * coordinateHeightPx);
-
-    if (edit.mode === 'resize-start') {
+function applyScrollAnchorToEvent(event: ScrollEventClip, edge: 'start' | 'end', anchor: PreviewScrollAnchor): ScrollEventClip {
+    if (edge === 'start') {
         return {
-            previewStartPx: clamp(edit.originalStartPx + deltaPx, 0, coordinateHeightPx),
-            previewEndPx: edit.originalEndPx,
+            ...event,
+            canvasId: typeof anchor.canvasId === 'number' ? anchor.canvasId : event.canvasId,
+            startIndex: anchor.index,
+            startPosition: anchor.position,
         };
     }
-
-    if (edit.mode === 'resize-end') {
-        return {
-            previewStartPx: edit.originalStartPx,
-            previewEndPx: clamp(edit.originalEndPx + deltaPx, 0, coordinateHeightPx),
-        };
-    }
-
-    const minPx = Math.min(edit.originalStartPx, edit.originalEndPx);
-    const maxPx = Math.max(edit.originalStartPx, edit.originalEndPx);
-    const clampedDeltaPx = clamp(deltaPx, -minPx, coordinateHeightPx - maxPx);
 
     return {
-        previewStartPx: edit.originalStartPx + clampedDeltaPx,
-        previewEndPx: edit.originalEndPx + clampedDeltaPx,
+        ...event,
+        endIndex: anchor.index,
+        endPosition: anchor.position,
     };
+}
+
+function getPreviewScrollEditAnchors(edit: PreviewScrollPointerEdit, clientY: number) {
+    const deltaPx = Math.round(clientY - edit.pointerStartY);
+    const coordinateHeightPx = getPreviewCoordinateHeight(edit.coordinateHeightPx);
+    let startPixel = edit.originalStartPixel;
+    let endPixel = edit.originalEndPixel;
+
+    if (edit.mode === 'resize-start') {
+        startPixel = clamp(edit.originalStartPixel + deltaPx, 0, coordinateHeightPx);
+    } else if (edit.mode === 'resize-end') {
+        endPixel = clamp(edit.originalEndPixel + deltaPx, 0, coordinateHeightPx);
+    } else {
+        const minPixel = Math.min(edit.originalStartPixel, edit.originalEndPixel);
+        const maxPixel = Math.max(edit.originalStartPixel, edit.originalEndPixel);
+        const clampedDeltaPx = clamp(deltaPx, -minPixel, coordinateHeightPx - maxPixel);
+
+        startPixel = edit.originalStartPixel + clampedDeltaPx;
+        endPixel = edit.originalEndPixel + clampedDeltaPx;
+    }
+
+    return {
+        start: getPreviewScrollAnchor({
+            stripPositionPx: startPixel,
+            stripHeightPx: coordinateHeightPx,
+            visualSegments: edit.visualSegments,
+        }),
+        end: getPreviewScrollAnchor({
+            stripPositionPx: endPixel,
+            stripHeightPx: coordinateHeightPx,
+            visualSegments: edit.visualSegments,
+        }),
+    };
+}
+
+function getPreviewAnchorEditRequest(edit: PreviewAnchorPointerEdit, clientY: number) {
+    const deltaPx = Math.round(clientY - edit.pointerStartY);
+    const coordinateHeightPx = getPreviewCoordinateHeight(edit.coordinateHeightPx);
+    const stripPositionPx = clamp(edit.originalPixel + deltaPx, 0, coordinateHeightPx);
+
+    return toDraggedScrollAnchorMutationRequest({
+        anchor: edit.anchor,
+        stripHeightPx: coordinateHeightPx,
+        stripPositionPx,
+        visualSegments: edit.visualSegments,
+    });
 }
 
 function getTimelineEditTiming(edit: TimelinePointerEdit, clientX: number, pxPerSecond: number, durationSeconds: number, isSnapEnabled: boolean) {
@@ -1729,9 +2150,13 @@ function LibraryPanel({
     audioUploadState,
     characters,
     characterCreateState,
+    dialogueLines,
+    dialogueLoadError,
+    isDialogueLoading,
     mediaItems,
     mediaUploadState,
     mediaContextMenu,
+    selectedMediaIds,
     deletingMediaId,
     onAddAudio,
     onCharacterCreateDraftChange,
@@ -1739,6 +2164,7 @@ function LibraryPanel({
     onToggleCharacterCreate,
     onApplyEffect,
     onAddMedia,
+    onSelectMedia,
     onOpenMediaContextMenu,
     onCloseMediaContextMenu,
     onDeleteMedia,
@@ -1748,16 +2174,21 @@ function LibraryPanel({
     audioUploadState: AudioUploadState;
     characters: CharacterDefinition[];
     characterCreateState: CharacterCreatePanelState;
+    dialogueLines: DialogueLine[];
+    dialogueLoadError: string | null;
+    isDialogueLoading: boolean;
     mediaItems: MediaListItem[];
     mediaUploadState: MediaUploadState;
     mediaContextMenu: MediaContextMenuState | null;
+    selectedMediaIds: number[];
     deletingMediaId: number | null;
     onAddAudio: (file: File) => Promise<void>;
     onCharacterCreateDraftChange: (draft: CharacterCreateDraft) => void;
     onCreateCharacter: () => Promise<void>;
     onToggleCharacterCreate: () => void;
     onApplyEffect: (effectId: EffectId) => void;
-    onAddMedia: (file: File) => Promise<void>;
+    onAddMedia: (files: File[]) => Promise<void>;
+    onSelectMedia: (event: ReactMouseEvent<HTMLElement>, mediaId: number) => void;
     onOpenMediaContextMenu: (event: ReactMouseEvent<HTMLElement>, media: MediaListItem) => void;
     onCloseMediaContextMenu: () => void;
     onDeleteMedia: (mediaId: number) => Promise<void>;
@@ -1787,9 +2218,13 @@ function LibraryPanel({
                     audioUploadState,
                     characters,
                     characterCreateState,
+                    dialogueLines,
+                    dialogueLoadError,
+                    isDialogueLoading,
                     mediaItems,
                     mediaUploadState,
                     mediaContextMenu,
+                    selectedMediaIds,
                     deletingMediaId,
                     onAddAudio,
                     onCharacterCreateDraftChange,
@@ -1797,6 +2232,7 @@ function LibraryPanel({
                     onToggleCharacterCreate,
                     onApplyEffect,
                     onAddMedia,
+                    onSelectMedia,
                     onOpenMediaContextMenu,
                     onCloseMediaContextMenu,
                     onDeleteMedia,
@@ -1924,6 +2360,12 @@ function AudioLibrary({
     onAddAudio: (file: File) => Promise<void>;
 }) {
     const isUploading = uploadState.status !== 'idle';
+    const progressLabel =
+        uploadState.status === 'extracting'
+            ? 'MP4 음성 추출 중'
+            : uploadState.status === 'registering'
+              ? 'audio.create API 등록 중'
+              : 'presigned URL 업로드';
 
     return (
         <div className="odx-panel-stack">
@@ -1934,11 +2376,11 @@ function AudioLibrary({
                     </span>
                     <span>
                         <strong>{isUploading ? '오디오 등록 중' : '오디오 추가'}</strong>
-                        <small>{isUploading ? uploadState.fileName : '오디오 파일 업로드'}</small>
-                        <em>{uploadState.status === 'registering' ? 'audio.create API 등록 중' : 'presigned URL 업로드'}</em>
+                        <small>{isUploading ? uploadState.fileName : '오디오 또는 MP4 업로드'}</small>
+                        <em>{progressLabel}</em>
                     </span>
                     <input
-                        accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm"
+                        accept="audio/*,video/mp4,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4"
                         disabled={isUploading}
                         onChange={(event) => {
                             const file = event.currentTarget.files?.[0];
@@ -1992,16 +2434,21 @@ function renderPanelContent(
     audioUploadState: AudioUploadState,
     characters: CharacterDefinition[],
     characterCreateState: CharacterCreatePanelState,
+    dialogueLines: DialogueLine[],
+    dialogueLoadError: string | null,
+    isDialogueLoading: boolean,
     mediaItems: MediaListItem[],
     mediaUploadState: MediaUploadState,
     mediaContextMenu: MediaContextMenuState | null,
+    selectedMediaIds: number[],
     deletingMediaId: number | null,
     onAddAudio: (file: File) => Promise<void>,
     onCharacterCreateDraftChange: (draft: CharacterCreateDraft) => void,
     onCreateCharacter: () => Promise<void>,
     onToggleCharacterCreate: () => void,
     onApplyEffect: (effectId: EffectId) => void,
-    onAddMedia: (file: File) => Promise<void>,
+    onAddMedia: (files: File[]) => Promise<void>,
+    onSelectMedia: (event: ReactMouseEvent<HTMLElement>, mediaId: number) => void,
     onOpenMediaContextMenu: (event: ReactMouseEvent<HTMLElement>, media: MediaListItem) => void,
     onCloseMediaContextMenu: () => void,
     onDeleteMedia: (mediaId: number) => Promise<void>,
@@ -2039,6 +2486,7 @@ function renderPanelContent(
 
     if (activePanelId === 'assets') {
         const isUploading = mediaUploadState.status !== 'idle';
+        const selectedMediaIdSet = new Set(selectedMediaIds);
 
         return (
             <div className="odx-cut-list">
@@ -2055,27 +2503,39 @@ function renderPanelContent(
                         <input
                             accept="image/*,video/*"
                             disabled={isUploading}
+                            multiple
                             onChange={(event) => {
-                                const file = event.currentTarget.files?.[0];
+                                const files = Array.from(event.currentTarget.files ?? []);
                                 event.currentTarget.value = '';
 
-                                if (file) {
-                                    void onAddMedia(file);
+                                if (files.length > 0) {
+                                    void onAddMedia(files);
                                 }
                             }}
                             type="file"
                         />
                     </label>
                     {mediaUploadState.error ? <p className="odx-media-upload-message is-error">{mediaUploadState.error}</p> : null}
+                    {mediaUploadState.failures && mediaUploadState.failures.length > 0 ? (
+                        <ul className="odx-media-upload-failures">
+                            {mediaUploadState.failures.map((failure) => (
+                                <li key={`${failure.fileName}-${failure.error}`}>
+                                    <span>{failure.fileName}</span>
+                                    <small>{failure.error}</small>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : null}
                 </div>
                 {mediaItems.length > 0 ? (
                     mediaItems.map((media, index) => (
                         <button
-                            className={`odx-cut-card ${deletingMediaId === media.id ? 'is-deleting' : ''}`}
+                            aria-pressed={selectedMediaIdSet.has(media.id)}
+                            className={`odx-cut-card ${selectedMediaIdSet.has(media.id) ? 'is-selected' : ''} ${deletingMediaId === media.id ? 'is-deleting' : ''}`}
                             draggable={deletingMediaId !== media.id}
                             key={media.id}
-                            onClick={() => {
-                                onCloseMediaContextMenu();
+                            onClick={(event) => {
+                                onSelectMedia(event, media.id);
                             }}
                             onContextMenu={(event) => onOpenMediaContextMenu(event, media)}
                             onDragStart={(event) => {
@@ -2084,17 +2544,35 @@ function renderPanelContent(
                                     return;
                                 }
 
+                                const dragMediaIds = selectedMediaIdSet.has(media.id)
+                                    ? mediaItems
+                                          .filter((item) => selectedMediaIdSet.has(item.id))
+                                          .map((item) => item.id)
+                                    : [media.id];
+                                const dragPayload = buildMediaDragPayload(dragMediaIds);
+
+                                if (!dragPayload.primaryId) {
+                                    event.preventDefault();
+                                    return;
+                                }
+
                                 event.dataTransfer.effectAllowed = 'copy';
-                                event.dataTransfer.setData(MEDIA_DRAG_MIME, String(media.id));
-                                event.dataTransfer.setData('text/plain', media.mediaName?.trim() || `${getMediaTypeLabel(media.mediaType)} ${String(index + 1).padStart(2, '0')}`);
+                                event.dataTransfer.setData(MEDIA_DRAG_MIME, String(dragPayload.primaryId));
+                                event.dataTransfer.setData(MEDIA_BATCH_DRAG_MIME, JSON.stringify(dragPayload.ids));
+                                event.dataTransfer.setData(
+                                    'text/plain',
+                                    dragPayload.ids.length > 1
+                                        ? `${dragPayload.ids.length}개 미디어`
+                                        : media.mediaName?.trim() || `${getMediaTypeLabel(media.mediaType)} ${String(index + 1).padStart(2, '0')}`,
+                                );
                             }}
                             type="button"
                         >
-                            <span className="odx-cut-thumb" style={getMediaThumbStyle(media)} />
+                            <span className="odx-cut-thumb" style={getMediaThumbStyle(media, index)} />
                             <span>
                                 <strong>{media.mediaName?.trim() || `${getMediaTypeLabel(media.mediaType)} ${String(index + 1).padStart(2, '0')}`}</strong>
                                 <small>{getMediaTypeLabel(media.mediaType)} 미디어</small>
-                                <em>MEDIA {media.id} · #{media.index}</em>
+                                <em>MEDIA {media.id}</em>
                             </span>
                         </button>
                     ))
@@ -2122,10 +2600,18 @@ function renderPanelContent(
     if (activePanelId === 'text') {
         return (
             <div className="odx-subtitle-list">
-                {subtitleRows.map((row) => (
-                    <button className="odx-subtitle-row" key={row.time} type="button">
-                        <time>{row.time}</time>
-                        <span>{row.text}</span>
+                {isDialogueLoading ? <p className="odx-empty-note">대사를 불러오는 중입니다.</p> : null}
+                {dialogueLoadError ? <p className="odx-empty-note">{dialogueLoadError}</p> : null}
+                {!isDialogueLoading && !dialogueLoadError && dialogueLines.length === 0 ? (
+                    <p className="odx-empty-note">등록된 대사가 없습니다.</p>
+                ) : null}
+                {dialogueLines.map((line) => (
+                    <button className="odx-subtitle-row" key={line.id} type="button">
+                        <time>{line.time}</time>
+                        <span>
+                            <strong>{line.text}</strong>
+                            <em>{line.meta}</em>
+                        </span>
                     </button>
                 ))}
             </div>
@@ -2163,25 +2649,28 @@ function renderPanelContent(
 }
 
 function ImageCompositionTool({
+    canConfirm,
     draft,
     error,
     isConfirming,
     onConfirm,
     onLayerMove,
     onLayerPatch,
+    onLayerRemove,
     onLayerSelect,
 }: {
+    canConfirm: boolean;
     draft: ImageCompositionDraft;
     error: string | null;
     isConfirming: boolean;
     onConfirm: () => Promise<void> | void;
     onLayerMove: (layerId: string, direction: 'up' | 'down') => void;
     onLayerPatch: (layerId: string, patch: ImageCompositionLayerPatch) => void;
+    onLayerRemove: (layerId: string) => void;
     onLayerSelect: (layerId: string) => void;
 }) {
     const selectedLayer = draft.layers.find((layer) => layer.id === draft.selectedLayerId);
     const orderedLayers = [...draft.layers].sort((a, b) => b.zIndex - a.zIndex || a.clipId.localeCompare(b.clipId));
-    const hasVisibleLayers = draft.layers.some((layer) => layer.isVisible);
 
     return (
         <aside className="odx-image-editor" aria-label="이미지 편집 툴">
@@ -2205,7 +2694,11 @@ function ImageCompositionTool({
                             style={getImageCompositionLayerStyle(layer)}
                             type="button"
                         >
-                            <img alt="" src={layer.mediaUrl} />
+                            {layer.mediaType === 'video' ? (
+                                <video muted playsInline preload="metadata" src={layer.mediaUrl} />
+                            ) : (
+                                <img alt="" src={layer.mediaUrl} />
+                            )}
                         </button>
                     ))
                 ) : (
@@ -2287,6 +2780,9 @@ function ImageCompositionTool({
                         >
                             {selectedLayer.isVisible ? '숨김' : '표시'}
                         </button>
+                        <button className="is-danger" onClick={() => onLayerRemove(selectedLayer.id)} type="button">
+                            삭제
+                        </button>
                     </div>
                 </div>
             ) : null}
@@ -2295,7 +2791,7 @@ function ImageCompositionTool({
                     {error}
                 </p>
             ) : null}
-            <button className="odx-image-editor-confirm" disabled={!hasVisibleLayers || isConfirming} onClick={onConfirm} type="button">
+            <button className="odx-image-editor-confirm" disabled={!canConfirm || isConfirming} onClick={onConfirm} type="button">
                 {isConfirming ? '등록 중' : '이미지 조합 확정'}
             </button>
         </aside>
@@ -2306,6 +2802,7 @@ function CutEditWorkspace({
     visualClips,
     selectedId,
     activeVisual,
+    canConfirmImageComposition,
     imageCompositionDraft,
     imageCompositionConfirmError,
     isConfirmingImageComposition,
@@ -2314,6 +2811,7 @@ function CutEditWorkspace({
     onImageCompositionConfirm,
     onImageCompositionLayerMove,
     onImageCompositionLayerPatch,
+    onImageCompositionLayerRemove,
     onImageCompositionLayerSelect,
     onMediaDrop,
     onSelectVisual,
@@ -2325,6 +2823,7 @@ function CutEditWorkspace({
     visualClips: VisualClip[];
     selectedId: string;
     activeVisual: VisualClip | undefined;
+    canConfirmImageComposition: boolean;
     imageCompositionDraft: ImageCompositionDraft;
     imageCompositionConfirmError: string | null;
     isConfirmingImageComposition: boolean;
@@ -2333,6 +2832,7 @@ function CutEditWorkspace({
     onImageCompositionConfirm: () => Promise<void> | void;
     onImageCompositionLayerMove: (layerId: string, direction: 'up' | 'down') => void;
     onImageCompositionLayerPatch: (layerId: string, patch: ImageCompositionLayerPatch) => void;
+    onImageCompositionLayerRemove: (layerId: string) => void;
     onImageCompositionLayerSelect: (layerId: string) => void;
     onMediaDrop: (event: ReactDragEvent<HTMLElement>) => void;
     onSelectVisual: (clipId: string) => void;
@@ -2347,7 +2847,11 @@ function CutEditWorkspace({
     const handleZoomStep = (delta: number) => {
         setCutEditorZoom((current) => clamp(Number((current + delta).toFixed(2)), 0.55, 1.45));
     };
-    const acceptsMediaDrag = (event: ReactDragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes(MEDIA_DRAG_MIME);
+    const acceptsMediaDrag = (event: ReactDragEvent<HTMLElement>) => {
+        const dragTypes = Array.from(event.dataTransfer.types);
+
+        return dragTypes.includes(MEDIA_DRAG_MIME) || dragTypes.includes(MEDIA_BATCH_DRAG_MIME);
+    };
     const handleMediaDragOver = (event: ReactDragEvent<HTMLElement>) => {
         if (!acceptsMediaDrag(event)) {
             return;
@@ -2508,12 +3012,14 @@ function CutEditWorkspace({
                     <div className="odx-cut-edit-empty">선택된 컷이 없습니다.</div>
                 )}
                 <ImageCompositionTool
+                    canConfirm={canConfirmImageComposition}
                     draft={imageCompositionDraft}
                     error={imageCompositionConfirmError}
                     isConfirming={isConfirmingImageComposition}
                     onConfirm={onImageCompositionConfirm}
                     onLayerMove={onImageCompositionLayerMove}
                     onLayerPatch={onImageCompositionLayerPatch}
+                    onLayerRemove={onImageCompositionLayerRemove}
                     onLayerSelect={onImageCompositionLayerSelect}
                 />
             </aside>
@@ -2524,35 +3030,49 @@ function CutEditWorkspace({
 function PreviewCanvas({
     activeVisual,
     playhead,
+    canConfirmImageComposition,
     imageCompositionDraft,
     imageCompositionConfirmError,
     previewZoom,
     previewMode,
     previewStripHeightPx,
+    previewVisualSegments,
     isConfirmingImageComposition,
+    isAddingAnchor,
+    isAnchorPlacementMode,
     isPreviewAudioEnabled,
     isPreviewFullscreen,
     isPreviewLocked,
     effects,
     visualClips,
     scrollEvents,
+    anchors,
     selectedId,
     onImageCompositionConfirm,
     onImageCompositionLayerMove,
     onImageCompositionLayerPatch,
+    onImageCompositionLayerRemove,
     onImageCompositionLayerSelect,
     onMediaDrop,
     onPreviewModeChange,
     onPreviewStripHeightChange,
+    onPreviewVisualSegmentsChange,
     onPreviewZoomChange,
     onPreviewZoomStep,
     onSelectVisual,
     onStepVisualDuration,
+    onToggleAnchorPlacement,
+    onPlaceAnchor,
+    onSelectAnchor,
     onSelectScrollEvent,
     previewScrollEditingId,
+    previewAnchorEditingId,
     onPreviewScrollEditStart,
     onPreviewScrollEditMove,
     onPreviewScrollEditEnd,
+    onPreviewAnchorEditStart,
+    onPreviewAnchorEditMove,
+    onPreviewAnchorEditEnd,
     visualCutEditingId,
     onVisualCutEditStart,
     onVisualCutEditMove,
@@ -2563,35 +3083,46 @@ function PreviewCanvas({
 }: {
     activeVisual: VisualClip | undefined;
     playhead: number;
+    canConfirmImageComposition: boolean;
     imageCompositionDraft: ImageCompositionDraft;
     imageCompositionConfirmError: string | null;
     previewZoom: number;
     previewMode: PreviewMode;
     previewStripHeightPx: number;
+    previewVisualSegments: PreviewScrollVisualSegment[];
     isConfirmingImageComposition: boolean;
+    isAddingAnchor: boolean;
+    isAnchorPlacementMode: boolean;
     isPreviewAudioEnabled: boolean;
     isPreviewFullscreen: boolean;
     isPreviewLocked: boolean;
     effects: EffectId[];
     visualClips: VisualClip[];
     scrollEvents: ScrollEventClip[];
+    anchors: AnchorListItem[];
     selectedId: string;
     onImageCompositionConfirm: () => Promise<void> | void;
     onImageCompositionLayerMove: (layerId: string, direction: 'up' | 'down') => void;
     onImageCompositionLayerPatch: (layerId: string, patch: ImageCompositionLayerPatch) => void;
+    onImageCompositionLayerRemove: (layerId: string) => void;
     onImageCompositionLayerSelect: (layerId: string) => void;
     onMediaDrop: (event: ReactDragEvent<HTMLElement>) => void;
     onPreviewModeChange: (mode: PreviewMode) => void;
     onPreviewStripHeightChange: (heightPx: number) => void;
+    onPreviewVisualSegmentsChange: (segments: PreviewScrollVisualSegment[]) => void;
     onPreviewZoomChange: (zoom: number) => void;
     onPreviewZoomStep: (delta: number) => void;
     onSelectVisual: (clipId: string) => void;
     onStepVisualDuration: (clipId: string, deltaSeconds: number) => void;
+    onToggleAnchorPlacement: () => void;
+    onPlaceAnchor: (stripPositionPx: number, stripHeightPx: number) => Promise<void> | void;
+    onSelectAnchor: (anchorId: number) => void;
     onSelectScrollEvent: (clipId: string) => void;
     onTogglePreviewAudio: () => void;
     onTogglePreviewFullscreen: () => void;
     onTogglePreviewLock: () => void;
 } & PreviewScrollPointerEditHandlers &
+    PreviewAnchorPointerEditHandlers &
     VisualCutPointerEditHandlers) {
     const [canvasSize, setCanvasSize] = useState<PreviewCanvasSize>({
         width: DEFAULT_PREVIEW_CANVAS_WIDTH,
@@ -2605,10 +3136,34 @@ function PreviewCanvas({
     const isCutEditMode = previewMode === 'cutEdit';
     const isMotionMode = previewMode === 'motion';
     const previewCoordinateHeightPx = getPreviewCoordinateHeight(previewStripHeightPx);
-    const previewPlayheadPixel = getPreviewPlayheadPixel(playhead, scrollEvents, previewCoordinateHeightPx);
+    const previewViewportHeightPx = Math.max(1, Math.round(canvasSize.height * previewZoom) - 34);
+    const previewPlayheadPixel = getPreviewPlayheadPixel(playhead, scrollEvents, previewCoordinateHeightPx, previewVisualSegments);
+    const previewScrollOffsetPx = getPreviewScrollOffset({
+        playhead,
+        scrollEvents,
+        stripHeightPx: previewCoordinateHeightPx,
+        viewportHeightPx: previewViewportHeightPx,
+        visualSegments: previewVisualSegments,
+    });
     const activeFxNames = effects
         .map((effectId) => effectById.get(effectId)?.name ?? effectId)
         .filter(Boolean);
+    const previewAnchorMarkers = useMemo(
+        () =>
+            anchors
+                .map((anchor) => ({
+                    anchor,
+                    top: getPreviewScrollPixel({
+                        canvasId: anchor.canvasId,
+                        index: anchor.index,
+                        position: anchor.position,
+                        stripHeightPx: previewCoordinateHeightPx,
+                        visualSegments: previewVisualSegments,
+                    }),
+                }))
+                .filter((marker): marker is { anchor: AnchorListItem; top: number } => typeof marker.top === 'number'),
+        [anchors, previewCoordinateHeightPx, previewVisualSegments],
+    );
 
     useEffect(() => {
         if (isCutEditMode) {
@@ -2624,8 +3179,22 @@ function PreviewCanvas({
         const updatePreviewStripMetrics = () => {
             const stripRect = strip.getBoundingClientRect();
             const nextHeight = getPreviewCoordinateHeight(stripRect.height);
+            const cutElements = Array.from(strip.querySelectorAll<HTMLElement>('.odx-preview-cut'));
+            const nextSegments = visualClips.map((clip, index) => {
+                const cut = cutElements[index];
+                const cutRect = cut?.getBoundingClientRect();
+
+                return {
+                    id: clip.id,
+                    canvasId: clip.canvasId,
+                    index: clip.index ?? index,
+                    top: cutRect ? cutRect.top - stripRect.top : index * getPreviewCutHeight(visualClips.length, nextHeight),
+                    height: cutRect ? cutRect.height : getPreviewCutHeight(visualClips.length, nextHeight),
+                };
+            });
 
             onPreviewStripHeightChange(nextHeight);
+            onPreviewVisualSegmentsChange(nextSegments);
         };
         const resizeObserver = new ResizeObserver(updatePreviewStripMetrics);
 
@@ -2636,7 +3205,7 @@ function PreviewCanvas({
         return () => {
             resizeObserver.disconnect();
         };
-    }, [isCutEditMode, onPreviewStripHeightChange, visualClips]);
+    }, [isCutEditMode, onPreviewStripHeightChange, onPreviewVisualSegmentsChange, visualClips]);
 
     const handlePreviewCanvasResizeStart = (event: ReactPointerEvent<HTMLElement>) => {
         if (isPreviewLocked) {
@@ -2690,6 +3259,20 @@ function PreviewCanvas({
         setCanvasResize(null);
     };
 
+    const handleAnchorPlacementClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+        if (!isAnchorPlacementMode || isPreviewLocked || isAddingAnchor) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const rect = event.currentTarget.getBoundingClientRect();
+        const stripPositionPx = clamp(event.clientY - rect.top, 0, previewCoordinateHeightPx);
+
+        void onPlaceAnchor(stripPositionPx, previewCoordinateHeightPx);
+    };
+
     return (
         <section className={`odx-stage odx-stage-${previewMode} ${canvasResize ? 'is-canvas-resizing' : ''} ${isPreviewFullscreen ? 'is-preview-fullscreen' : ''} ${isPreviewLocked ? 'is-preview-locked' : ''} ${isPreviewAudioEnabled ? '' : 'is-preview-muted'}`}>
             <div className="odx-stage-toolbar">
@@ -2728,6 +3311,7 @@ function PreviewCanvas({
             {isCutEditMode ? (
                 <CutEditWorkspace
                     activeVisual={activeVisual}
+                    canConfirmImageComposition={canConfirmImageComposition}
                     imageCompositionDraft={imageCompositionDraft}
                     imageCompositionConfirmError={imageCompositionConfirmError}
                     isConfirmingImageComposition={isConfirmingImageComposition}
@@ -2735,6 +3319,7 @@ function PreviewCanvas({
                     onImageCompositionConfirm={onImageCompositionConfirm}
                     onImageCompositionLayerMove={onImageCompositionLayerMove}
                     onImageCompositionLayerPatch={onImageCompositionLayerPatch}
+                    onImageCompositionLayerRemove={onImageCompositionLayerRemove}
                     onImageCompositionLayerSelect={onImageCompositionLayerSelect}
                     onMediaDrop={onMediaDrop}
                     onSelectVisual={onSelectVisual}
@@ -2768,7 +3353,14 @@ function PreviewCanvas({
                             <i />
                         </div>
                     </div>
-                    <div className="odx-strip-scroll">
+                    <div
+                        className="odx-strip-scroll"
+                        style={
+                            {
+                                transform: `translateY(-${previewScrollOffsetPx ?? 0}px)`,
+                            } as CSSProperties
+                        }
+                    >
                         <div className="odx-webtoon-strip" ref={previewStripRef}>
                             {visualClips.length > 0 ? (
                                 visualClips.map((clip, index) => (
@@ -2832,7 +3424,7 @@ function PreviewCanvas({
 
                                     return (
                                         <button
-                                            className={`odx-preview-scroll-event ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''} ${previewScrollEditingId === event.id ? 'is-pixel-editing' : ''}`}
+                                            className={`odx-preview-scroll-event ${isSelected ? 'is-selected' : ''} ${isActive ? 'is-active' : ''} ${previewScrollEditingId === event.id ? 'is-position-editing' : ''}`}
                                             key={event.id}
                                             onClick={() => onSelectScrollEvent(event.id)}
                                             onPointerCancel={onPreviewScrollEditEnd}
@@ -2845,7 +3437,7 @@ function PreviewCanvas({
                                             }}
                                             onPointerMove={onPreviewScrollEditMove}
                                             onPointerUp={onPreviewScrollEditEnd}
-                                            style={getPreviewScrollEventStyle(event, previewCoordinateHeightPx)}
+                                            style={getPreviewScrollEventStyle(event, previewCoordinateHeightPx, previewVisualSegments)}
                                             type="button"
                                         >
                                             <span
@@ -2876,11 +3468,12 @@ function PreviewCanvas({
                                     );
                                 })}
                                 {handleScrollEvent ? (
-                                    <div className="odx-scroll-handles">
-                                        <span className="odx-scroll-handle-band" style={getPreviewScrollBandStyle(handleScrollEvent, previewCoordinateHeightPx)} />
+                                    <div className="odx-scroll-handles" style={{ height: `${previewCoordinateHeightPx}px` }}>
+                                        <span className="odx-scroll-handle-band" style={getPreviewScrollBandStyle(handleScrollEvent, previewCoordinateHeightPx, previewVisualSegments)} />
                                         <button
-                                            aria-label="스크롤 이벤트 시작 픽셀 조절"
+                                            aria-label="스크롤 이벤트 시작 위치 조절"
                                             className="odx-scroll-strip-line odx-scroll-strip-start"
+                                            onPointerCancel={onPreviewScrollEditEnd}
                                             onPointerDown={(pointerEvent) => {
                                                 if (isPreviewLocked) {
                                                     return;
@@ -2888,14 +3481,17 @@ function PreviewCanvas({
 
                                                 onPreviewScrollEditStart({ event: pointerEvent, item: handleScrollEvent, mode: 'resize-start' });
                                             }}
-                                            style={getPreviewScrollHandleStyle(handleScrollEvent.previewStartPx, previewCoordinateHeightPx)}
+                                            onPointerMove={onPreviewScrollEditMove}
+                                            onPointerUp={onPreviewScrollEditEnd}
+                                            style={getPreviewScrollHandleStyle(getScrollEventStartPixel(handleScrollEvent, previewCoordinateHeightPx, previewVisualSegments))}
                                             type="button"
                                         >
-                                            <span>시작 ▲ {Math.round(handleScrollEvent.previewStartPx)}</span>
+                                            <span>시작 ▲ {formatScrollIndexedPosition(handleScrollEvent.startIndex, handleScrollEvent.startPosition)}</span>
                                         </button>
                                         <button
-                                            aria-label="스크롤 이벤트 종료 픽셀 조절"
+                                            aria-label="스크롤 이벤트 종료 위치 조절"
                                             className="odx-scroll-strip-line odx-scroll-strip-end"
+                                            onPointerCancel={onPreviewScrollEditEnd}
                                             onPointerDown={(pointerEvent) => {
                                                 if (isPreviewLocked) {
                                                     return;
@@ -2903,14 +3499,54 @@ function PreviewCanvas({
 
                                                 onPreviewScrollEditStart({ event: pointerEvent, item: handleScrollEvent, mode: 'resize-end' });
                                             }}
-                                            style={getPreviewScrollHandleStyle(handleScrollEvent.previewEndPx, previewCoordinateHeightPx)}
+                                            onPointerMove={onPreviewScrollEditMove}
+                                            onPointerUp={onPreviewScrollEditEnd}
+                                            style={getPreviewScrollHandleStyle(getScrollEventEndPixel(handleScrollEvent, previewCoordinateHeightPx, previewVisualSegments))}
                                             type="button"
                                         >
-                                            <span>종료 ▼ {Math.round(handleScrollEvent.previewEndPx)}</span>
+                                            <span>종료 ▼ {formatScrollIndexedPosition(handleScrollEvent.endIndex, handleScrollEvent.endPosition)}</span>
                                         </button>
                                     </div>
                                 ) : null}
                             </div>
+                        ) : null}
+                        {isMotionMode ? (
+                            <div className="odx-preview-anchor-layer" style={{ height: `${previewCoordinateHeightPx}px` }}>
+                                {previewAnchorMarkers.map(({ anchor, top }) => (
+                                    <button
+                                        aria-label={`앵커 ${anchor.id}`}
+                                        className={`odx-preview-anchor-marker ${selectedId === getAnchorSelectionId(anchor.id) ? 'is-selected' : ''} ${previewAnchorEditingId === anchor.id ? 'is-dragging' : ''}`}
+                                        key={anchor.id}
+                                        onClick={() => onSelectAnchor(anchor.id)}
+                                        onPointerCancel={onPreviewAnchorEditEnd}
+                                        onPointerDown={(pointerEvent) => {
+                                            if (isPreviewLocked || isAddingAnchor) {
+                                                return;
+                                            }
+
+                                            onPreviewAnchorEditStart({ event: pointerEvent, anchor, top });
+                                        }}
+                                        onPointerMove={onPreviewAnchorEditMove}
+                                        onPointerUp={onPreviewAnchorEditEnd}
+                                        style={{ top: `${top}px` }}
+                                        type="button"
+                                    >
+                                        <b>A{anchor.id}</b>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : null}
+                        {isMotionMode && isAnchorPlacementMode ? (
+                            <button
+                                aria-label="앵커 위치 선택"
+                                className="odx-anchor-placement-layer"
+                                disabled={isPreviewLocked || isAddingAnchor}
+                                onClick={handleAnchorPlacementClick}
+                                style={{ height: `${previewCoordinateHeightPx}px` }}
+                                type="button"
+                            >
+                                <span>클릭해서 앵커 추가</span>
+                            </button>
                         ) : null}
                         {previewPlayheadPixel !== undefined ? (
                             <div className="odx-strip-playhead" style={{ top: `${previewPlayheadPixel}px` }}>
@@ -2941,6 +3577,23 @@ function PreviewCanvas({
                     />
                 </div>
                 <div className="odx-preview-side">
+                    <button
+                        aria-label={isAddingAnchor ? '앵커 추가 중' : isAnchorPlacementMode ? '앵커 위치 선택 취소' : '앵커 추가'}
+                        aria-pressed={isAnchorPlacementMode}
+                        className={`odx-icon-btn ${isAnchorPlacementMode || isAddingAnchor ? 'is-active' : ''}`}
+                        disabled={isPreviewLocked || isAddingAnchor}
+                        onClick={onToggleAnchorPlacement}
+                        title={
+                            isPreviewLocked
+                                ? '잠금 해제 후 앵커를 추가할 수 있습니다.'
+                                : isAnchorPlacementMode
+                                  ? '앵커 위치 선택 취소'
+                                  : '이미지 스트립에서 앵커 위치 선택'
+                        }
+                        type="button"
+                    >
+                        <StudioIcon name="anchor" size={17} />
+                    </button>
                     <button aria-label={isPreviewAudioEnabled ? '소리 끄기' : '소리 켜기'} aria-pressed={isPreviewAudioEnabled} className={`odx-icon-btn ${isPreviewAudioEnabled ? 'is-active' : ''}`} onClick={onTogglePreviewAudio} type="button">
                         <StudioIcon name="speaker" size={17} />
                     </button>
@@ -2964,13 +3617,15 @@ function InspectorPanel({
     trackById,
     characterById,
     previewStripHeightPx,
+    previewVisualSegments,
     cueScriptState,
     onCueScriptDraftChange,
     onSaveCueScript,
     onStepTimelineItem,
-    onNudgeScrollPixel,
+    onNudgeScrollPosition,
     onStepVisualDuration,
     onDeleteTimelineItem,
+    onResizeStart,
 }: {
     selectedItem: Selection | undefined;
     effects: EffectId[];
@@ -2978,19 +3633,22 @@ function InspectorPanel({
     trackById: Map<string, AudioTrackDefinition>;
     characterById: Map<string, CharacterDefinition>;
     previewStripHeightPx: number;
+    previewVisualSegments: PreviewScrollVisualSegment[];
     cueScriptState: CueScriptPanelState;
     onCueScriptDraftChange: (script: string) => void;
     onSaveCueScript: () => Promise<void> | void;
     onStepTimelineItem: (itemKind: TimelineItemKind, itemId: string, edge: 'start' | 'end', deltaSeconds: number) => void;
-    onNudgeScrollPixel: (itemId: string, edge: 'start' | 'end', deltaPx: number) => void;
+    onNudgeScrollPosition: (itemId: string, edge: 'start' | 'end', deltaPx: number) => void;
     onStepVisualDuration: (clipId: string, deltaSeconds: number) => void;
     onDeleteTimelineItem: (itemKind: TimelineItemKind, itemId: string) => void;
+    onResizeStart: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
     const item = selectedItem ?? activeVisual;
 
     if (!item) {
         return (
             <aside className="odx-inspector">
+                <button aria-label="인스펙터 폭 조절" className="odx-inspector-resize-boundary" onPointerDown={onResizeStart} type="button" />
                 <div className="odx-inspector-head">
                     <p className="odx-eyebrow">INSPECTOR</p>
                     <h2>선택 없음</h2>
@@ -3005,24 +3663,86 @@ function InspectorPanel({
     }
 
     const isTimelineItem = isTimelineClip(item);
+    const isAnchor = isAnchorSelection(item);
     const isScrollEvent = isScrollEventClip(item);
     const isAudioClip = isTimelineItem && !isScrollEvent;
-    const visualItem = isTimelineItem ? undefined : item;
+    const visualItem = !isTimelineItem && !isAnchor ? item : undefined;
     const character = isAudioClip && item.characterId ? characterById.get(item.characterId) : undefined;
-    const itemTitle = isTimelineItem ? item.label : `${item.label} · ${item.description}`;
-    const itemMeta = isScrollEvent
-        ? `시간 ${formatTime(item.start)} · 픽셀 ${item.previewStartPx}px -> ${item.previewEndPx}px`
+    const itemTitle = isTimelineItem || isAnchor ? item.label : `${item.label} · ${item.description}`;
+    const scrollStartPositionLabel = isScrollEvent ? formatScrollIndexedPosition(item.startIndex, item.startPosition) : '';
+    const scrollEndPositionLabel = isScrollEvent ? formatScrollIndexedPosition(item.endIndex, item.endPosition) : '';
+    const itemMeta = isAnchor
+        ? `${trackById.get(item.trackId)?.label ?? `트랙 ${item.trackId}`} · ${item.sublabel}`
+        : isScrollEvent
+        ? `시간 ${formatTime(item.start)} · 위치 ${scrollStartPositionLabel} -> ${scrollEndPositionLabel}`
         : isAudioClip
           ? `${trackById.get(item.track)?.label ?? item.track} · ${item.sublabel}`
           : `${visualItem?.kind.toUpperCase() ?? 'CUT'} · ${item.duration}s`;
-    const previewCoordinateHeightPx = getPreviewCoordinateHeight(previewStripHeightPx);
-    const scrollDistance = isScrollEvent ? Math.abs(item.previewEndPx - item.previewStartPx) : 0;
+    const scrollStartPixel = isScrollEvent ? getScrollEventStartPixel(item, previewStripHeightPx, previewVisualSegments) : 0;
+    const scrollEndPixel = isScrollEvent ? getScrollEventEndPixel(item, previewStripHeightPx, previewVisualSegments) : 0;
+    const scrollDistance = isScrollEvent ? Math.abs(scrollEndPixel - scrollStartPixel) : 0;
     const scrollSpeed = isScrollEvent ? Math.round(scrollDistance / Math.max(1, item.duration)) : 0;
-    const scrollStartTop = isScrollEvent ? clamp((item.previewStartPx / previewCoordinateHeightPx) * 100, 0, 100) : 0;
-    const scrollEndTop = isScrollEvent ? clamp((item.previewEndPx / previewCoordinateHeightPx) * 100, 0, 100) : 0;
+    const scrollStartTop = isScrollEvent ? clamp((scrollStartPixel / Math.max(1, previewStripHeightPx)) * 100, 0, 100) : 0;
+    const scrollEndTop = isScrollEvent ? clamp((scrollEndPixel / Math.max(1, previewStripHeightPx)) * 100, 0, 100) : 0;
+
+    if (isAnchor) {
+        return (
+            <aside className="odx-inspector">
+                <button aria-label="인스펙터 폭 조절" className="odx-inspector-resize-boundary" onPointerDown={onResizeStart} type="button" />
+                <div className="odx-inspector-head">
+                    <p className="odx-eyebrow">INSPECTOR</p>
+                    <h2>{getItemTypeLabel(item, trackById)}</h2>
+                </div>
+                <div className="odx-inspector-body">
+                    <section className="odx-inspector-card">
+                        <div className="odx-selected-title">
+                            <span>{itemTitle}</span>
+                            <small>{itemMeta}</small>
+                        </div>
+                        <dl className="odx-property-grid">
+                            <div>
+                                <dt>시간</dt>
+                                <dd>{formatTime(toTimelineSeconds(item.time))}</dd>
+                            </div>
+                            <div>
+                                <dt>트랙</dt>
+                                <dd>{trackById.get(item.trackId)?.label ?? item.trackId}</dd>
+                            </div>
+                            <div>
+                                <dt>캔버스</dt>
+                                <dd>{item.canvasId}</dd>
+                            </div>
+                            <div>
+                                <dt>위치</dt>
+                                <dd>{formatScrollIndexedPosition(item.index, item.position)}</dd>
+                            </div>
+                        </dl>
+                    </section>
+                    <section className="odx-inspector-card">
+                        <h3>앵커 위치</h3>
+                        <div className="odx-scroll-geometry">
+                            <div>
+                                <span>media index</span>
+                                <b>{item.index + 1}</b>
+                            </div>
+                            <div>
+                                <span>media percent</span>
+                                <b>{Math.round(item.position)}%</b>
+                            </div>
+                            <div>
+                                <span>timeline</span>
+                                <b>{formatTime(toTimelineSeconds(item.time))}</b>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </aside>
+        );
+    }
 
     return (
         <aside className="odx-inspector">
+            <button aria-label="인스펙터 폭 조절" className="odx-inspector-resize-boundary" onPointerDown={onResizeStart} type="button" />
             <div className="odx-inspector-head">
                 <p className="odx-eyebrow">INSPECTOR</p>
                 <h2>{getItemTypeLabel(item, trackById)}</h2>
@@ -3092,25 +3812,25 @@ function InspectorPanel({
                                 </div>
                             </div>
                             <div className="odx-step-field">
-                                <span>시작 픽셀</span>
+                                <span>시작 위치</span>
                                 <div className="odx-dur-step">
-                                    <button onClick={() => onNudgeScrollPixel(item.id, 'start', -25)} type="button">
+                                    <button onClick={() => onNudgeScrollPosition(item.id, 'start', -SCROLL_POSITION_STEP_PX)} type="button">
                                         -
                                     </button>
-                                    <b>{Math.round(item.previewStartPx)}px</b>
-                                    <button onClick={() => onNudgeScrollPixel(item.id, 'start', 25)} type="button">
+                                    <b>{scrollStartPositionLabel}</b>
+                                    <button onClick={() => onNudgeScrollPosition(item.id, 'start', SCROLL_POSITION_STEP_PX)} type="button">
                                         +
                                     </button>
                                 </div>
                             </div>
                             <div className="odx-step-field">
-                                <span>종료 픽셀</span>
+                                <span>종료 위치</span>
                                 <div className="odx-dur-step">
-                                    <button onClick={() => onNudgeScrollPixel(item.id, 'end', -25)} type="button">
+                                    <button onClick={() => onNudgeScrollPosition(item.id, 'end', -SCROLL_POSITION_STEP_PX)} type="button">
                                         -
                                     </button>
-                                    <b>{Math.round(item.previewEndPx)}px</b>
-                                    <button onClick={() => onNudgeScrollPixel(item.id, 'end', 25)} type="button">
+                                    <b>{scrollEndPositionLabel}</b>
+                                    <button onClick={() => onNudgeScrollPosition(item.id, 'end', SCROLL_POSITION_STEP_PX)} type="button">
                                         +
                                     </button>
                                 </div>
@@ -3249,7 +3969,7 @@ function InspectorPanel({
                 </section>
                 {isScrollEvent ? (
                     <section className="odx-inspector-card">
-                        <h3>프리뷰 스크롤 픽셀</h3>
+                        <h3>프리뷰 스크롤 위치</h3>
                         <div className="odx-scroll-geometry">
                             <div>
                                 <span>시간 구간</span>
@@ -3260,56 +3980,57 @@ function InspectorPanel({
                                 </b>
                             </div>
                             <div>
-                                <span>시작 픽셀</span>
-                                <b>{Math.round(item.previewStartPx)} px</b>
+                                <span>시작 위치</span>
+                                <b>{scrollStartPositionLabel}</b>
                             </div>
                             <div>
-                                <span>종료 픽셀</span>
-                                <b>{Math.round(item.previewEndPx)} px</b>
+                                <span>종료 위치</span>
+                                <b>{scrollEndPositionLabel}</b>
                             </div>
                         </div>
                     </section>
                 ) : null}
-                <section className="odx-inspector-card">
-                    <h3>오디오 분석</h3>
-                    <div className="odx-meter">
-                        {waveformBars.map((height, index) => (
-                            <i key={`${height}-${index}`} style={{ height: `${height}px` }} />
-                        ))}
-                    </div>
-                    <div className="odx-property-grid">
-                        <div>
-                            <dt>Peak</dt>
-                            <dd>-3.1 dB</dd>
-                        </div>
-                        <div>
-                            <dt>LUFS</dt>
-                            <dd>-16.8</dd>
-                        </div>
-                    </div>
-                </section>
-                <section className="odx-inspector-card">
-                    <h3>자동화</h3>
-                    <div className="odx-automation-row">
-                        <span>입장</span>
-                        <b>fade · 0.35s</b>
-                    </div>
-                    <div className="odx-automation-row">
-                        <span>감정톤</span>
-                        <b>긴장 72%</b>
-                    </div>
-                    <div className="odx-automation-row">
-                        <span>자막 싱크</span>
-                        <b>+04f</b>
-                    </div>
-                </section>
+                {isAudioClip ? (
+                    <>
+                        <section className="odx-inspector-card">
+                            <h3>오디오 분석</h3>
+                            <div className="odx-meter">
+                                {waveformBars.map((height, index) => (
+                                    <i key={`${height}-${index}`} style={{ height: `${height}px` }} />
+                                ))}
+                            </div>
+                            <div className="odx-property-grid">
+                                <div>
+                                    <dt>Peak</dt>
+                                    <dd>-3.1 dB</dd>
+                                </div>
+                                <div>
+                                    <dt>LUFS</dt>
+                                    <dd>-16.8</dd>
+                                </div>
+                            </div>
+                        </section>
+                        <section className="odx-inspector-card">
+                            <h3>자동화</h3>
+                            <div className="odx-automation-row">
+                                <span>입장</span>
+                                <b>fade · 0.35s</b>
+                            </div>
+                            <div className="odx-automation-row">
+                                <span>감정톤</span>
+                                <b>긴장 72%</b>
+                            </div>
+                            <div className="odx-automation-row">
+                                <span>자막 싱크</span>
+                                <b>+04f</b>
+                            </div>
+                        </section>
+                    </>
+                ) : null}
                 {isScrollEvent || isAudioClip ? (
                     <section className="odx-inspector-actions">
                         <button className="odx-danger-action" onClick={() => onDeleteTimelineItem(isScrollEvent ? 'scroll' : 'audio', item.id)} type="button">
                             {isScrollEvent ? '이벤트 삭제' : '큐 삭제'}
-                        </button>
-                        <button className="odx-apply-action" type="button">
-                            적용
                         </button>
                     </section>
                 ) : null}
@@ -3577,6 +4298,7 @@ function Timeline({
     audioTracks,
     timelineClips,
     scrollEvents,
+    anchors,
     trackLoadError,
     characterById,
     timelineHeight,
@@ -3592,14 +4314,19 @@ function Timeline({
     mutedTrackIds,
     soloTrackIds,
     lockedTrackIds,
+    trackContextMenu,
+    deletingTrackId,
     timelineTool,
     isSnapEnabled,
     effectsById,
     onSelect,
     onFocusTrack,
+    onOpenTrackContextMenu,
+    onCloseTrackContextMenu,
+    onDeleteTrack,
     onScrub,
+    onSelectAnchor,
     onAddCue,
-    onAddScrollEvent,
     onOpenTrackModal,
     onTimelineToolChange,
     onToggleSnap,
@@ -3621,6 +4348,7 @@ function Timeline({
     audioTracks: AudioTrackDefinition[];
     timelineClips: TimelineClip[];
     scrollEvents: ScrollEventClip[];
+    anchors: AnchorListItem[];
     trackLoadError: string | null;
     characterById: Map<string, CharacterDefinition>;
     playhead: number;
@@ -3631,14 +4359,19 @@ function Timeline({
     mutedTrackIds: string[];
     soloTrackIds: string[];
     lockedTrackIds: string[];
+    trackContextMenu: TrackContextMenuState | null;
+    deletingTrackId: string | null;
     timelineTool: TimelineToolMode;
     isSnapEnabled: boolean;
     effectsById: Record<string, EffectId[]>;
     onSelect: (clipId: string) => void;
     onFocusTrack: (trackId: string) => void;
+    onOpenTrackContextMenu: (event: ReactMouseEvent<HTMLElement>, track: AudioTrackDefinition) => void;
+    onCloseTrackContextMenu: () => void;
+    onDeleteTrack: (trackId: string) => Promise<void>;
     onScrub: (seconds: number) => void;
+    onSelectAnchor: (anchorId: number) => void;
     onAddCue: () => Promise<void> | void;
-    onAddScrollEvent: () => void;
     onOpenTrackModal: () => void;
     onTimelineToolChange: (tool: TimelineToolMode) => void;
     onToggleSnap: () => void;
@@ -3667,9 +4400,8 @@ function Timeline({
     const gridlines = ticks.filter((tick) => tick.kind !== 'minor');
     const contentWidth = Math.max(1, Math.ceil(contentSeconds * pxPerSecond));
     const rulerStyle = { width: `${contentWidth}px` };
-    const zoomPercent = Math.round((pxPerSecond / 16) * 100);
-    const hasScrollTrack = audioTracks.some((track) => isScrollTrackKind(track.kind));
-
+    const gridStep = getTimelineGridStep(pxPerSecond);
+    const zoomPercent = Math.round((pxPerSecond / DEFAULT_PX_PER_SECOND) * 100);
     useEffect(() => {
         const timelineScroll = timelineScrollRef.current;
 
@@ -3808,16 +4540,6 @@ function Timeline({
                         <StudioIcon name="plus" size={13} />
                         큐
                     </button>
-                    <button
-                        className="odx-timeline-action"
-                        disabled={!hasScrollTrack}
-                        onClick={onAddScrollEvent}
-                        title={hasScrollTrack ? '스크롤 이벤트 추가' : '스크롤 트랙을 먼저 추가해 주세요.'}
-                        type="button"
-                    >
-                        <StudioIcon name="plus" size={13} />
-                        스크롤 이벤트
-                    </button>
                     <button className={`odx-snap-pill ${isSnapEnabled ? 'is-active' : ''}`} onClick={onToggleSnap} type="button">
                         스냅
                     </button>
@@ -3830,11 +4552,11 @@ function Timeline({
                         </button>
                         <input
                             aria-label="타임라인 간격"
-                            aria-valuetext={`${pxPerSecond} px/s, ${zoomPercent}%`}
+                            aria-valuetext={`${pxPerSecond} px/s, ${zoomPercent}%, 1칸 ${formatTimelineGridStep(gridStep)}`}
                             max={MAX_PX_PER_SECOND}
                             min={MIN_PX_PER_SECOND}
                             onChange={(event) => onTimelineZoomChange(Number(event.target.value))}
-                            step={1}
+                            step={0.1}
                             type="range"
                             value={pxPerSecond}
                         />
@@ -3844,7 +4566,7 @@ function Timeline({
                                 <i>+</i>
                             </span>
                         </button>
-                        <span className="odx-zoom-value">{zoomPercent}%</span>
+                        <span className="odx-zoom-value">1칸 {formatTimelineGridStep(gridStep)}</span>
                     </div>
                 </div>
             </div>
@@ -3867,6 +4589,7 @@ function Timeline({
                             className={`odx-track-header ${isFocused ? 'is-focused' : ''} ${isMuted ? 'is-muted' : ''} ${isSolo ? 'is-solo' : ''} ${isLocked ? 'is-locked' : ''}`}
                             key={track.id}
                             onClick={() => onFocusTrack(track.id)}
+                            onContextMenu={(event) => onOpenTrackContextMenu(event, track)}
                             onKeyDown={(event) => {
                                 if (event.key === 'Enter' || event.key === ' ') {
                                     event.preventDefault();
@@ -3927,6 +4650,22 @@ function Timeline({
                     <StudioIcon name="plus" size={14} />
                     트랙 추가
                 </button>
+                {trackContextMenu ? (
+                    <>
+                        <button aria-label="트랙 메뉴 닫기" className="odx-track-context-backdrop" onClick={onCloseTrackContextMenu} type="button" />
+                        <div className="odx-track-context-menu" role="menu" style={{ left: trackContextMenu.x, top: trackContextMenu.y }}>
+                            <button
+                                disabled={deletingTrackId === trackContextMenu.trackId}
+                                onClick={() => void onDeleteTrack(trackContextMenu.trackId)}
+                                role="menuitem"
+                                title={`${trackContextMenu.trackLabel} 삭제`}
+                                type="button"
+                            >
+                                {deletingTrackId === trackContextMenu.trackId ? '삭제 중...' : '트랙 삭제'}
+                            </button>
+                        </div>
+                    </>
+                ) : null}
             </div>
             <div className="odx-timeline-scroll" ref={timelineScrollRef}>
                 <div className="odx-ruler" style={rulerStyle}>
@@ -3954,6 +4693,21 @@ function Timeline({
                     <div className="odx-track-gridlines" aria-hidden="true">
                         {gridlines.map((tick) => (
                             <span className={`odx-track-gridline is-${tick.kind}`} key={`${tick.kind}-${tick.time}`} style={{ left: `${tick.time * pxPerSecond}px` }} />
+                        ))}
+                    </div>
+                    <div className="odx-timeline-anchor-layer" aria-label="앵커 마커">
+                        {anchors.map((anchor) => (
+                            <button
+                                aria-label={`앵커 ${anchor.id}`}
+                                className={`odx-timeline-anchor-marker ${selectedId === getAnchorSelectionId(anchor.id) ? 'is-selected' : ''}`}
+                                key={anchor.id}
+                                onClick={() => onSelectAnchor(anchor.id)}
+                                style={{ left: `${toTimelineSeconds(anchor.time) * pxPerSecond}px` }}
+                                title={`A${anchor.id} · ${formatTime(toTimelineSeconds(anchor.time))}`}
+                                type="button"
+                            >
+                                <b>A{anchor.id}</b>
+                            </button>
                         ))}
                     </div>
                     <AudioTracks
@@ -4032,7 +4786,8 @@ export function StudioEditor({
     const [focusedTrackId, setFocusedTrackId] = useState('');
     const [playhead, setPlayhead] = useState(INITIAL_PLAYHEAD_SECONDS);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [pxPerSecond, setPxPerSecond] = useState(16);
+    const timelineAudioPlaybackRef = useRef<StudioTimelineAudioState>(new Map());
+    const [pxPerSecond, setPxPerSecond] = useState(DEFAULT_PX_PER_SECOND);
     const [previewZoom, setPreviewZoom] = useState(1);
     const [previewMode, setPreviewMode] = useState<PreviewMode>('preview');
     const [timelineTool, setTimelineTool] = useState<TimelineToolMode>('select');
@@ -4044,6 +4799,7 @@ export function StudioEditor({
     const [isPreviewAudioEnabled, setIsPreviewAudioEnabled] = useState(true);
     const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
     const [isPreviewLocked, setIsPreviewLocked] = useState(false);
+    const [isAddingAnchor, setIsAddingAnchor] = useState(false);
     const [previewStripHeightPx, setPreviewStripHeightPx] = useState(PREVIEW_SCROLL_STRIP_HEIGHT_PX);
     const [timelineHeight, setTimelineHeight] = useState(DEFAULT_TIMELINE_PANEL_HEIGHT);
     const [timelineSidebarWidth, setTimelineSidebarWidth] = useState(DEFAULT_TIMELINE_SIDEBAR_WIDTH);
@@ -4057,18 +4813,28 @@ export function StudioEditor({
     const [characterCreateError, setCharacterCreateError] = useState<string | null>(null);
     const [mediaItems, setMediaItems] = useState<MediaListItem[]>([]);
     const [mediaUploadState, setMediaUploadState] = useState<MediaUploadState>({ status: 'idle' });
+    const [selectedMediaIds, setSelectedMediaIds] = useState<number[]>([]);
     const [audioItems, setAudioItems] = useState<AudioListItem[]>([]);
     const [audioUploadState, setAudioUploadState] = useState<AudioUploadState>({ status: 'idle' });
     const [mediaContextMenu, setMediaContextMenu] = useState<MediaContextMenuState | null>(null);
     const [deletingMediaId, setDeletingMediaId] = useState<number | null>(null);
+    const [trackContextMenu, setTrackContextMenu] = useState<TrackContextMenuState | null>(null);
+    const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
     const [editableVisualClips, setEditableVisualClips] = useState<VisualClip[]>([]);
     const [imageCompositionDraft, setImageCompositionDraft] = useState<ImageCompositionDraft>(
         createEmptyImageCompositionDraft,
     );
+    const [dirtyImageCompositionCanvasIds, setDirtyImageCompositionCanvasIds] = useState<number[]>([]);
     const [isConfirmingImageComposition, setIsConfirmingImageComposition] = useState(false);
     const [imageCompositionConfirmError, setImageCompositionConfirmError] = useState<string | null>(null);
+    const [tracks, setTracks] = useState<TrackListItem[]>([]);
+    const [dialogueCues, setDialogueCues] = useState<DialogueCue[]>([]);
+    const [isDialogueLoading, setIsDialogueLoading] = useState(false);
+    const [dialogueLoadError, setDialogueLoadError] = useState<string | null>(null);
     const [timelineData, setTimelineData] = useState<TimelineData>(emptyTimelineData);
     const [scrollEvents, setScrollEvents] = useState<ScrollEventClip[]>([]);
+    const [anchors, setAnchors] = useState<AnchorListItem[]>([]);
+    const [anchorPlacementTrackId, setAnchorPlacementTrackId] = useState<string | null>(null);
     const [trackLoadError, setTrackLoadError] = useState<string | null>(null);
     const [cueScriptDraft, setCueScriptDraft] = useState('');
     const [isSavingCueScript, setIsSavingCueScript] = useState(false);
@@ -4076,7 +4842,11 @@ export function StudioEditor({
     const [timelinePointerEdit, setTimelinePointerEdit] = useState<TimelinePointerEdit | null>(null);
     const [timelinePanelResize, setTimelinePanelResize] = useState<TimelinePanelResize | null>(null);
     const [timelineSidebarResize, setTimelineSidebarResize] = useState<TimelineSidebarResize | null>(null);
+    const [inspectorWidth, setInspectorWidth] = useState(DEFAULT_INSPECTOR_WIDTH);
+    const [inspectorResize, setInspectorResize] = useState<InspectorResize | null>(null);
     const [previewScrollPointerEdit, setPreviewScrollPointerEdit] = useState<PreviewScrollPointerEdit | null>(null);
+    const [previewAnchorPointerEdit, setPreviewAnchorPointerEdit] = useState<PreviewAnchorPointerEdit | null>(null);
+    const [previewVisualSegments, setPreviewVisualSegments] = useState<PreviewScrollVisualSegment[]>([]);
     const [visualCutPointerEdit, setVisualCutPointerEdit] = useState<VisualCutPointerEdit | null>(null);
     const [isTrackModalOpen, setIsTrackModalOpen] = useState(false);
     const [newTrackType, setNewTrackType] = useState<TrackFormType>('record');
@@ -4089,19 +4859,43 @@ export function StudioEditor({
     const episodeLabel = formatEpisodeLabel(episode?.episodeNumber, episodeId);
     const episodeMeta = episode?.subTitle?.trim() ? `${episodeLabel} · ${episode.subTitle.trim()}` : episodeLabel;
     const characterById = useMemo(() => new Map(characters.map((character) => [character.id, character])), [characters]);
+    const dialogueLines = useMemo(
+        () =>
+            dialogueCues
+                .map((cue) => {
+                    const character = characterById.get(String(cue.characterId));
+                    const text = cue.script.trim();
+
+                    return {
+                        id: `cue-dialogue-${cue.id}`,
+                        cueId: cue.id,
+                        startTime: cue.startTime,
+                        time: formatTime(toTimelineSeconds(cue.startTime)),
+                        text: text || '대사 없음',
+                        meta: `${character?.name ?? `캐릭터 ${cue.characterId}`} · ${cue.trackName}`,
+                    };
+                })
+                .sort((a, b) => a.startTime - b.startTime || a.cueId - b.cueId),
+        [characterById, dialogueCues],
+    );
     const visualClipById = useMemo(() => new Map(editableVisualClips.map((clip) => [clip.id, clip])), [editableVisualClips]);
     const imageCompositionSources = useMemo(() => toImageCompositionSources(editableVisualClips), [editableVisualClips]);
+    const canConfirmImageComposition =
+        dirtyImageCompositionCanvasIds.length > 0 ||
+        imageCompositionDraft.layers.some((layer) => layer.isVisible && typeof layer.canvasId !== 'number');
     const audioTrackById = useMemo(() => new Map(timelineData.audioTracks.map((track) => [track.id, track])), [timelineData.audioTracks]);
     const audioClipById = useMemo(() => new Map(timelineData.timelineClips.map((clip) => [clip.id, clip])), [timelineData.timelineClips]);
     const scrollEventById = useMemo(() => new Map(scrollEvents.map((event) => [event.id, event])), [scrollEvents]);
+    const anchorBySelectionId = useMemo(() => new Map(anchors.map((anchor) => [getAnchorSelectionId(anchor.id), toAnchorSelection(anchor)])), [anchors]);
     const timelineDurationSeconds = useMemo(() => {
         const maxAudioEnd = timelineData.timelineClips.reduce((maxEnd, clip) => Math.max(maxEnd, clip.start + clip.duration), 0);
         const maxScrollEnd = scrollEvents.reduce((maxEnd, event) => Math.max(maxEnd, event.start + event.duration), 0);
         return Math.max(manualTimelineDurationSeconds, TIMELINE_DURATION_SECONDS, Math.ceil(maxAudioEnd), Math.ceil(maxScrollEnd));
     }, [manualTimelineDurationSeconds, scrollEvents, timelineData.timelineClips]);
     const activeVisual = useSelectedPreviewVisual(selectedId, editableVisualClips);
-    const selectedItem = getSelectedItem(selectedId, visualClipById, audioClipById, scrollEventById);
+    const selectedItem = getSelectedItem(selectedId, visualClipById, audioClipById, scrollEventById, anchorBySelectionId);
     const selectedEffects = getItemEffects(selectedItem ?? activeVisual, effectsById);
+    const isAnchorPlacementMode = anchorPlacementTrackId !== null;
     const selectedTrackCharacter = newTrackCharacterId ? characterById.get(newTrackCharacterId) : undefined;
     const canCreateTrack = !isCreatingTrack && (newTrackType !== 'record' || Boolean(selectedTrackCharacter));
     const cueScriptState: CueScriptPanelState = {
@@ -4162,6 +4956,16 @@ export function StudioEditor({
             ignore = true;
         };
     }, [episodeId, resolvedApiBaseUrl]);
+
+    useEffect(() => {
+        const availableMediaIds = new Set(mediaItems.map((item) => item.id));
+
+        setSelectedMediaIds((current) => {
+            const nextSelectionIds = current.filter((id) => availableMediaIds.has(id));
+
+            return nextSelectionIds.length === current.length ? current : nextSelectionIds;
+        });
+    }, [mediaItems]);
 
     useEffect(() => {
         let ignore = false;
@@ -4230,18 +5034,30 @@ export function StudioEditor({
     }, [selectedId]);
 
     useEffect(() => {
+        if (previewMode !== 'motion') {
+            setAnchorPlacementTrackId(null);
+        }
+    }, [previewMode]);
+
+    useEffect(() => {
         let ignore = false;
 
         listTracks(resolvedApiBaseUrl, episodeId)
-            .then((tracks) => {
-                if (!ignore) {
-                    const nextTimelineData = toTimelineData(tracks);
+            .then(async (tracks) => {
+                const nextTimelineData = toTimelineData(tracks);
+                const nextAnchors = await listAnchorsForTracks(
+                    resolvedApiBaseUrl,
+                    nextTimelineData.audioTracks.filter((track) => isScrollTrackKind(track.kind)).map((track) => track.id),
+                );
 
+                if (!ignore) {
+                    setTracks(tracks);
                     setTimelineData({
                         audioTracks: nextTimelineData.audioTracks,
                         timelineClips: nextTimelineData.timelineClips,
                     });
                     setScrollEvents(nextTimelineData.scrollEvents);
+                    setAnchors(nextAnchors);
                     setFocusedTrackId((current) => {
                         if (nextTimelineData.audioTracks.some((track) => track.id === current)) {
                             return current;
@@ -4258,8 +5074,11 @@ export function StudioEditor({
             })
             .catch((error) => {
                 if (!ignore) {
+                    setTracks([]);
                     setTimelineData(emptyTimelineData);
                     setScrollEvents([]);
+                    setAnchors([]);
+                    setAnchorPlacementTrackId(null);
                     setFocusedTrackId('');
                     setTrackLoadError(
                         error instanceof Error
@@ -4273,6 +5092,66 @@ export function StudioEditor({
             ignore = true;
         };
     }, [episodeId, resolvedApiBaseUrl]);
+
+    useEffect(() => {
+        let ignore = false;
+        const cueTracks = tracks.filter((track) => !isScrollTrackKind(track.type));
+
+        if (cueTracks.length === 0) {
+            setDialogueCues([]);
+            setDialogueLoadError(null);
+            setIsDialogueLoading(false);
+
+            return () => {
+                ignore = true;
+            };
+        }
+
+        setIsDialogueLoading(true);
+        setDialogueLoadError(null);
+
+        Promise.all(
+            cueTracks.map(async (track) => {
+                const cues = await listTrackCues(resolvedApiBaseUrl, String(track.id));
+
+                return cues
+                    .filter((cue) => typeof cue.characterId === 'number')
+                    .map((cue) => ({
+                        ...cue,
+                        trackName: track.name,
+                    }));
+            }),
+        )
+            .then((cueGroups) => {
+                if (!ignore) {
+                    setDialogueCues(
+                        cueGroups
+                            .flat()
+                            .sort((a, b) => a.startTime - b.startTime || a.id - b.id),
+                    );
+                    setDialogueLoadError(null);
+                }
+            })
+            .catch((error) => {
+                if (!ignore) {
+                    setDialogueCues([]);
+                    setDialogueLoadError(
+                        error instanceof Error
+                            ? `대사 목록을 불러오지 못했습니다: ${error.message}`
+                            : '대사 목록을 불러오지 못했습니다.',
+                    );
+                }
+            })
+            .finally(() => {
+                if (!ignore) {
+                    setIsDialogueLoading(false);
+                }
+            });
+
+        return () => {
+            ignore = true;
+        };
+    }, [resolvedApiBaseUrl, tracks]);
 
     useEffect(() => {
         if (!isPlaying) {
@@ -4303,6 +5182,29 @@ export function StudioEditor({
 
         return () => cancelAnimationFrame(animationFrame);
     }, [isPlaying, timelineDurationSeconds]);
+
+    useEffect(() => {
+        syncStudioTimelineAudioPlayback({
+            audioByClipId: timelineAudioPlaybackRef.current,
+            clips: timelineData.timelineClips,
+            createAudio: (url) => {
+                const audio = new Audio(url);
+                audio.preload = 'auto';
+                return audio;
+            },
+            isPlaying: isPlaying && isPreviewAudioEnabled,
+            mutedTrackIds,
+            playhead,
+            soloTrackIds,
+        });
+    }, [isPlaying, isPreviewAudioEnabled, mutedTrackIds, playhead, soloTrackIds, timelineData.timelineClips]);
+
+    useEffect(
+        () => () => {
+            stopStudioTimelineAudioPlayback(timelineAudioPlaybackRef.current);
+        },
+        [],
+    );
 
     useEffect(() => {
         if (!timelinePanelResize) {
@@ -4370,6 +5272,138 @@ export function StudioEditor({
         };
     }, [timelineSidebarResize]);
 
+    useEffect(() => {
+        if (!inspectorResize) {
+            return undefined;
+        }
+
+        const handlePointerMove = (event: PointerEvent) => {
+            event.preventDefault();
+            setInspectorWidth(
+                clamp(
+                    inspectorResize.originalWidth - (event.clientX - inspectorResize.pointerStartX),
+                    MIN_INSPECTOR_WIDTH,
+                    MAX_INSPECTOR_WIDTH,
+                ),
+            );
+        };
+
+        const handlePointerEnd = (event: PointerEvent) => {
+            event.preventDefault();
+            setInspectorResize(null);
+        };
+
+        window.addEventListener('pointermove', handlePointerMove, { passive: false });
+        window.addEventListener('pointerup', handlePointerEnd, { passive: false });
+        window.addEventListener('pointercancel', handlePointerEnd, { passive: false });
+
+        return () => {
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerEnd);
+            window.removeEventListener('pointercancel', handlePointerEnd);
+        };
+    }, [inspectorResize]);
+
+    const refreshTimelineTracks = async () => {
+        const nextTracks = await listTracks(resolvedApiBaseUrl, episodeId);
+        const nextTimelineData = toTimelineData(nextTracks);
+        const nextAnchors = await listAnchorsForTracks(
+            resolvedApiBaseUrl,
+            nextTimelineData.audioTracks.filter((track) => isScrollTrackKind(track.kind)).map((track) => track.id),
+        );
+
+        setTracks(nextTracks);
+        setTimelineData({
+            audioTracks: nextTimelineData.audioTracks,
+            timelineClips: nextTimelineData.timelineClips,
+        });
+        setScrollEvents(nextTimelineData.scrollEvents);
+        setAnchors(nextAnchors);
+
+        return nextTimelineData;
+    };
+
+    const findMatchingScrollEvent = (events: ScrollEventClip[], trackId: string, request: ScrollEventMutationRequest) =>
+        [...events].reverse().find((event) => {
+            const eventRequest = toScrollEventMutationRequest(event);
+
+            return (
+                eventRequest &&
+                event.track === trackId &&
+                eventRequest.startAnchorId === request.startAnchorId &&
+                eventRequest.endAnchorId === request.endAnchorId
+            );
+        });
+
+    const createScrollEventMutationRequest = async (event: ScrollEventClip) => {
+        const anchorRequests = toScrollAnchorMutationRequests(event);
+
+        if (!anchorRequests) {
+            throw new Error('스크롤 앵커 기준 이미지를 확인할 수 없습니다.');
+        }
+
+        const [startAnchor, endAnchor] = await Promise.all([
+            createAnchor(resolvedApiBaseUrl, event.track, anchorRequests.start),
+            createAnchor(resolvedApiBaseUrl, event.track, anchorRequests.end),
+        ]);
+
+        return {
+            startAnchorId: startAnchor.id,
+            endAnchorId: endAnchor.id,
+        };
+    };
+
+    const persistScrollEventUpdate = async (event: ScrollEventClip) => {
+        const scrollId = getScrollEventApiId(event);
+
+        if (scrollId === undefined) {
+            return;
+        }
+
+        try {
+            const request = await createScrollEventMutationRequest(event);
+
+            await updateScrollEvent(resolvedApiBaseUrl, event.track, scrollId, request);
+            await refreshTimelineTracks();
+            setTrackLoadError(null);
+        } catch (error) {
+            setTrackLoadError(error instanceof Error ? `스크롤 이벤트 저장에 실패했습니다: ${error.message}` : '스크롤 이벤트 저장에 실패했습니다.');
+        }
+    };
+
+    const persistAnchorUpdate = async (anchor: AnchorListItem, request: ScrollAnchorMutationRequest) => {
+        const nextAnchor = applyAnchorMutation(anchor, request);
+
+        try {
+            await updateAnchor(resolvedApiBaseUrl, String(anchor.trackId), anchor.id, request);
+            await refreshTimelineTracks();
+            setTrackLoadError(null);
+        } catch (error) {
+            setAnchors((current) => replaceAnchor(current, anchor));
+            setTrackLoadError(error instanceof Error ? `앵커 저장에 실패했습니다: ${error.message}` : '앵커 저장에 실패했습니다.');
+            setSelectedId(getAnchorSelectionId(anchor.id));
+        }
+
+        return nextAnchor;
+    };
+
+    const persistCueTimingUpdate = async (clip: TimelineClip) => {
+        const target = toCueMutationTarget(clip);
+
+        if (!target) {
+            return;
+        }
+
+        try {
+            await updateCue(resolvedApiBaseUrl, target.trackId, target.cueId, toCueTimingUpdateRequest(clip));
+            await refreshTimelineTracks();
+            setTrackLoadError(null);
+        } catch (error) {
+            await refreshTimelineTracks().catch(() => undefined);
+            setTrackLoadError(error instanceof Error ? `큐 위치 저장에 실패했습니다: ${error.message}` : '큐 위치 저장에 실패했습니다.');
+        }
+    };
+
     const handleSelectItem = (itemId: string) => {
         const timelineItem = audioClipById.get(itemId) ?? scrollEventById.get(itemId);
 
@@ -4381,9 +5415,79 @@ export function StudioEditor({
         }
     };
 
+    const handleSelectAnchor = (anchorId: number) => {
+        const anchor = anchors.find((item) => item.id === anchorId);
+
+        if (!anchor) {
+            return;
+        }
+
+        setSelectedId(getAnchorSelectionId(anchor.id));
+        setRangeSelectionIds([]);
+        setFocusedTrackId(String(anchor.trackId));
+    };
+
     const handleFocusTrack = (trackId: string) => {
         setFocusedTrackId(trackId);
         setRangeSelectionIds([]);
+    };
+
+    const handleOpenTrackContextMenu = (event: ReactMouseEvent<HTMLElement>, track: AudioTrackDefinition) => {
+        const menuWidth = 172;
+        const menuHeight = 44;
+
+        event.preventDefault();
+        event.stopPropagation();
+        setMediaContextMenu(null);
+        setFocusedTrackId(track.id);
+        setRangeSelectionIds([]);
+        setTrackContextMenu({
+            trackId: track.id,
+            trackLabel: track.label,
+            x: clamp(event.clientX, 8, Math.max(8, window.innerWidth - menuWidth)),
+            y: clamp(event.clientY, 8, Math.max(8, window.innerHeight - menuHeight)),
+        });
+    };
+
+    const handleCloseTrackContextMenu = () => {
+        setTrackContextMenu(null);
+    };
+
+    const handleDeleteTrack = async (trackId: string) => {
+        const deletedAnchorIds = anchors.filter((anchor) => String(anchor.trackId) === trackId).map((anchor) => getAnchorSelectionId(anchor.id));
+        const deletedItemIds = [...timelineData.timelineClips, ...scrollEvents]
+            .filter((item) => item.track === trackId)
+            .map((item) => item.id);
+        const deletedSelectionIds = [...deletedItemIds, ...deletedAnchorIds];
+
+        try {
+            setDeletingTrackId(trackId);
+            await deleteTrack(resolvedApiBaseUrl, episodeId, trackId);
+
+            const nextTimelineData = await refreshTimelineTracks();
+
+            setTrackContextMenu(null);
+            setMutedTrackIds((current) => current.filter((id) => id !== trackId));
+            setSoloTrackIds((current) => current.filter((id) => id !== trackId));
+            setLockedTrackIds((current) => current.filter((id) => id !== trackId));
+            setRangeSelectionIds((current) => current.filter((id) => !deletedSelectionIds.includes(id)));
+            setEffectsById((current) => {
+                const next = { ...current };
+
+                deletedSelectionIds.forEach((id) => {
+                    delete next[id];
+                });
+
+                return next;
+            });
+            setSelectedId((current) => (deletedSelectionIds.includes(current) ? activeVisual?.id ?? '' : current));
+            setFocusedTrackId((current) => (current === trackId ? nextTimelineData.audioTracks[0]?.id ?? '' : current));
+            setTrackLoadError(null);
+        } catch (error) {
+            setTrackLoadError(error instanceof Error ? `트랙 삭제에 실패했습니다: ${error.message}` : '트랙 삭제에 실패했습니다.');
+        } finally {
+            setDeletingTrackId(null);
+        }
     };
 
     const handleTimelineToolChange = (tool: TimelineToolMode) => {
@@ -4423,7 +5527,7 @@ export function StudioEditor({
         setFocusedTrackId(targetItem.track);
     };
 
-    const handleSplitTimelineItem = (itemKind: TimelineItemKind, itemId: string) => {
+    const handleSplitTimelineItem = async (itemKind: TimelineItemKind, itemId: string) => {
         setRangeSelectionIds([]);
 
         if (itemKind === 'scroll') {
@@ -4442,8 +5546,75 @@ export function StudioEditor({
             }
 
             const splitRatio = (splitAt - targetScrollEvent.start) / targetScrollEvent.duration;
-            const splitPixel = Math.round(targetScrollEvent.previewStartPx + (targetScrollEvent.previewEndPx - targetScrollEvent.previewStartPx) * splitRatio);
-            const rightScrollEventId = `${targetScrollEvent.id}-split-${Date.now().toString(36)}`;
+            const startPixel = getScrollEventStartPixel(targetScrollEvent, previewStripHeightPx, previewVisualSegments);
+            const endPixel = getScrollEventEndPixel(targetScrollEvent, previewStripHeightPx, previewVisualSegments);
+            const splitAnchor = getPreviewScrollAnchor({
+                stripPositionPx: startPixel + (endPixel - startPixel) * splitRatio,
+                stripHeightPx: previewStripHeightPx,
+                visualSegments: previewVisualSegments,
+            });
+            const leftAnchoredScrollEvent = applyScrollAnchorToEvent(
+                {
+                    ...targetScrollEvent,
+                    duration: splitAt - targetScrollEvent.start,
+                },
+                'end',
+                splitAnchor,
+            );
+            const leftScrollEvent = {
+                ...leftAnchoredScrollEvent,
+                sublabel: formatScrollRangeLabel(
+                    leftAnchoredScrollEvent.startIndex,
+                    leftAnchoredScrollEvent.startPosition,
+                    leftAnchoredScrollEvent.endIndex,
+                    leftAnchoredScrollEvent.endPosition,
+                ),
+            };
+            const { scrollId: _rightScrollId, ...rightScrollEventBase } = targetScrollEvent;
+            const rightAnchoredScrollEvent = applyScrollAnchorToEvent(
+                {
+                    ...rightScrollEventBase,
+                    id: `${targetScrollEvent.id}-split-${Date.now().toString(36)}`,
+                    start: splitAt,
+                    duration: targetEnd - splitAt,
+                    label: `${targetScrollEvent.label} B`,
+                },
+                'start',
+                splitAnchor,
+            );
+            const rightScrollEvent = {
+                ...rightAnchoredScrollEvent,
+                sublabel: formatScrollRangeLabel(
+                    rightAnchoredScrollEvent.startIndex,
+                    rightAnchoredScrollEvent.startPosition,
+                    rightAnchoredScrollEvent.endIndex,
+                    rightAnchoredScrollEvent.endPosition,
+                ),
+            };
+            const targetScrollId = getScrollEventApiId(targetScrollEvent);
+
+            if (targetScrollId !== undefined) {
+                try {
+                    const leftRequest = await createScrollEventMutationRequest(leftScrollEvent);
+                    const rightRequest = await createScrollEventMutationRequest(rightScrollEvent);
+
+                    await updateScrollEvent(resolvedApiBaseUrl, targetScrollEvent.track, targetScrollId, leftRequest);
+                    await createScrollEvent(resolvedApiBaseUrl, targetScrollEvent.track, rightRequest);
+
+                    const nextTimelineData = await refreshTimelineTracks();
+                    const createdRightScrollEvent = findMatchingScrollEvent(nextTimelineData.scrollEvents, targetScrollEvent.track, rightRequest);
+
+                    setSelectedId(createdRightScrollEvent?.id ?? itemId);
+                    setPlayhead(splitAt);
+                    setTrackLoadError(null);
+                } catch (error) {
+                    await refreshTimelineTracks().catch(() => undefined);
+                    setSelectedId(itemId);
+                    setTrackLoadError(error instanceof Error ? `스크롤 이벤트 분할에 실패했습니다: ${error.message}` : '스크롤 이벤트 분할에 실패했습니다.');
+                }
+
+                return;
+            }
 
             setScrollEvents((current) =>
                 current.flatMap((scrollEvent) => {
@@ -4451,26 +5622,10 @@ export function StudioEditor({
                         return [scrollEvent];
                     }
 
-                    const leftScrollEvent = {
-                        ...scrollEvent,
-                        duration: splitAt - scrollEvent.start,
-                        previewEndPx: splitPixel,
-                        sublabel: formatPreviewScrollLabel(scrollEvent.previewStartPx, splitPixel),
-                    };
-                    const rightScrollEvent = {
-                        ...scrollEvent,
-                        id: rightScrollEventId,
-                        start: splitAt,
-                        duration: targetEnd - splitAt,
-                        label: `${scrollEvent.label} B`,
-                        previewStartPx: splitPixel,
-                        sublabel: formatPreviewScrollLabel(splitPixel, scrollEvent.previewEndPx),
-                    };
-
                     return [leftScrollEvent, rightScrollEvent];
                 }),
             );
-            setSelectedId(rightScrollEventId);
+            setSelectedId(rightScrollEvent.id);
             setPlayhead(splitAt);
             return;
         }
@@ -4524,6 +5679,19 @@ export function StudioEditor({
         setRangeSelectionIds([]);
     };
 
+    const handleSelectMedia = (event: ReactMouseEvent<HTMLElement>, mediaId: number) => {
+        setMediaContextMenu(null);
+        setSelectedMediaIds((current) =>
+            getNextMediaSelection({
+                currentSelectionIds: current,
+                clickedId: mediaId,
+                orderedMediaIds: mediaItems.map((item) => item.id),
+                isToggle: event.metaKey || event.ctrlKey,
+                isRange: event.shiftKey,
+            }),
+        );
+    };
+
     const handleDropMediaOnCutEditor = (event: ReactDragEvent<HTMLElement>) => {
         event.preventDefault();
         event.stopPropagation();
@@ -4532,29 +5700,46 @@ export function StudioEditor({
             return;
         }
 
-        const mediaId = Number(event.dataTransfer.getData(MEDIA_DRAG_MIME));
+        const droppedMediaIds = parseMediaDragPayload(
+            event.dataTransfer.getData(MEDIA_BATCH_DRAG_MIME),
+            event.dataTransfer.getData(MEDIA_DRAG_MIME),
+        );
 
-        if (!Number.isFinite(mediaId)) {
+        if (droppedMediaIds.length === 0) {
             return;
         }
 
-        const media = mediaItems.find((item) => item.id === mediaId);
+        const mediaById = new Map(mediaItems.map((item) => [item.id, item]));
+        const droppedClipIds: string[] = [];
+        let nextVisualClips = editableVisualClips;
 
-        if (!media) {
+        droppedMediaIds.forEach((mediaId) => {
+            const media = mediaById.get(mediaId);
+
+            if (!media) {
+                return;
+            }
+
+            const droppedClip = toDroppedMediaVisualClip(media, nextVisualClips);
+
+            if (!droppedClip) {
+                return;
+            }
+
+            droppedClipIds.push(droppedClip.id);
+            nextVisualClips = [...nextVisualClips, droppedClip];
+        });
+
+        if (droppedClipIds.length === 0) {
             return;
         }
 
-        const droppedClip = toDroppedMediaVisualClip(media, editableVisualClips);
+        const nextReflowedVisualClips = reflowVisualClips(nextVisualClips);
+        const lastDroppedClipId = droppedClipIds[droppedClipIds.length - 1];
+        const nextDroppedClip = nextReflowedVisualClips.find((clip) => clip.id === lastDroppedClipId);
 
-        if (!droppedClip) {
-            return;
-        }
-
-        const nextVisualClips = reflowVisualClips([...editableVisualClips, droppedClip]);
-        const nextDroppedClip = nextVisualClips.find((clip) => clip.id === droppedClip.id) ?? droppedClip;
-
-        setEditableVisualClips(nextVisualClips);
-        setSelectedId(nextDroppedClip.id);
+        setEditableVisualClips(nextReflowedVisualClips);
+        setSelectedId(nextDroppedClip?.id ?? lastDroppedClipId);
         setRangeSelectionIds([]);
         setMediaContextMenu(null);
     };
@@ -4566,6 +5751,8 @@ export function StudioEditor({
         event.preventDefault();
         event.stopPropagation();
         setRangeSelectionIds([]);
+        setTrackContextMenu(null);
+        setSelectedMediaIds((current) => (current.includes(media.id) ? current : [media.id]));
         setMediaContextMenu({
             clipId: `media-${media.id}`,
             mediaId: media.id,
@@ -4584,6 +5771,7 @@ export function StudioEditor({
         try {
             setDeletingMediaId(mediaId);
             setMediaUploadState({ status: 'idle' });
+            setSelectedMediaIds((current) => current.filter((id) => id !== mediaId));
             await deleteMedia(resolvedApiBaseUrl, episodeId, mediaId);
 
             const [nextMediaItems, nextCanvasItems] = await Promise.all([
@@ -4698,32 +5886,41 @@ export function StudioEditor({
 
     const handleStepTimelineItem = (itemKind: TimelineItemKind, itemId: string, edge: 'start' | 'end', deltaSeconds: number) => {
         if (itemKind === 'scroll') {
-            setScrollEvents((current) =>
-                current.map((scrollEvent) => {
-                    if (scrollEvent.id !== itemId) {
-                        return scrollEvent;
-                    }
+            const targetScrollEvent = scrollEventById.get(itemId);
 
-                    const currentEnd = scrollEvent.start + scrollEvent.duration;
+            if (!targetScrollEvent) {
+                return;
+            }
 
-                    if (edge === 'start') {
-                        const nextStart = getTimelineEditSeconds(clamp(scrollEvent.start + deltaSeconds, 0, currentEnd - MIN_TIMELINE_ITEM_DURATION_SECONDS), isSnapEnabled);
+            const currentEnd = targetScrollEvent.start + targetScrollEvent.duration;
+            const nextScrollEvent =
+                edge === 'start'
+                    ? (() => {
+                          const nextStart = getTimelineEditSeconds(
+                              clamp(targetScrollEvent.start + deltaSeconds, 0, currentEnd - MIN_TIMELINE_ITEM_DURATION_SECONDS),
+                              isSnapEnabled,
+                          );
 
-                        return {
-                            ...scrollEvent,
-                            start: nextStart,
-                            duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd - nextStart),
-                        };
-                    }
+                          return {
+                              ...targetScrollEvent,
+                              start: nextStart,
+                              duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd - nextStart),
+                          };
+                      })()
+                    : (() => {
+                          const nextEnd = getTimelineEditSeconds(
+                              Math.max(targetScrollEvent.start + MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd + deltaSeconds),
+                              isSnapEnabled,
+                          );
 
-                    const nextEnd = getTimelineEditSeconds(Math.max(scrollEvent.start + MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd + deltaSeconds), isSnapEnabled);
+                          return {
+                              ...targetScrollEvent,
+                              duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, nextEnd - targetScrollEvent.start),
+                          };
+                      })();
 
-                    return {
-                        ...scrollEvent,
-                        duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, nextEnd - scrollEvent.start),
-                    };
-                }),
-            );
+            setScrollEvents((current) => current.map((scrollEvent) => (scrollEvent.id === itemId ? nextScrollEvent : scrollEvent)));
+            void persistScrollEventUpdate(nextScrollEvent);
             return;
         }
 
@@ -4733,55 +5930,67 @@ export function StudioEditor({
             return;
         }
 
+        if (!targetClip) {
+            return;
+        }
+
+        const currentEnd = targetClip.start + targetClip.duration;
+        const nextClip =
+            edge === 'start'
+                ? (() => {
+                      const nextStart = getTimelineEditSeconds(clamp(targetClip.start + deltaSeconds, 0, currentEnd - MIN_TIMELINE_ITEM_DURATION_SECONDS), isSnapEnabled);
+
+                      return {
+                          ...targetClip,
+                          start: nextStart,
+                          duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd - nextStart),
+                      };
+                  })()
+                : (() => {
+                      const nextEnd = getTimelineEditSeconds(Math.max(targetClip.start + MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd + deltaSeconds), isSnapEnabled);
+
+                      return {
+                          ...targetClip,
+                          duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, nextEnd - targetClip.start),
+                      };
+                  })();
+
         setTimelineData((current) => ({
             ...current,
-            timelineClips: current.timelineClips.map((clip) => {
-                if (clip.id !== itemId) {
-                    return clip;
-                }
-
-                const currentEnd = clip.start + clip.duration;
-
-                if (edge === 'start') {
-                    const nextStart = getTimelineEditSeconds(clamp(clip.start + deltaSeconds, 0, currentEnd - MIN_TIMELINE_ITEM_DURATION_SECONDS), isSnapEnabled);
-
-                    return {
-                        ...clip,
-                        start: nextStart,
-                        duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd - nextStart),
-                    };
-                }
-
-                const nextEnd = getTimelineEditSeconds(Math.max(clip.start + MIN_TIMELINE_ITEM_DURATION_SECONDS, currentEnd + deltaSeconds), isSnapEnabled);
-
-                return {
-                    ...clip,
-                    duration: Math.max(MIN_TIMELINE_ITEM_DURATION_SECONDS, nextEnd - clip.start),
-                };
-            }),
+            timelineClips: current.timelineClips.map((clip) => (clip.id === itemId ? nextClip : clip)),
         }));
+        void persistCueTimingUpdate(nextClip);
     };
 
-    const handleNudgeScrollPixel = (itemId: string, edge: 'start' | 'end', deltaPx: number) => {
-        const coordinateHeightPx = getPreviewCoordinateHeight(previewStripHeightPx);
+    const handleNudgeScrollPosition = (itemId: string, edge: 'start' | 'end', deltaPx: number) => {
+        const targetScrollEvent = scrollEventById.get(itemId);
 
-        setScrollEvents((current) =>
-            current.map((scrollEvent) => {
-                if (scrollEvent.id !== itemId) {
-                    return scrollEvent;
-                }
+        if (!targetScrollEvent) {
+            return;
+        }
 
-                const previewStartPx = edge === 'start' ? clamp(scrollEvent.previewStartPx + deltaPx, 0, coordinateHeightPx) : scrollEvent.previewStartPx;
-                const previewEndPx = edge === 'end' ? clamp(scrollEvent.previewEndPx + deltaPx, 0, coordinateHeightPx) : scrollEvent.previewEndPx;
+        const currentPixel =
+            edge === 'start'
+                ? getScrollEventStartPixel(targetScrollEvent, previewStripHeightPx, previewVisualSegments)
+                : getScrollEventEndPixel(targetScrollEvent, previewStripHeightPx, previewVisualSegments);
+        const anchor = getPreviewScrollAnchor({
+            stripPositionPx: currentPixel + deltaPx,
+            stripHeightPx: previewStripHeightPx,
+            visualSegments: previewVisualSegments,
+        });
+        const nextAnchoredScrollEvent = applyScrollAnchorToEvent(targetScrollEvent, edge, anchor);
+        const nextScrollEvent = {
+            ...nextAnchoredScrollEvent,
+            sublabel: formatScrollRangeLabel(
+                nextAnchoredScrollEvent.startIndex,
+                nextAnchoredScrollEvent.startPosition,
+                nextAnchoredScrollEvent.endIndex,
+                nextAnchoredScrollEvent.endPosition,
+            ),
+        };
 
-                return {
-                    ...scrollEvent,
-                    previewStartPx,
-                    previewEndPx,
-                    sublabel: formatPreviewScrollLabel(previewStartPx, previewEndPx),
-                };
-            }),
-        );
+        setScrollEvents((current) => current.map((scrollEvent) => (scrollEvent.id === itemId ? nextScrollEvent : scrollEvent)));
+        void persistScrollEventUpdate(nextScrollEvent);
     };
 
     const handleStepVisualDuration = (clipId: string, deltaSeconds: number) => {
@@ -4799,8 +6008,24 @@ export function StudioEditor({
         );
     };
 
-    const handleDeleteTimelineItem = (itemKind: TimelineItemKind, itemId: string) => {
+    const handleDeleteTimelineItem = async (itemKind: TimelineItemKind, itemId: string) => {
         if (itemKind === 'scroll') {
+            const targetScrollEvent = scrollEventById.get(itemId);
+            const scrollId = targetScrollEvent ? getScrollEventApiId(targetScrollEvent) : undefined;
+
+            if (targetScrollEvent && scrollId !== undefined) {
+                try {
+                    await deleteScrollEvent(resolvedApiBaseUrl, targetScrollEvent.track, scrollId);
+                    await refreshTimelineTracks();
+                    setSelectedId((current) => (current === itemId ? activeVisual?.id ?? '' : current));
+                    setTrackLoadError(null);
+                } catch (error) {
+                    setTrackLoadError(error instanceof Error ? `스크롤 이벤트 삭제에 실패했습니다: ${error.message}` : '스크롤 이벤트 삭제에 실패했습니다.');
+                }
+
+                return;
+            }
+
             setScrollEvents((current) => current.filter((scrollEvent) => scrollEvent.id !== itemId));
             setSelectedId((current) => (current === itemId ? activeVisual?.id ?? '' : current));
             return;
@@ -4812,6 +6037,23 @@ export function StudioEditor({
             return;
         }
 
+        if (targetClip) {
+            const target = toCueMutationTarget(targetClip);
+
+            if (target) {
+                try {
+                    await deleteCue(resolvedApiBaseUrl, target.trackId, target.cueId);
+                    await refreshTimelineTracks();
+                    setSelectedId((current) => (current === itemId ? activeVisual?.id ?? '' : current));
+                    setTrackLoadError(null);
+                } catch (error) {
+                    setTrackLoadError(error instanceof Error ? `큐 삭제에 실패했습니다: ${error.message}` : '큐 삭제에 실패했습니다.');
+                }
+
+                return;
+            }
+        }
+
         setTimelineData((current) => ({
             ...current,
             timelineClips: current.timelineClips.filter((clip) => clip.id !== itemId),
@@ -4820,14 +6062,15 @@ export function StudioEditor({
     };
 
     const handleApplyEffect = (effectId: EffectId) => {
-        const targetId = selectedId || activeVisual?.id;
+        const targetId = anchorBySelectionId.has(selectedId) ? activeVisual?.id : selectedId || activeVisual?.id;
 
         if (!targetId) {
             return;
         }
 
         setEffectsById((current) => {
-            const existing = current[targetId] ?? getSelectedItem(targetId, visualClipById, audioClipById, scrollEventById)?.effects ?? [];
+            const targetItem = getSelectedItem(targetId, visualClipById, audioClipById, scrollEventById, anchorBySelectionId);
+            const existing = current[targetId] ?? (targetItem && 'effects' in targetItem ? targetItem.effects : undefined) ?? [];
 
             if (existing.includes(effectId)) {
                 return current;
@@ -4891,39 +6134,96 @@ export function StudioEditor({
         }
     };
 
-    const handleAddMedia = async (file: File) => {
-        const mediaType = getMediaTypeFromFile(file);
+    const handleAddMedia = async (files: File[]) => {
+        if (files.length === 0) {
+            return;
+        }
 
-        if (!mediaType) {
+        const uploadQueue = buildMediaUploadQueue({
+            episodeId,
+            files,
+            getMediaType: getMediaTypeFromFile,
+            getUploadKey: getMediaUploadKey,
+        });
+        const failures: MediaUploadFailure[] = [...uploadQueue.failures];
+
+        if (uploadQueue.items.length === 0) {
             setMediaUploadState({
                 status: 'idle',
-                fileName: file.name,
-                error: '이미지 또는 영상 파일만 등록할 수 있습니다.',
+                error: toMediaUploadFailureMessage(failures),
+                failures,
             });
             return;
         }
 
+        let uploadUrls: FileUploadUrlItem[];
+        const uploadRequests = buildFileUploadUrlRequests(uploadQueue.items);
+
         try {
-            const key = getMediaUploadKey(episodeId, file, mediaType);
-            const nextIndex = mediaItems.reduce((maxIndex, item) => Math.max(maxIndex, item.index), -1) + 1;
+            uploadUrls = await getFileUploadUrls(resolvedApiBaseUrl, uploadRequests);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '업로드 URL 발급에 실패했습니다.';
 
-            setMediaUploadState({ status: 'uploading', fileName: file.name });
+            failures.push(
+                ...uploadQueue.items.map((item) => ({
+                    fileName: item.fileName,
+                    error: message,
+                })),
+            );
+            setMediaUploadState({
+                status: 'idle',
+                error: toMediaUploadFailureMessage(failures),
+                failures,
+            });
+            return;
+        }
 
-            const [uploadUrl] = await getFileUploadUrls(resolvedApiBaseUrl, [key]);
+        let successCount = 0;
+
+        for (const [itemIndex, item] of uploadQueue.items.entries()) {
+            const uploadUrl = uploadUrls[itemIndex];
+            const uploadRequest = uploadRequests[itemIndex];
 
             if (!uploadUrl) {
-                throw new Error('File upload URL response is empty');
+                failures.push({
+                    fileName: item.fileName,
+                    error: 'File upload URL response is empty',
+                });
+                continue;
             }
 
-            await uploadFileToPresignedUrl(uploadUrl.presignedUrl, file);
-            setMediaUploadState({ status: 'registering', fileName: file.name });
-            await createMedia(resolvedApiBaseUrl, episodeId, {
-                mediaName: file.name,
-                mediaType,
-                mediaUrl: uploadUrl.publicUrl,
-                index: nextIndex,
-            });
+            try {
+                setMediaUploadState({
+                    status: 'uploading',
+                    fileName: item.fileName,
+                    failures: failures.length > 0 ? [...failures] : undefined,
+                });
+                await uploadFileToPresignedUrl(
+                    uploadUrl.presignedUrl,
+                    item.file,
+                    uploadRequest?.contentType ?? uploadUrl.mimetype,
+                );
 
+                setMediaUploadState({
+                    status: 'registering',
+                    fileName: item.fileName,
+                    failures: failures.length > 0 ? [...failures] : undefined,
+                });
+                await createMedia(resolvedApiBaseUrl, episodeId, {
+                    mediaName: item.fileName,
+                    mediaType: item.mediaType,
+                    mediaUrl: uploadUrl.publicUrl,
+                });
+                successCount += 1;
+            } catch (error) {
+                failures.push({
+                    fileName: item.fileName,
+                    error: error instanceof Error ? error.message : '미디어 등록에 실패했습니다.',
+                });
+            }
+        }
+
+        if (successCount > 0) {
             const [nextMediaItems, nextCanvasItems] = await Promise.all([
                 listMedias(resolvedApiBaseUrl, episodeId),
                 listCanvases(resolvedApiBaseUrl, episodeId),
@@ -4940,47 +6240,63 @@ export function StudioEditor({
                 return current;
             });
             setActivePanelId('assets');
-            setMediaUploadState({ status: 'idle' });
-        } catch (error) {
-            setMediaUploadState({
-                status: 'idle',
-                fileName: file.name,
-                error: error instanceof Error ? error.message : '미디어 등록에 실패했습니다.',
-            });
         }
+
+        setMediaUploadState({
+            status: 'idle',
+            error: toMediaUploadFailureMessage(failures),
+            failures: failures.length > 0 ? failures : undefined,
+        });
     };
 
     const handleAddAudio = async (file: File) => {
-        const audioType = getAudioTypeFromFile(file);
+        const candidateKind = getAudioUploadCandidateKind(file);
 
-        if (!audioType) {
+        if (!candidateKind) {
             setAudioUploadState({
                 status: 'idle',
                 fileName: file.name,
-                error: '오디오 파일만 등록할 수 있습니다.',
+                error: '오디오 파일 또는 MP4 파일만 등록할 수 있습니다.',
             });
             return;
         }
 
         try {
-            const key = getAudioUploadKey(episodeId, file, audioType);
-            const durationPromise = getAudioDuration(file);
+            setAudioUploadState({
+                status: candidateKind === 'mp4-video' ? 'extracting' : 'uploading',
+                fileName: file.name,
+            });
 
-            setAudioUploadState({ status: 'uploading', fileName: file.name });
+            const preparedUpload = await prepareAudioUploadFile(file);
 
-            const [uploadUrl] = await getFileUploadUrls(resolvedApiBaseUrl, [key]);
+            if (!preparedUpload) {
+                throw new Error('오디오 파일 또는 MP4 파일만 등록할 수 있습니다.');
+            }
+
+            const uploadFile = preparedUpload.file;
+            const audioType: AudioType = 'audio';
+            const key = getAudioUploadKey(episodeId, uploadFile, audioType);
+            const contentType = getUploadContentType(uploadFile);
+            const durationPromise =
+                typeof preparedUpload.duration === 'number'
+                    ? Promise.resolve(preparedUpload.duration)
+                    : getAudioDuration(uploadFile);
+
+            setAudioUploadState({ status: 'uploading', fileName: preparedUpload.name });
+
+            const [uploadUrl] = await getFileUploadUrls(resolvedApiBaseUrl, [{ key, contentType }]);
 
             if (!uploadUrl) {
                 throw new Error('File upload URL response is empty');
             }
 
-            await uploadFileToPresignedUrl(uploadUrl.presignedUrl, file);
-            setAudioUploadState({ status: 'registering', fileName: file.name });
+            await uploadFileToPresignedUrl(uploadUrl.presignedUrl, uploadFile, contentType);
+            setAudioUploadState({ status: 'registering', fileName: preparedUpload.name });
             const duration = await durationPromise;
 
             await createAudio(resolvedApiBaseUrl, episodeId, {
                 audioType,
-                name: file.name,
+                name: preparedUpload.name,
                 audioUrl: uploadUrl.publicUrl,
                 ...(typeof duration === 'number' ? { duration } : {}),
             });
@@ -5121,6 +6437,41 @@ export function StudioEditor({
             captureTarget.releasePointerCapture(event.pointerId);
         }
 
+        if (timelinePointerEdit.itemKind === 'scroll') {
+            const targetScrollEvent = scrollEventById.get(timelinePointerEdit.itemId);
+
+            if (targetScrollEvent) {
+                const timing = getTimelineEditTiming(timelinePointerEdit, event.clientX, pxPerSecond, timelineDurationSeconds, isSnapEnabled);
+                const nextScrollEvent = {
+                    ...targetScrollEvent,
+                    start: timing.start,
+                    duration: timing.duration,
+                };
+
+                setScrollEvents((current) => current.map((scrollEvent) => (scrollEvent.id === timelinePointerEdit.itemId ? nextScrollEvent : scrollEvent)));
+                setPlayhead(timing.start);
+                void persistScrollEventUpdate(nextScrollEvent);
+            }
+        } else {
+            const targetClip = audioClipById.get(timelinePointerEdit.itemId);
+
+            if (targetClip && !lockedTrackIds.includes(targetClip.track)) {
+                const timing = getTimelineEditTiming(timelinePointerEdit, event.clientX, pxPerSecond, timelineDurationSeconds, isSnapEnabled);
+                const nextClip = {
+                    ...targetClip,
+                    start: timing.start,
+                    duration: timing.duration,
+                };
+
+                setTimelineData((current) => ({
+                    ...current,
+                    timelineClips: current.timelineClips.map((clip) => (clip.id === timelinePointerEdit.itemId ? nextClip : clip)),
+                }));
+                setPlayhead(timing.start);
+                void persistCueTimingUpdate(nextClip);
+            }
+        }
+
         setTimelinePointerEdit(null);
     };
 
@@ -5146,6 +6497,17 @@ export function StudioEditor({
         });
     };
 
+    const handleStartInspectorResize = (event: ReactPointerEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        setIsPlaying(false);
+        setInspectorResize({
+            pointerStartX: event.clientX,
+            originalWidth: inspectorWidth,
+        });
+    };
+
     const handleStartPreviewScrollEdit = ({
         event,
         item,
@@ -5164,10 +6526,10 @@ export function StudioEditor({
             eventId: item.id,
             mode,
             pointerStartY: event.clientY,
-            overlayHeightPx: getPreviewOverlayHeight(event.currentTarget),
             coordinateHeightPx: previewStripHeightPx,
-            originalStartPx: item.previewStartPx,
-            originalEndPx: item.previewEndPx,
+            visualSegments: previewVisualSegments,
+            originalStartPixel: getScrollEventStartPixel(item, previewStripHeightPx, previewVisualSegments),
+            originalEndPixel: getScrollEventEndPixel(item, previewStripHeightPx, previewVisualSegments),
         });
     };
 
@@ -5179,16 +6541,28 @@ export function StudioEditor({
         event.preventDefault();
         event.stopPropagation();
 
-        const pixels = getPreviewScrollEditPixels(previewScrollPointerEdit, event.clientY);
+        const anchors = getPreviewScrollEditAnchors(previewScrollPointerEdit, event.clientY);
 
         setScrollEvents((current) =>
             current.map((scrollEvent) =>
                 scrollEvent.id === previewScrollPointerEdit.eventId
-                    ? {
-                          ...scrollEvent,
-                          ...pixels,
-                          sublabel: formatPreviewScrollLabel(pixels.previewStartPx, pixels.previewEndPx),
-                      }
+                    ? (() => {
+                          const nextScrollEvent = applyScrollAnchorToEvent(
+                              applyScrollAnchorToEvent(scrollEvent, 'start', anchors.start),
+                              'end',
+                              anchors.end,
+                          );
+
+                          return {
+                              ...nextScrollEvent,
+                              sublabel: formatScrollRangeLabel(
+                                  nextScrollEvent.startIndex,
+                                  nextScrollEvent.startPosition,
+                                  nextScrollEvent.endIndex,
+                                  nextScrollEvent.endPosition,
+                              ),
+                          };
+                      })()
                     : scrollEvent,
             ),
         );
@@ -5208,7 +6582,109 @@ export function StudioEditor({
             captureTarget.releasePointerCapture(event.pointerId);
         }
 
+        const targetScrollEvent = scrollEventById.get(previewScrollPointerEdit.eventId);
+
+        if (targetScrollEvent) {
+            const anchors = getPreviewScrollEditAnchors(previewScrollPointerEdit, event.clientY);
+            const nextScrollEvent = applyScrollAnchorToEvent(
+                applyScrollAnchorToEvent(targetScrollEvent, 'start', anchors.start),
+                'end',
+                anchors.end,
+            );
+            const nextPersistableScrollEvent = {
+                ...nextScrollEvent,
+                sublabel: formatScrollRangeLabel(
+                    nextScrollEvent.startIndex,
+                    nextScrollEvent.startPosition,
+                    nextScrollEvent.endIndex,
+                    nextScrollEvent.endPosition,
+                ),
+            };
+
+            setScrollEvents((current) => current.map((scrollEvent) => (scrollEvent.id === previewScrollPointerEdit.eventId ? nextPersistableScrollEvent : scrollEvent)));
+            void persistScrollEventUpdate(nextPersistableScrollEvent);
+        }
+
         setPreviewScrollPointerEdit(null);
+    };
+
+    const handleStartPreviewAnchorEdit = ({
+        event,
+        anchor,
+        top,
+    }: PreviewAnchorPointerEditRequest) => {
+        const captureTarget = getTimelinePointerCaptureTarget(event.currentTarget);
+
+        event.preventDefault();
+        event.stopPropagation();
+        captureTarget.setPointerCapture(event.pointerId);
+        setIsPlaying(false);
+        setSelectedId(getAnchorSelectionId(anchor.id));
+        setRangeSelectionIds([]);
+        setFocusedTrackId(String(anchor.trackId));
+        setPreviewAnchorPointerEdit({
+            anchor,
+            pointerStartY: event.clientY,
+            coordinateHeightPx: previewStripHeightPx,
+            visualSegments: previewVisualSegments,
+            originalPixel: top,
+            hasMoved: false,
+        });
+    };
+
+    const handleMovePreviewAnchorEdit = (event: ReactPointerEvent<HTMLElement>) => {
+        if (!previewAnchorPointerEdit) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const request = getPreviewAnchorEditRequest(previewAnchorPointerEdit, event.clientY);
+
+        if (!request) {
+            return;
+        }
+
+        const nextAnchor = applyAnchorMutation(previewAnchorPointerEdit.anchor, request);
+
+        setPreviewAnchorPointerEdit((current) => (current ? { ...current, hasMoved: true } : current));
+        setAnchors((current) => replaceAnchor(current, nextAnchor));
+    };
+
+    const handleEndPreviewAnchorEdit = (event: ReactPointerEvent<HTMLElement>) => {
+        if (!previewAnchorPointerEdit) {
+            return;
+        }
+
+        const captureTarget = getTimelinePointerCaptureTarget(event.currentTarget);
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (captureTarget.hasPointerCapture(event.pointerId)) {
+            captureTarget.releasePointerCapture(event.pointerId);
+        }
+
+        const request = getPreviewAnchorEditRequest(previewAnchorPointerEdit, event.clientY);
+
+        if (!request) {
+            if (previewAnchorPointerEdit.hasMoved) {
+                setAnchors((current) => replaceAnchor(current, previewAnchorPointerEdit.anchor));
+            }
+
+            setPreviewAnchorPointerEdit(null);
+            return;
+        }
+
+        if (previewAnchorPointerEdit.hasMoved) {
+            const nextAnchor = applyAnchorMutation(previewAnchorPointerEdit.anchor, request);
+
+            setAnchors((current) => replaceAnchor(current, nextAnchor));
+            void persistAnchorUpdate(previewAnchorPointerEdit.anchor, request);
+        }
+
+        setPreviewAnchorPointerEdit(null);
     };
 
     const handleSaveCueScript = async () => {
@@ -5224,8 +6700,8 @@ export function StudioEditor({
             return;
         }
 
-        const cueId = selectedClip.id.startsWith('cue-') ? selectedClip.id.slice(4) : '';
-        if (!cueId || Number.isNaN(Number(cueId))) {
+        const cueId = getCueApiIdFromTimelineClipId(selectedClip.id);
+        if (!cueId) {
             setCueScriptError('선택한 큐 ID를 확인할 수 없습니다.');
             return;
         }
@@ -5305,39 +6781,66 @@ export function StudioEditor({
         }
     };
 
-    const handleAddScrollEvent = () => {
-        const selectedScrollEvent = scrollEventById.get(selectedId);
-        const fallbackScrollTrack = timelineData.audioTracks.find((track) => isScrollTrackKind(track.kind));
-        const targetTrackId = selectedScrollEvent?.track ?? fallbackScrollTrack?.id;
-
-        if (!targetTrackId) {
+    const handleToggleAnchorPlacement = () => {
+        if (anchorPlacementTrackId) {
+            setAnchorPlacementTrackId(null);
             return;
         }
 
-        const start = getTimelineEditSeconds(playhead, isSnapEnabled);
-        const id = `local-scroll-${Date.now().toString(36)}`;
-        const coordinateHeightPx = getPreviewCoordinateHeight(previewStripHeightPx);
-        const eventHeightPx = Math.min(300, Math.max(80, Math.round(coordinateHeightPx * 0.125)));
-        const previewStartPx = selectedScrollEvent
-            ? clamp(selectedScrollEvent.previewEndPx, 0, Math.max(0, coordinateHeightPx - eventHeightPx))
-            : 0;
-        const previewEndPx = clamp(previewStartPx + eventHeightPx, 0, coordinateHeightPx);
-        const event: ScrollEventClip = {
-            id,
-            track: targetTrackId,
-            start,
-            duration: 5,
-            label: '새 스크롤 이벤트',
-            sublabel: `${previewStartPx}px -> ${previewEndPx}px`,
-            previewStartPx,
-            previewEndPx,
-        };
+        const selectedScrollEvent = scrollEventById.get(selectedId);
+        const focusedTrack = audioTrackById.get(focusedTrackId);
+        const fallbackScrollTrack = timelineData.audioTracks.find((track) => isScrollTrackKind(track.kind));
+        const targetTrackId =
+            selectedScrollEvent?.track ??
+            (focusedTrack && isScrollTrackKind(focusedTrack.kind) ? focusedTrack.id : undefined) ??
+            fallbackScrollTrack?.id;
 
-        setScrollEvents((current) => [...current, event].sort((a, b) => a.start - b.start || a.id.localeCompare(b.id)));
-        setIsPlaying(false);
-        setSelectedId(id);
-        setRangeSelectionIds([]);
-        setPlayhead(start);
+        if (!targetTrackId) {
+            setTrackLoadError('앵커를 추가할 스크롤 트랙을 선택해 주세요.');
+            return;
+        }
+
+        setAnchorPlacementTrackId(targetTrackId);
+        setPreviewMode('motion');
+        setTrackLoadError(null);
+    };
+
+    const handlePlaceAnchor = async (stripPositionPx: number, stripHeightPx: number) => {
+        if (!anchorPlacementTrackId) {
+            setTrackLoadError('앵커를 추가할 스크롤 트랙을 선택해 주세요.');
+            return;
+        }
+
+        const request = toClickedScrollAnchorMutationRequest({
+            playhead,
+            stripHeightPx,
+            stripPositionPx,
+            visualSegments: previewVisualSegments,
+        });
+
+        if (!request) {
+            setTrackLoadError('앵커를 추가할 기준 이미지 위치를 확인할 수 없습니다.');
+            return;
+        }
+
+        try {
+            setIsAddingAnchor(true);
+            setIsPlaying(false);
+            const createdAnchor = await createAnchor(resolvedApiBaseUrl, anchorPlacementTrackId, request);
+
+            setAnchors((current) =>
+                [...current.filter((anchor) => anchor.id !== createdAnchor.id), createdAnchor].sort(
+                    (a, b) => a.time - b.time || a.id - b.id,
+                ),
+            );
+            setFocusedTrackId(anchorPlacementTrackId);
+            setAnchorPlacementTrackId(null);
+            setTrackLoadError(null);
+        } catch (error) {
+            setTrackLoadError(error instanceof Error ? `앵커 추가에 실패했습니다: ${error.message}` : '앵커 추가에 실패했습니다.');
+        } finally {
+            setIsAddingAnchor(false);
+        }
     };
 
     const handleSelectImageCompositionLayer = (layerId: string) => {
@@ -5351,14 +6854,44 @@ export function StudioEditor({
         }
     };
 
+    const markImageCompositionCanvasDirty = (canvasId?: number) => {
+        if (typeof canvasId !== 'number') {
+            return;
+        }
+
+        setDirtyImageCompositionCanvasIds((current) => (current.includes(canvasId) ? current : [...current, canvasId]));
+    };
+
     const handleUpdateImageCompositionLayer = (layerId: string, patch: ImageCompositionLayerPatch) => {
+        const layer = imageCompositionDraft.layers.find((item) => item.id === layerId);
+
         setImageCompositionConfirmError(null);
+        markImageCompositionCanvasDirty(layer?.canvasId);
         setImageCompositionDraft((current) => updateImageCompositionLayer(current, layerId, patch));
     };
 
     const handleMoveImageCompositionLayer = (layerId: string, direction: 'up' | 'down') => {
+        const layer = imageCompositionDraft.layers.find((item) => item.id === layerId);
+
         setImageCompositionConfirmError(null);
+        markImageCompositionCanvasDirty(layer?.canvasId);
         setImageCompositionDraft((current) => moveImageCompositionLayer(current, layerId, direction));
+    };
+
+    const handleRemoveImageCompositionLayer = (layerId: string) => {
+        const layer = imageCompositionDraft.layers.find((item) => item.id === layerId);
+        const nextDraft = removeImageCompositionLayer(imageCompositionDraft, layerId);
+        const nextSelectedLayer = nextDraft.layers.find((item) => item.id === nextDraft.selectedLayerId);
+
+        setImageCompositionConfirmError(null);
+        markImageCompositionCanvasDirty(layer?.canvasId);
+        setImageCompositionDraft(nextDraft);
+
+        if (layer) {
+            setEditableVisualClips((current) => reflowVisualClips(current.filter((clip) => clip.id !== layer.clipId)));
+            setRangeSelectionIds((current) => current.filter((id) => id !== layer.clipId));
+            setSelectedId((current) => (current === layer.clipId ? nextSelectedLayer?.clipId ?? '' : current));
+        }
     };
 
     const handleConfirmImageComposition = async () => {
@@ -5366,20 +6899,34 @@ export function StudioEditor({
             return;
         }
 
-        const medias = toCanvasCreateMedias(imageCompositionDraft);
+        const dirtyCanvasIds = [...dirtyImageCompositionCanvasIds];
+        const newCanvasMedias = toCanvasCreateMedias(imageCompositionDraft, { canvasId: null });
 
-        if (medias.length === 0) {
+        if (dirtyCanvasIds.length === 0 && newCanvasMedias.length === 0) {
             return;
         }
 
         try {
             setIsConfirmingImageComposition(true);
             setImageCompositionConfirmError(null);
-            await createCanvas(resolvedApiBaseUrl, episodeId, { medias });
+
+            for (const canvasId of dirtyCanvasIds) {
+                await updateCanvas(resolvedApiBaseUrl, episodeId, canvasId, {
+                    medias: toCanvasCreateMedias(imageCompositionDraft, { canvasId }),
+                });
+            }
+
+            if (newCanvasMedias.length > 0) {
+                await createCanvas(resolvedApiBaseUrl, episodeId, { medias: newCanvasMedias });
+            }
+
             const nextCanvasItems = await listCanvases(resolvedApiBaseUrl, episodeId);
             const nextVisualClips = toVisualClips(nextCanvasItems);
+            const nextImageCompositionSources = toImageCompositionSources(nextVisualClips);
+            const confirmedAt = new Date().toISOString();
 
             setEditableVisualClips(nextVisualClips);
+            setDirtyImageCompositionCanvasIds([]);
             setSelectedId((current) => {
                 if (!current || (isVisualClipId(current) && !nextVisualClips.some((clip) => clip.id === current))) {
                     return nextVisualClips[0]?.id ?? '';
@@ -5387,9 +6934,11 @@ export function StudioEditor({
 
                 return current;
             });
-            setImageCompositionDraft((current) => confirmImageCompositionDraft(current, new Date().toISOString()));
+            setImageCompositionDraft((current) =>
+                confirmImageCompositionDraft(syncImageCompositionDraft(nextImageCompositionSources, current), confirmedAt),
+            );
         } catch (error) {
-            setImageCompositionConfirmError(error instanceof Error ? error.message : 'Canvas create failed.');
+            setImageCompositionConfirmError(error instanceof Error ? error.message : 'Canvas save failed.');
         } finally {
             setIsConfirmingImageComposition(false);
         }
@@ -5500,8 +7049,13 @@ export function StudioEditor({
                 </div>
             </header>
             <main
-                className={`odx-body ${previewMode === 'cutEdit' ? 'is-editing-cuts' : ''}`}
-                style={{ '--odx-timeline-height': `${timelineHeight}px` } as CSSProperties}
+                className={`odx-body ${previewMode === 'cutEdit' ? 'is-editing-cuts' : ''} ${inspectorResize ? 'is-inspector-resizing' : ''}`}
+                style={
+                    {
+                        '--odx-inspector-width': `${inspectorWidth}px`,
+                        '--odx-timeline-height': `${timelineHeight}px`,
+                    } as CSSProperties
+                }
             >
                 <aside className="odx-rail" aria-label="제작 도구">
                     {panelDefinitions.map((panel) => (
@@ -5527,9 +7081,13 @@ export function StudioEditor({
                     characters={characters}
                     characterCreateState={characterCreateState}
                     deletingMediaId={deletingMediaId}
+                    dialogueLines={dialogueLines}
+                    dialogueLoadError={dialogueLoadError}
+                    isDialogueLoading={isDialogueLoading}
                     mediaItems={mediaItems}
                     mediaContextMenu={mediaContextMenu}
                     mediaUploadState={mediaUploadState}
+                    selectedMediaIds={selectedMediaIds}
                     onAddAudio={handleAddAudio}
                     onAddMedia={handleAddMedia}
                     onApplyEffect={handleApplyEffect}
@@ -5538,13 +7096,18 @@ export function StudioEditor({
                     onCreateCharacter={handleCreateCharacter}
                     onDeleteMedia={handleDeleteMedia}
                     onOpenMediaContextMenu={handleOpenMediaContextMenu}
+                    onSelectMedia={handleSelectMedia}
                     onToggleCharacterCreate={handleToggleCharacterCreate}
                 />
                 <PreviewCanvas
                     activeVisual={activeVisual}
+                    anchors={anchors}
+                    canConfirmImageComposition={canConfirmImageComposition}
                     effects={getItemEffects(activeVisual, effectsById)}
                     imageCompositionDraft={imageCompositionDraft}
                     imageCompositionConfirmError={imageCompositionConfirmError}
+                    isAddingAnchor={isAddingAnchor}
+                    isAnchorPlacementMode={isAnchorPlacementMode}
                     isConfirmingImageComposition={isConfirmingImageComposition}
                     isPreviewAudioEnabled={isPreviewAudioEnabled}
                     isPreviewFullscreen={isPreviewFullscreen}
@@ -5552,15 +7115,23 @@ export function StudioEditor({
                     onImageCompositionConfirm={handleConfirmImageComposition}
                     onImageCompositionLayerMove={handleMoveImageCompositionLayer}
                     onImageCompositionLayerPatch={handleUpdateImageCompositionLayer}
+                    onImageCompositionLayerRemove={handleRemoveImageCompositionLayer}
                     onImageCompositionLayerSelect={handleSelectImageCompositionLayer}
                     onMediaDrop={handleDropMediaOnCutEditor}
                     onPreviewModeChange={setPreviewMode}
                     onPreviewStripHeightChange={setPreviewStripHeightPx}
+                    onPreviewVisualSegmentsChange={setPreviewVisualSegments}
                     onPreviewZoomChange={(zoom) => setPreviewZoom(clamp(zoom, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM))}
                     onPreviewZoomStep={(delta) => setPreviewZoom((current) => clamp(current + delta, MIN_PREVIEW_ZOOM, MAX_PREVIEW_ZOOM))}
+                    onPlaceAnchor={handlePlaceAnchor}
+                    onSelectAnchor={handleSelectAnchor}
                     onSelectVisual={handleSelectVisual}
                     onStepVisualDuration={handleStepVisualDuration}
+                    onToggleAnchorPlacement={handleToggleAnchorPlacement}
                     onSelectScrollEvent={handleSelectItem}
+                    onPreviewAnchorEditEnd={handleEndPreviewAnchorEdit}
+                    onPreviewAnchorEditMove={handleMovePreviewAnchorEdit}
+                    onPreviewAnchorEditStart={handleStartPreviewAnchorEdit}
                     onPreviewScrollEditEnd={handleEndPreviewScrollEdit}
                     onPreviewScrollEditMove={handleMovePreviewScrollEdit}
                     onPreviewScrollEditStart={handleStartPreviewScrollEdit}
@@ -5574,6 +7145,8 @@ export function StudioEditor({
                     previewMode={previewMode}
                     previewZoom={previewZoom}
                     previewStripHeightPx={previewStripHeightPx}
+                    previewVisualSegments={previewVisualSegments}
+                    previewAnchorEditingId={previewAnchorPointerEdit?.anchor.id ?? null}
                     previewScrollEditingId={previewScrollPointerEdit?.eventId ?? null}
                     scrollEvents={scrollEvents}
                     selectedId={selectedId}
@@ -5588,14 +7161,17 @@ export function StudioEditor({
                     onCueScriptDraftChange={setCueScriptDraft}
                     onSaveCueScript={handleSaveCueScript}
                     onDeleteTimelineItem={handleDeleteTimelineItem}
-                    onNudgeScrollPixel={handleNudgeScrollPixel}
+                    onNudgeScrollPosition={handleNudgeScrollPosition}
                     onStepTimelineItem={handleStepTimelineItem}
                     onStepVisualDuration={handleStepVisualDuration}
+                    onResizeStart={handleStartInspectorResize}
                     previewStripHeightPx={previewStripHeightPx}
+                    previewVisualSegments={previewVisualSegments}
                     selectedItem={selectedItem}
                     trackById={audioTrackById}
                 />
                 <Timeline
+                    anchors={anchors}
                     audioTracks={timelineData.audioTracks}
                     characterById={characterById}
                     draggingItemId={timelinePointerEdit?.itemId ?? null}
@@ -5608,11 +7184,14 @@ export function StudioEditor({
                     lockedTrackIds={lockedTrackIds}
                     mutedTrackIds={mutedTrackIds}
                     onAddCue={handleAddCue}
-                    onAddScrollEvent={handleAddScrollEvent}
+                    onCloseTrackContextMenu={handleCloseTrackContextMenu}
+                    onDeleteTrack={handleDeleteTrack}
                     onFocusTrack={handleFocusTrack}
                     onDropAudioOnTrack={handleDropAudioOnTrack}
+                    onOpenTrackContextMenu={handleOpenTrackContextMenu}
                     onOpenTrackModal={handleOpenTrackModal}
                     onScrub={handleScrub}
+                    onSelectAnchor={handleSelectAnchor}
                     onSelect={handleSelectItem}
                     onSelectTimelineRange={handleSelectTimelineRange}
                     onSplitTimelineItem={handleSplitTimelineItem}
@@ -5635,10 +7214,12 @@ export function StudioEditor({
                     selectedId={selectedId}
                     soloTrackIds={soloTrackIds}
                     trackLoadError={trackLoadError}
+                    trackContextMenu={trackContextMenu}
                     timelineTool={timelineTool}
                     timelineHeight={timelineHeight}
                     timelineSidebarWidth={timelineSidebarWidth}
                     timelineClips={timelineData.timelineClips}
+                    deletingTrackId={deletingTrackId}
                 />
             </main>
             {isTrackModalOpen ? (

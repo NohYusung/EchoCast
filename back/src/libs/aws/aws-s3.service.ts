@@ -5,6 +5,19 @@ import * as mime from 'mime-types';
 import { ConfigsService } from '../../configs';
 import type { AwsConfig } from '../../configs/configuration';
 
+type AwsS3UploadFile = {
+    key: string;
+    contentType?: string;
+};
+
+type AwsS3UploadUrl = {
+    result: boolean;
+    msg: string;
+    publicUrl: string;
+    mimetype: string;
+    presignedUrl: string;
+};
+
 @Injectable()
 export class AwsS3Service {
     private expires = 300;
@@ -44,24 +57,29 @@ export class AwsS3Service {
         });
     }
 
-    async getUploadUrls({ keys }: { keys: string[] }): Promise<any> {
+    async getUploadUrls({ keys, files }: { keys?: string[]; files?: AwsS3UploadFile[] }): Promise<AwsS3UploadUrl[]> {
         const aws = this.getAwsConfig();
         const s3Client = this.createS3Client(aws);
+        const uploadFiles: AwsS3UploadFile[] = files ?? (keys ?? []).map((key) => ({ key }));
         const results = await Promise.all(
-            keys.map(async (key) => {
+            uploadFiles.map(async (file) => {
+                const signedContentType = file.contentType?.trim();
+                const contentType = signedContentType || mime.lookup(file.key) || 'application/octet-stream';
                 const command = new PutObjectCommand({
                     Bucket: aws.bucketName,
-                    Key: key,
+                    Key: file.key,
+                    ...(signedContentType ? { ContentType: contentType } : {}),
                 });
                 const signedUrl = await getSignedUrl(s3Client, command, {
                     expiresIn: this.expires,
+                    ...(signedContentType ? { signableHeaders: new Set(['content-type']) } : {}),
                 });
-                const fileUrl = `${aws.awsUrl}/${key}`;
+                const fileUrl = `${aws.awsUrl}/${file.key}`;
                 return {
                     result: true,
                     msg: '주소 생성 성공',
                     publicUrl: fileUrl,
-                    mimetype: mime.lookup(key) || 'application/octet-stream',
+                    mimetype: contentType,
                     presignedUrl: signedUrl,
                 };
             })

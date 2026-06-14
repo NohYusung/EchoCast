@@ -11,6 +11,8 @@ export type PlayerScene = {
     label: string;
     startTime: number;
     endTime: number;
+    canvasId?: string | number;
+    index?: number;
     mediaUrl?: string;
     mediaId?: string;
     height: number;
@@ -90,6 +92,8 @@ export function buildPlayerScenes(manifest: PlayerManifest): PlayerScene[] {
             label: kind === 'placeholder' ? `SCENE ${String(index + 1).padStart(2, '0')}` : `CUT ${String(index + 1).padStart(2, '0')}`,
             startTime: item.startTime,
             endTime: item.endTime,
+            canvasId: item.canvasId,
+            index: item.index ?? index,
             mediaUrl: media?.url,
             mediaId: item.mediaId,
             height: getSceneHeight(item, media),

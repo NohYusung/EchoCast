@@ -1,5 +1,24 @@
 import { Exclude, Expose, Type } from 'class-transformer';
+import type { AudioType } from '../../../audios/domain/audio.entity';
 import type { TrackType } from '../../domain/track.entity';
+
+@Exclude()
+export class TrackCueAudioResponseDto {
+    @Expose()
+    id!: number;
+
+    @Expose()
+    audioType!: AudioType;
+
+    @Expose()
+    name!: string;
+
+    @Expose()
+    audioUrl!: string;
+
+    @Expose()
+    duration?: number;
+}
 
 @Exclude()
 export class TrackCueResponseDto {
@@ -17,6 +36,10 @@ export class TrackCueResponseDto {
 
     @Expose()
     audioId?: number;
+
+    @Expose()
+    @Type(() => TrackCueAudioResponseDto)
+    audio?: TrackCueAudioResponseDto;
 
     @Expose()
     startTime!: number;
@@ -38,6 +61,21 @@ export class TrackScrollResponseDto {
 
     @Expose()
     trackId!: number;
+
+    @Expose()
+    startAnchorId!: number;
+
+    @Expose()
+    endAnchorId!: number;
+
+    @Expose()
+    canvasId?: number;
+
+    @Expose()
+    startIndex!: number;
+
+    @Expose()
+    endIndex!: number;
 
     @Expose()
     startTime!: number;

@@ -2,9 +2,13 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { DataSource } from 'typeorm';
+import { Anchor } from '../../anchors/domain/anchor.entity';
+import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
+import { Canvas } from '../../canvases/domain/canvas.entity';
 import { Character } from '../../characters/domain/character.entity';
 import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
+import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { Track } from '../../tracks/domain/track.entity';
@@ -14,7 +18,7 @@ describe('Audio', () => {
     it('stores source audio data with episode and optional cue relation', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Audio, Character, Cue, Episode, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -66,12 +70,12 @@ describe('Audio', () => {
 
             const storedAudio = await dataSource.manager.findOneOrFail(Audio, {
                 where: { id: audio.id },
-                relations: { episode: true, cue: true },
+                relations: { episode: true, cues: true },
             });
 
             assert.equal(storedAudio.episodeId, episode.id);
             assert.equal(storedAudio.episode.id, episode.id);
-            assert.equal(storedAudio.cue?.id, cue.id);
+            assert.deepEqual(storedAudio.cues?.map((storedCue) => storedCue.id), [cue.id]);
             assert.equal(storedAudio.audioType, 'bgm');
             assert.equal(storedAudio.name, 'Opening BGM');
             assert.equal(storedAudio.audioUrl, 'https://assets.example.com/audio/opening-bgm.mp3');
@@ -103,7 +107,7 @@ describe('Audio', () => {
     it('stores audio without duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Audio, Character, Cue, Episode, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
             synchronize: true,
             logging: false,
         });

@@ -1,17 +1,16 @@
 import { DddAggregate } from '../../../libs/ddd';
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
-import { Canvas } from '../../canvases/domain/canvas.entity';
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 
 export type MediaType = 'audio' | 'video' | 'image';
 
 type Ctor = {
     episodeId: number;
-    canvasId?: number;
     mediaName: string;
     mediaType: MediaType;
     mediaUrl: string;
-    index?: number;
+    duration?: number;
 };
 
 @Entity('medias')
@@ -22,44 +21,33 @@ export class Media extends DddAggregate {
     @Column({ comment: '에피소드 id' })
     episodeId!: number;
 
-    @Column({ comment: '캔버스 id', nullable: true })
-    canvasId?: number;
-
     @Column({ comment: '미디어 파일명' })
     mediaName!: string;
 
     @Column({ comment: '미디어 타입' })
     mediaType!: MediaType;
 
+    @Column({ comment: '비디오 미디어 길이(ms)', nullable: true })
+    duration?: number;
+
     @Column({ comment: '미디어 url' })
     mediaUrl!: string;
-
-    @Column({ comment: '캔버스 등록 미디어 정렬 인덱스', nullable: true })
-    index?: number;
 
     @ManyToOne(() => Episode, { nullable: false })
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
 
-    /*
-    AGENT
-    - manytomany로 수정. 
-    - 한 미디어는 여러개의 캔버스 위에 올라가는게 가능하고, 
-    - 한 캔버스는  여러개의 미디어를 갖는다. 
-    */
-    @ManyToOne(() => Canvas, (canvas) => canvas.medias, { nullable: true })
-    @JoinColumn({ name: 'canvasId' })
-    canvas?: Canvas;
+    @OneToMany(() => CanvasMedia, (canvasMedia) => canvasMedia.media)
+    canvasMedias?: CanvasMedia[];
 
     constructor(args?: Ctor) {
         super();
         if (args) {
             this.episodeId = args.episodeId;
-            this.canvasId = args.canvasId;
             this.mediaName = args.mediaName;
             this.mediaType = args.mediaType;
             this.mediaUrl = args.mediaUrl;
-            this.index = args.index;
+            this.duration = args.duration;
         }
     }
 }

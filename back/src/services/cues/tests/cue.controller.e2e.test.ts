@@ -83,6 +83,17 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
 
         assert.deepEqual(createResponse.body, { data: {} });
 
+        const cueListResponse = await request(app.getHttpServer()).get(`/tracks/${track.id}/cues`).expect(200);
+        const listedCue = cueListResponse.body.data.items[0];
+
+        assert.equal(cueListResponse.body.data.total, 1);
+        assert.equal(listedCue.characterId, character.id);
+        assert.equal(listedCue.trackId, track.id);
+        assert.equal(listedCue.startTime, 1500);
+        assert.equal(listedCue.endTime, 5500);
+        assert.equal(listedCue.volume, 0.85);
+        assert.equal(listedCue.script, 'API로 추가한 큐');
+
         const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
         const updatedTrack = listResponse.body.data.items.find(
             (item: { id: number; cues: Array<{ startTime: number; endTime: number }> }) => item.id === track.id

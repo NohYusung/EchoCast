@@ -11,37 +11,34 @@ export class MediaService extends DddService {
 
     async create({
         episodeId,
-        canvasId,
         mediaName,
         mediaType,
         mediaUrl,
-        index,
+        duration,
     }: {
         episodeId: number;
-        canvasId?: number;
         mediaName: string;
         mediaType: MediaType;
         mediaUrl: string;
-        index?: number;
+        duration?: number;
     }) {
         const media = new Media({
             episodeId,
-            canvasId,
             mediaName,
             mediaType,
             mediaUrl,
-            index,
+            duration,
         });
         await this.mediaRepository.save([media]);
 
         return {
             id: media.id,
             episodeId: media.episodeId,
-            canvasId: media.canvasId ?? undefined,
+            canvasId: undefined,
             mediaName: media.mediaName,
             mediaType: media.mediaType,
             mediaUrl: media.mediaUrl,
-            index: media.index,
+            ...(typeof media.duration === 'number' ? { duration: media.duration } : {}),
         };
     }
 
@@ -54,11 +51,11 @@ export class MediaService extends DddService {
             return {
                 id: media.id,
                 episodeId: media.episodeId,
-                canvasId: media.canvasId ?? undefined,
+                canvasId: undefined,
                 mediaName: media.mediaName,
                 mediaType: media.mediaType,
                 mediaUrl: media.mediaUrl,
-                index: media.index,
+                ...(typeof media.duration === 'number' ? { duration: media.duration } : {}),
             };
         });
 

@@ -101,11 +101,44 @@ test('POST /episodes/:episodeId/audios creates audio and GET /episodes/:episodeI
         );
 
         const tracksResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
+        type TrackCueWithAudioResponse = {
+            audioId?: number;
+            audio?: {
+                audioUrl?: string;
+                name?: string;
+            };
+        };
         const track = tracksResponse.body.data.items.find(
-            (item: { id: number; name: string; cues: Array<{ audioId?: number }> }) =>
+            (item: { id: number; name: string; cues: TrackCueWithAudioResponse[] }) =>
                 item.name === 'Impact SFX' && item.cues.some((cue) => cue.audioId === initialAudio.id)
         );
         assert.ok(track);
+        const droppedCue = track.cues.find((cue: TrackCueWithAudioResponse) => cue.audioId === initialAudio.id);
+        assert.equal(droppedCue?.audio?.audioUrl, audioUrl);
+        assert.equal(droppedCue?.audio?.name, 'impact.wav');
+
+        const secondDropResponse = await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/audios/${initialAudio.id}/drop-to-track`)
+            .send({
+                trackId: track.id,
+                startTime: 6000,
+                volume: 1,
+            })
+            .expect(201);
+
+        assert.notEqual(secondDropResponse.body.data.cue.id, dropResponse.body.data.cue.id);
+        assert.equal(secondDropResponse.body.data.track.id, track.id);
+        assert.equal(secondDropResponse.body.data.cue.audioId, initialAudio.id);
+        assert.equal(secondDropResponse.body.data.cue.startTime, 6000);
+        assert.equal(secondDropResponse.body.data.cue.endTime, 9000);
+
+        const updatedTracksResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
+        const updatedTrack = updatedTracksResponse.body.data.items.find(
+            (item: { id: number; cues: Array<{ audioId?: number }> }) => item.id === track.id
+        );
+
+        assert.ok(updatedTrack);
+        assert.equal(updatedTrack.cues.filter((cue: { audioId?: number }) => cue.audioId === initialAudio.id).length, 2);
     } finally {
         await app.close();
     }

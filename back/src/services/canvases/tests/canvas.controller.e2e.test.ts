@@ -38,7 +38,7 @@ test('GET /episodes/:episodeId/canvases does not treat standalone media as a can
         const mediaUrl = `https://assets.example.com/canvas-${Date.now()}.png`;
         await request(app.getHttpServer())
             .post(`/episodes/${episode.id}/medias`)
-            .send({ mediaName: 'canvas.png', mediaType: 'image', mediaUrl, index: 0 })
+            .send({ mediaName: 'canvas.png', mediaType: 'image', mediaUrl })
             .expect(201);
 
         const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/canvases`).expect(200);
@@ -84,7 +84,7 @@ test('POST /episodes/:episodeId/canvases registers a canvas with media metadata'
         const mediaUrl = `https://assets.example.com/confirmed-canvas-${Date.now()}.png`;
         await request(app.getHttpServer())
             .post(`/episodes/${episode.id}/medias`)
-            .send({ mediaName: 'confirmed-canvas.png', mediaType: 'image', mediaUrl, index: 9 })
+            .send({ mediaName: 'confirmed-canvas.png', mediaType: 'image', mediaUrl })
             .expect(201);
 
         const mediasResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/medias`).expect(200);
@@ -129,6 +129,176 @@ test('POST /episodes/:episodeId/canvases registers a canvas with media metadata'
             },
         ]);
         assert.equal(typeof items[0].id, 'number');
+    } finally {
+        await app.close();
+    }
+});
+
+test('POST /episodes/:episodeId/canvases keeps canvas media indexes independent for shared media', async () => {
+    const moduleRef = await Test.createTestingModule({
+        imports: [AppModule],
+    }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+
+    await app.init();
+
+    try {
+        const productTitle = `캔버스 다중 연결 테스트 작품 ${Date.now()}`;
+        await request(app.getHttpServer()).post('/products').send({ title: productTitle }).expect(201);
+
+        const productsResponse = await request(app.getHttpServer()).get('/products').expect(200);
+        const product = productsResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.title === productTitle
+        );
+        assert.ok(product);
+
+        const episodeTitle = `캔버스 다중 연결 테스트 에피소드 ${Date.now()}`;
+        await request(app.getHttpServer())
+            .post(`/products/${product.id}/episodes`)
+            .send({ episodeNumber: 1, title: episodeTitle })
+            .expect(201);
+
+        const episodesResponse = await request(app.getHttpServer()).get(`/products/${product.id}/episodes`).expect(200);
+        const episode = episodesResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.title === episodeTitle
+        );
+        assert.ok(episode);
+
+        const mediaUrl = `https://assets.example.com/shared-canvas-${Date.now()}.png`;
+        await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/medias`)
+            .send({ mediaName: 'shared-canvas.png', mediaType: 'image', mediaUrl })
+            .expect(201);
+
+        const mediasResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/medias`).expect(200);
+        const media = mediasResponse.body.data.items.find(
+            (item: { id: number; mediaUrl: string }) => item.mediaUrl === mediaUrl
+        );
+        assert.ok(media);
+
+        await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/canvases`)
+            .send({ medias: [{ mediaId: media.id, index: 0 }] })
+            .expect(201);
+        await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/canvases`)
+            .send({ medias: [{ mediaId: media.id, index: 3 }] })
+            .expect(201);
+
+        const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/canvases`).expect(200);
+        const { items, total } = listResponse.body.data;
+
+        assert.equal(total, 2);
+        assert.deepEqual(
+            items.map((item: { medias: Array<{ mediaId: number }> }) =>
+                item.medias.map((mediaItem: { mediaId: number; index: number }) => ({
+                    mediaId: mediaItem.mediaId,
+                    index: mediaItem.index,
+                }))
+            ),
+            [
+                [{ mediaId: media.id, index: 0 }],
+                [{ mediaId: media.id, index: 3 }],
+            ]
+        );
+    } finally {
+        await app.close();
+    }
+});
+
+test('PUT /episodes/:episodeId/canvases/:canvasId replaces attached media items', async () => {
+    const moduleRef = await Test.createTestingModule({
+        imports: [AppModule],
+    }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+
+    await app.init();
+
+    try {
+        const productTitle = `캔버스 수정 테스트 작품 ${Date.now()}`;
+        await request(app.getHttpServer()).post('/products').send({ title: productTitle }).expect(201);
+
+        const productsResponse = await request(app.getHttpServer()).get('/products').expect(200);
+        const product = productsResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.title === productTitle
+        );
+        assert.ok(product);
+
+        const episodeTitle = `캔버스 수정 테스트 에피소드 ${Date.now()}`;
+        await request(app.getHttpServer())
+            .post(`/products/${product.id}/episodes`)
+            .send({ episodeNumber: 1, title: episodeTitle })
+            .expect(201);
+
+        const episodesResponse = await request(app.getHttpServer()).get(`/products/${product.id}/episodes`).expect(200);
+        const episode = episodesResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.title === episodeTitle
+        );
+        assert.ok(episode);
+
+        const firstMediaUrl = `https://assets.example.com/update-first-${Date.now()}.png`;
+        await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/medias`)
+            .send({ mediaName: 'update-first.png', mediaType: 'image', mediaUrl: firstMediaUrl })
+            .expect(201);
+        const secondMediaUrl = `https://assets.example.com/update-second-${Date.now()}.png`;
+        await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/medias`)
+            .send({ mediaName: 'update-second.png', mediaType: 'image', mediaUrl: secondMediaUrl })
+            .expect(201);
+
+        const mediasResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/medias`).expect(200);
+        const firstMedia = mediasResponse.body.data.items.find(
+            (item: { id: number; mediaUrl: string }) => item.mediaUrl === firstMediaUrl
+        );
+        const secondMedia = mediasResponse.body.data.items.find(
+            (item: { id: number; mediaUrl: string }) => item.mediaUrl === secondMediaUrl
+        );
+        assert.ok(firstMedia);
+        assert.ok(secondMedia);
+
+        await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/canvases`)
+            .send({ medias: [{ mediaId: firstMedia.id, index: 0 }] })
+            .expect(201);
+
+        const beforeListResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/canvases`).expect(200);
+        const canvas = beforeListResponse.body.data.items[0];
+        assert.ok(canvas);
+
+        await request(app.getHttpServer())
+            .put(`/episodes/${episode.id}/canvases/${canvas.id}`)
+            .send({
+                medias: [
+                    { mediaId: secondMedia.id, index: 0 },
+                    { mediaId: firstMedia.id, index: 1 },
+                ],
+            })
+            .expect(200)
+            .expect(({ body }) => {
+                assert.deepEqual(body, { data: {} });
+            });
+
+        const afterListResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/canvases`).expect(200);
+        const { items, total } = afterListResponse.body.data;
+
+        assert.equal(total, 1);
+        assert.deepEqual(items[0].medias, [
+            {
+                mediaId: secondMedia.id,
+                mediaName: 'update-second.png',
+                mediaType: 'image',
+                mediaUrl: secondMediaUrl,
+                index: 0,
+            },
+            {
+                mediaId: firstMedia.id,
+                mediaName: 'update-first.png',
+                mediaType: 'image',
+                mediaUrl: firstMediaUrl,
+                index: 1,
+            },
+        ]);
     } finally {
         await app.close();
     }

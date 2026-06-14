@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
     confirmImageCompositionDraft,
     moveImageCompositionLayer,
+    removeImageCompositionLayer,
     syncImageCompositionDraft,
     toCanvasCreateMedias,
     updateImageCompositionLayer,
@@ -12,14 +13,18 @@ import {
 const sources: ImageCompositionSource[] = [
     {
         clipId: 'canvas-1',
+        canvasId: 1,
         mediaId: 1,
+        mediaType: 'image',
         label: '이미지 01',
         mediaUrl: 'https://assets.example.com/1.png',
         order: 0,
     },
     {
         clipId: 'canvas-2',
+        canvasId: 2,
         mediaId: 2,
+        mediaType: 'image',
         label: '이미지 02',
         mediaUrl: 'https://assets.example.com/2.png',
         order: 1,
@@ -56,6 +61,18 @@ test('moveImageCompositionLayer changes layer order for composition output', () 
 
     assert.equal(moved.layers[0].clipId, 'canvas-2');
     assert.equal(moved.layers[1].clipId, 'canvas-1');
+});
+
+test('removeImageCompositionLayer removes a layer and selects the next available layer', () => {
+    const draft = syncImageCompositionDraft(sources);
+    const removed = removeImageCompositionLayer(draft, 'image-layer-canvas-1');
+
+    assert.deepEqual(
+        removed.layers.map((layer) => ({ clipId: layer.clipId, zIndex: layer.zIndex })),
+        [{ clipId: 'canvas-2', zIndex: 0 }],
+    );
+    assert.equal(removed.selectedLayerId, 'image-layer-canvas-2');
+    assert.equal(removed.status, 'editing');
 });
 
 test('syncImageCompositionDraft follows visual source reorder for canvas media index', () => {
@@ -106,6 +123,63 @@ test('toCanvasCreateMedias maps visible image layers to canvas media payload', (
             y: 58,
             scale: 1.25,
             opacity: 0.8,
+        },
+    ]);
+});
+
+test('toCanvasCreateMedias can target one existing canvas and return an empty update payload', () => {
+    const canvasSources: ImageCompositionSource[] = [
+        { ...sources[0], clipId: 'canvas-10-media-1', canvasId: 10, order: 0 },
+        { ...sources[1], clipId: 'canvas-10-media-2', canvasId: 10, order: 1 },
+        {
+            clipId: 'canvas-11',
+            canvasId: 11,
+            mediaId: 3,
+            mediaType: 'image',
+            label: '이미지 03',
+            mediaUrl: 'https://assets.example.com/3.png',
+            order: 2,
+        },
+    ];
+    const draft = syncImageCompositionDraft(canvasSources);
+    const removedOne = removeImageCompositionLayer(draft, 'image-layer-canvas-10-media-1');
+    const removedBoth = removeImageCompositionLayer(removedOne, 'image-layer-canvas-10-media-2');
+
+    assert.deepEqual(
+        toCanvasCreateMedias(removedOne, { canvasId: 10 }).map((media) => ({ mediaId: media.mediaId, index: media.index })),
+        [{ mediaId: 2, index: 0 }],
+    );
+    assert.deepEqual(toCanvasCreateMedias(removedBoth, { canvasId: 10 }), []);
+    assert.deepEqual(
+        toCanvasCreateMedias(removedBoth, { canvasId: 11 }).map((media) => ({ mediaId: media.mediaId, index: media.index })),
+        [{ mediaId: 3, index: 0 }],
+    );
+});
+
+test('toCanvasCreateMedias keeps video layers in the canvas media payload', () => {
+    const videoSources: ImageCompositionSource[] = [
+        {
+            clipId: 'media-9',
+            mediaId: 9,
+            mediaType: 'video',
+            label: '영상 01',
+            mediaUrl: 'https://assets.example.com/clip.mp4',
+            order: 0,
+        },
+    ];
+    const draft = syncImageCompositionDraft(videoSources);
+
+    assert.deepEqual(toCanvasCreateMedias(draft), [
+        {
+            mediaId: 9,
+            mediaName: '영상 01',
+            mediaType: 'video',
+            mediaUrl: 'https://assets.example.com/clip.mp4',
+            index: 0,
+            x: 50,
+            y: 50,
+            scale: 1,
+            opacity: 1,
         },
     ]);
 });

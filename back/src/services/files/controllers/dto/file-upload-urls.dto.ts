@@ -1,3 +1,9 @@
+export type FileUploadUrlRequestDto = {
+    key: string;
+    contentType?: string;
+};
+
 export class FileUploadUrlsDto {
-    keys!: string[];
+    keys?: string[];
+    files?: FileUploadUrlRequestDto[];
 }

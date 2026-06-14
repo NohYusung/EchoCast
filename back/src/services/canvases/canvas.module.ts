@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { DatabasesModule } from '../../databases';
+import { CanvasMediaRepository } from '../canvas-medias/repository/canvas-media.repository';
 import { CanvasService } from './applications/canvas.service';
 import { CanvasController } from './controllers/canvas.controller';
 import { CanvasRepository } from './repository/canvas.repository';
@@ -18,9 +19,17 @@ import { MediaRepository } from '../medias/repository/media.repository';
         },
         {
             provide: CanvasService,
-            inject: [CanvasRepository, MediaRepository],
-            useFactory: (canvasRepository: CanvasRepository, mediaRepository: MediaRepository) =>
-                new CanvasService(canvasRepository, mediaRepository),
+            inject: [CanvasRepository, MediaRepository, CanvasMediaRepository],
+            useFactory: (
+                canvasRepository: CanvasRepository,
+                mediaRepository: MediaRepository,
+                canvasMediaRepository: CanvasMediaRepository
+            ) => new CanvasService(canvasRepository, mediaRepository, canvasMediaRepository),
+        },
+        {
+            provide: CanvasMediaRepository,
+            inject: [DataSource],
+            useFactory: (dataSource: DataSource) => new CanvasMediaRepository(dataSource),
         },
     ],
     exports: [CanvasRepository, CanvasService],

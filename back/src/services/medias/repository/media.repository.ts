@@ -12,11 +12,10 @@ export class MediaRepository extends DddRepository<Media> {
         conditions: {
             id?: number;
             episodeId?: number;
-            canvasId?: number;
             mediaName?: string;
             mediaType?: MediaType;
             mediaUrl?: string;
-            index?: number;
+            duration?: number;
         },
         options?: TypeormRelationOptions<Media>
     ) {
@@ -24,11 +23,10 @@ export class MediaRepository extends DddRepository<Media> {
             where: stripUndefined<Media>({
                 id: conditions.id,
                 episodeId: conditions.episodeId,
-                canvasId: conditions.canvasId,
                 mediaName: conditions.mediaName,
                 mediaType: conditions.mediaType,
                 mediaUrl: conditions.mediaUrl,
-                index: conditions.index,
+                duration: conditions.duration,
             }),
             ...convertOptions(options),
         });
@@ -37,27 +35,25 @@ export class MediaRepository extends DddRepository<Media> {
     async count(conditions: {
         id?: number;
         episodeId?: number;
-        canvasId?: number;
         mediaName?: string;
         mediaType?: MediaType;
         mediaUrl?: string;
-        index?: number;
+        duration?: number;
     }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Media>({
                 id: conditions.id,
                 episodeId: conditions.episodeId,
-                canvasId: conditions.canvasId,
                 mediaName: conditions.mediaName,
                 mediaType: conditions.mediaType,
                 mediaUrl: conditions.mediaUrl,
-                index: conditions.index,
+                duration: conditions.duration,
             }),
         });
     }
 
     async findByEpisodeId(episodeId: number) {
-        return this.find({ episodeId }, { options: { sort: 'index', order: 'ASC' } });
+        return this.find({ episodeId }, { options: { sort: 'id', order: 'ASC' } });
     }
 
     async countByEpisodeId(episodeId: number) {

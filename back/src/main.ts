@@ -8,7 +8,7 @@ async function bootstrap() {
     const configsService = app.get(ConfigsService);
     app.enableCors({
         origin: true,
-        methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['content-type'],
     });
     await app.listen(configsService.server.port);

@@ -5,7 +5,8 @@ import type { CSSProperties, ReactNode } from 'react';
 import { buildPlaybackEvents } from './buildPlaybackEvents';
 import type { PlaybackEvent } from './buildPlaybackEvents';
 import type { PlayerManifest } from './playerManifest.types';
-import { buildPlayerScenes, shouldDriveStripScrollFromScenes, type PlayerScene } from './playerScenes';
+import { getPreviewScrollOffset, type PreviewScrollVisualSegment } from './previewScrollPosition';
+import { buildPlayerScenes, type PlayerScene } from './playerScenes';
 
 type IconName = 'back' | 'mute' | 'pause' | 'play' | 'studio' | 'volume';
 
@@ -71,12 +72,23 @@ function getActivePlaybackEvents(events: PlaybackEvent[], playheadMs: number) {
 
 export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; manifest: PlayerManifest }) {
     const scrollerRef = useRef<HTMLDivElement | null>(null);
-    const autoScrollingRef = useRef(false);
     const sceneRefs = useRef(new Map<string, HTMLElement>());
     const audioRefs = useRef(new Map<string, HTMLAudioElement>());
     const videoRefs = useRef(new Map<string, HTMLVideoElement>());
     const scenes = useMemo(() => buildPlayerScenes(manifest), [manifest]);
-    const shouldDriveStripScroll = useMemo(() => shouldDriveStripScrollFromScenes(scenes), [scenes]);
+    const scrollEvents = useMemo(
+        () =>
+            (manifest.scrolls ?? []).map((scroll) => ({
+                canvasId: scroll.canvasId,
+                start: scroll.startTime,
+                duration: Math.max(0, scroll.endTime - scroll.startTime),
+                startIndex: scroll.startIndex,
+                endIndex: scroll.endIndex,
+                startPosition: scroll.startPosition,
+                endPosition: scroll.endPosition,
+            })),
+        [manifest.scrolls],
+    );
     const playbackEvents = useMemo(() => buildPlaybackEvents(manifest), [manifest]);
     const durationMs = Math.max(1000, manifest.durationMs, ...scenes.map((scene) => scene.endTime));
     const [playheadMs, setPlayheadMs] = useState(0);
@@ -123,28 +135,41 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
     }, [durationMs, isLooping, isPlaying]);
 
     useEffect(() => {
-        if (!isPlaying || !shouldDriveStripScroll) return;
-
         const scroller = scrollerRef.current;
-        const scene = activeScene;
-        const sceneElement = scene ? sceneRefs.current.get(scene.id) : undefined;
+        if (!scroller || scrollEvents.length === 0) return;
 
-        if (!scroller || !scene || !sceneElement) return;
+        const scrollerRect = scroller.getBoundingClientRect();
+        const visualSegments: PreviewScrollVisualSegment[] = scenes.flatMap((scene): PreviewScrollVisualSegment[] => {
+            const sceneElement = sceneRefs.current.get(scene.id);
 
-        const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-        const duration = Math.max(1, scene.endTime - scene.startTime);
-        const progress = clamp((playheadMs - scene.startTime) / duration, 0, 1);
-        const startTop = sceneElement.offsetTop;
-        const sceneBottomTop = sceneElement.offsetTop + sceneElement.offsetHeight - scroller.clientHeight * 0.72;
-        const endTop = clamp(sceneBottomTop, startTop, maxScrollTop);
-        const nextTop = clamp(startTop + (endTop - startTop) * progress, 0, maxScrollTop);
+            if (!sceneElement) {
+                return [];
+            }
 
-        autoScrollingRef.current = true;
-        scroller.scrollTo({ top: nextTop });
-        requestAnimationFrame(() => {
-            autoScrollingRef.current = false;
+            const sceneRect = sceneElement.getBoundingClientRect();
+
+            return [
+                {
+                    id: scene.id,
+                    canvasId: scene.canvasId,
+                    index: scene.index,
+                    top: sceneRect.top - scrollerRect.top + scroller.scrollTop,
+                    height: sceneRect.height,
+                },
+            ];
         });
-    }, [activeScene, isPlaying, playheadMs, shouldDriveStripScroll]);
+        const nextTop = getPreviewScrollOffset({
+            playhead: playheadMs,
+            scrollEvents,
+            stripHeightPx: scroller.scrollHeight,
+            viewportHeightPx: scroller.clientHeight,
+            visualSegments,
+        });
+
+        if (nextTop === undefined) return;
+
+        scroller.scrollTo({ top: nextTop });
+    }, [playheadMs, scenes, scrollEvents]);
 
     useEffect(() => {
         const activeEventIds = new Set(activeEvents.map((event) => event.id));
@@ -212,33 +237,6 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
         setPlayheadMs(clamp(milliseconds, 0, durationMs));
     };
 
-    const handleManualScroll = () => {
-        if (!shouldDriveStripScroll) return;
-        if (isPlaying || autoScrollingRef.current) return;
-
-        const scroller = scrollerRef.current;
-        if (!scroller) return;
-
-        const scanTop = scroller.scrollTop + scroller.clientHeight * 0.34;
-        let nextTime = playheadMs;
-
-        for (let index = 0; index < scenes.length; index += 1) {
-            const scene = scenes[index];
-            const element = sceneRefs.current.get(scene.id);
-            if (!element) continue;
-
-            const sceneStart = element.offsetTop;
-            const sceneEnd = sceneStart + element.offsetHeight;
-            if (scanTop < sceneStart || scanTop > sceneEnd) continue;
-
-            const progress = clamp((scanTop - sceneStart) / Math.max(1, sceneEnd - sceneStart), 0, 1);
-            nextTime = scene.startTime + (scene.endTime - scene.startTime) * progress;
-            break;
-        }
-
-        setPlayheadMs(clamp(nextTime, 0, durationMs));
-    };
-
     const activeLabel =
         activeEvents[0]?.kind === 'record'
             ? '녹음 재생'
@@ -264,7 +262,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
             </header>
 
             <main className="vpp-stage">
-                <div className="vpp-scroll" onScroll={handleManualScroll} ref={scrollerRef}>
+                <div className="vpp-scroll" ref={scrollerRef}>
                     <div className="vpp-work">
                         {scenes.map((scene) => (
                             <section

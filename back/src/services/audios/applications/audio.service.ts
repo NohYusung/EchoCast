@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
 import { Cue } from '../../cues/domain/cue.entity';
-import { CueRepository } from '../../cues/repository/cue.repository';
 import { Track, type TrackType } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
 import { Audio, type AudioType } from '../domain/audio.entity';
@@ -11,8 +10,7 @@ import { AudioRepository } from '../repository/audio.repository';
 export class AudioService extends DddService {
     constructor(
         private readonly audioRepository: AudioRepository,
-        private readonly trackRepository: TrackRepository,
-        private readonly cueRepository: CueRepository
+        private readonly trackRepository: TrackRepository
     ) {
         super();
     }
@@ -55,10 +53,12 @@ export class AudioService extends DddService {
             this.audioRepository.countByEpisodeId(episodeId),
         ]);
         const items = audios.map((audio) => {
+            const cueId = audio.cues?.[0]?.id;
+
             return {
                 id: audio.id,
                 episodeId: audio.episodeId,
-                ...(audio.cue?.id ? { cueId: audio.cue.id } : {}),
+                ...(cueId ? { cueId } : {}),
                 audioType: audio.audioType,
                 name: audio.name,
                 audioUrl: audio.audioUrl,
@@ -91,13 +91,9 @@ export class AudioService extends DddService {
         volume?: number;
     }) {
         const [audio] = await this.audioRepository.find({ id: audioId, episodeId });
-        const [linkedCue] = await this.cueRepository.find({ audioId });
 
         if (!audio) {
             throw new NotFoundException('Audio not found.');
-        }
-        if (linkedCue) {
-            throw new BadRequestException('Audio is already linked to a cue.');
         }
         if (!Number.isFinite(startTime)) {
             throw new BadRequestException('Cue startTime is required.');

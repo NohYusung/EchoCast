@@ -8,6 +8,7 @@ import { CueRepository } from '../../cues/repository/cue.repository';
 import { EpisodeRepository } from '../../episodes/repository/episode.repository';
 import { Record as RecordEntity } from '../../records/domain/record.entity';
 import { RecordRepository } from '../../records/repository/record.repository';
+import type { Scroll } from '../../scrolls/domain/scroll.entity';
 import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
 import type { TrackType } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
@@ -24,6 +25,8 @@ type PlayerItem = {
     kind: 'visual' | 'audio' | 'effect' | 'cue';
     startTime: number;
     endTime: number;
+    canvasId?: string;
+    index?: number;
     mediaId?: string;
     cueId?: string;
     layerId: number;
@@ -73,6 +76,17 @@ type PlayerDraft = {
         ttsUrl?: string;
         volume: number;
     }>;
+    scrolls: Array<{
+        id: string;
+        trackId: string;
+        canvasId?: string;
+        startIndex: number;
+        endIndex: number;
+        startTime: number;
+        endTime: number;
+        startPosition: number;
+        endPosition: number;
+    }>;
     records: Array<{
         id: string;
         cueId: string;
@@ -108,6 +122,7 @@ type PlayerManifest = {
     }>;
     media: Array<Omit<PlayerDraft['media'][number], 'episodeId'>>;
     records: PlayerDraft['records'];
+    scrolls: PlayerDraft['scrolls'];
     tts: Array<{ id: string; cueId: string; voiceId: string; provider: string; voiceName: string; audioUrl: string }>;
 };
 
@@ -150,27 +165,38 @@ export class PlayerService extends DddService {
         const [characters, tracks, canvases, audios] = await Promise.all([
             this.characterRepository.find({ productId: episode.productId }, { options: { sort: 'id', order: 'ASC' } }),
             this.trackRepository.find({ episodeId }, { options: { sort: 'id', order: 'ASC' } }),
-            this.canvasRepository.find({ episodeId }, { relations: { medias: true } }),
+            this.canvasRepository.find({ episodeId }, { relations: { canvasMedias: { media: true } } }),
             this.audioRepository.find({ episodeId }, { options: { sort: 'id', order: 'ASC' } }),
         ]);
         canvases.forEach((canvas) => {
-            canvas.medias = [...canvas.medias].sort(
-                (a, b) => (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
+            canvas.canvasMedias = [...canvas.canvasMedias].sort(
+                (a, b) =>
+                    (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER) ||
+                    a.media.id - b.media.id
             );
         });
         canvases.sort((a, b) => {
-            const [aMedia] = a.medias;
-            const [bMedia] = b.medias;
+            const [aCanvasMedia] = a.canvasMedias;
+            const [bCanvasMedia] = b.canvasMedias;
 
             return (
-                (aMedia?.index ?? Number.MAX_SAFE_INTEGER) - (bMedia?.index ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
+                (aCanvasMedia?.index ?? Number.MAX_SAFE_INTEGER) -
+                    (bCanvasMedia?.index ?? Number.MAX_SAFE_INTEGER) ||
+                a.id - b.id
             );
         });
         const visualMediaItems = canvases
-            .flatMap((canvas) => canvas.medias.map((media) => ({ canvas, media })))
+            .flatMap((canvas) =>
+                canvas.canvasMedias.map((canvasMedia) => ({
+                    canvas,
+                    canvasMedia,
+                    media: canvasMedia.media,
+                }))
+            )
             .sort(
                 (a, b) =>
-                    (a.media.index ?? Number.MAX_SAFE_INTEGER) - (b.media.index ?? Number.MAX_SAFE_INTEGER) ||
+                    (a.canvasMedia.index ?? Number.MAX_SAFE_INTEGER) -
+                        (b.canvasMedia.index ?? Number.MAX_SAFE_INTEGER) ||
                     a.canvas.id - b.canvas.id ||
                     a.media.id - b.media.id
             );
@@ -184,12 +210,19 @@ export class PlayerService extends DddService {
                       ),
                       this.scrollRepository.find(
                           { trackId: checkInValue(trackIds) },
-                          { options: { sort: 'startTime', order: 'ASC' } }
+                          { relations: { startAnchor: true, endAnchor: true } }
                       ),
                   ])
                 : [[], []];
         cues.sort((a, b) => a.startTime - b.startTime || a.id - b.id);
-        scrolls.sort((a, b) => a.startTime - b.startTime || a.id - b.id);
+        scrolls.sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0) || a.id - b.id);
+        const scrollByCanvasStartIndex = new Map<string, Scroll>();
+        scrolls.forEach((scroll) => {
+            if (typeof scroll.canvasId === 'number' && typeof scroll.startIndex === 'number') {
+                scrollByCanvasStartIndex.set(`${scroll.canvasId}:${scroll.startIndex}`, scroll);
+            }
+        });
+        const hasExplicitScrollMapping = scrollByCanvasStartIndex.size > 0;
         const cueIds = cues.map((cue) => cue.id);
         const records: RecordEntity[] =
             cueIds.length > 0
@@ -269,17 +302,25 @@ export class PlayerService extends DddService {
             scripts,
             tracks: tracksDraft,
             items: [
-                ...visualMediaItems.map(({ canvas, media }, index) => {
-                    const scroll = scrolls[index];
+                ...visualMediaItems.map(({ canvas, canvasMedia, media }, index) => {
+                    const mediaIndex = canvasMedia.index ?? index;
+                    const scroll =
+                        scrollByCanvasStartIndex.get(`${canvas.id}:${mediaIndex}`) ??
+                        (hasExplicitScrollMapping ? undefined : scrolls[index]);
                     const fallbackStartTime = Number((index * fallbackVisualDuration).toFixed(3));
                     const fallbackEndTime = Number(((index + 1) * fallbackVisualDuration).toFixed(3));
 
                     return {
-                        id: canvas.medias.length === 1 ? `visual-${canvas.id}` : `visual-${canvas.id}-${media.id}`,
+                        id:
+                            canvas.canvasMedias.length === 1
+                                ? `visual-${canvas.id}`
+                                : `visual-${canvas.id}-${media.id}`,
                         trackId: visualTrack?.id ?? `visual-${episode.id}`,
                         kind: 'visual' as const,
                         startTime: scroll?.startTime ?? fallbackStartTime,
                         endTime: scroll?.endTime ?? Math.max(fallbackEndTime, fallbackStartTime + 1),
+                        canvasId: toId(canvas.id),
+                        index: mediaIndex,
                         mediaId: toId(media.id),
                         layerId: index,
                     };
@@ -303,11 +344,14 @@ export class PlayerService extends DddService {
             ].sort((a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id)),
             media: [
                 ...canvases.flatMap((canvas) =>
-                    canvas.medias.map((media) => ({
-                        id: toId(media.id),
+                    canvas.canvasMedias.map((canvasMedia) => ({
+                        id: toId(canvasMedia.media.id),
                         episodeId: toId(episode.id),
-                        kind: media.mediaType,
-                        url: media.mediaUrl,
+                        kind: canvasMedia.media.mediaType,
+                        url: canvasMedia.media.mediaUrl,
+                        ...(typeof canvasMedia.media.duration === 'number'
+                            ? { durationMs: canvasMedia.media.duration }
+                            : {}),
                     }))
                 ),
                 ...audios.map((audio) => ({
@@ -329,6 +373,17 @@ export class PlayerService extends DddService {
                 endTime: cue.endTime,
                 ttsVoiceId: cue.ttsVoiceId ? toId(cue.ttsVoiceId) : undefined,
                 volume: cue.volume,
+            })),
+            scrolls: scrolls.map((scroll) => ({
+                id: toId(scroll.id),
+                trackId: toId(scroll.trackId),
+                canvasId: typeof scroll.canvasId === 'number' ? toId(scroll.canvasId) : undefined,
+                startIndex: scroll.startIndex ?? 0,
+                endIndex: scroll.endIndex ?? scroll.startIndex ?? 0,
+                startTime: scroll.startTime ?? 0,
+                endTime: scroll.endTime ?? scroll.startTime ?? 0,
+                startPosition: scroll.startPosition ?? 0,
+                endPosition: scroll.endPosition ?? scroll.startPosition ?? 0,
             })),
             records: records.map((record) => ({
                 id: toId(record.id),
@@ -386,6 +441,7 @@ export class PlayerService extends DddService {
             cues,
             media: draft.media.map(({ episodeId: _episodeId, ...media }) => media),
             records: draft.records,
+            scrolls: draft.scrolls,
             tts: [],
         };
     }
