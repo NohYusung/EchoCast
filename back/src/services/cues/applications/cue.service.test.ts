@@ -103,11 +103,22 @@ describe('CueService', () => {
             assert.equal(storedCue.characterId, character.id);
             assert.equal(storedCue.startCanvasMediaId, canvasMedia.id);
             assert.equal(storedCue.endCanvasMediaId, canvasMedia.id);
-            assert.equal(storedCue.startTime, 0);
-            assert.equal(storedCue.endTime, 1000);
+            assert.equal(storedCue.startTime ?? undefined, undefined);
+            assert.equal(storedCue.endTime ?? undefined, undefined);
             assert.equal(storedCue.startPosition, 12.5);
             assert.equal(storedCue.endPosition, 64);
             assert.equal(storedCue.volume, 0.8);
+
+            await cueService.update({
+                trackId: track.id,
+                cueId: created.id,
+                script: '시간 미배정 큐 수정',
+            });
+
+            const updatedCue = await dataSource.manager.findOneByOrFail(Cue, { id: created.id });
+            assert.equal(updatedCue.script, '시간 미배정 큐 수정');
+            assert.equal(updatedCue.startTime ?? undefined, undefined);
+            assert.equal(updatedCue.endTime ?? undefined, undefined);
         } finally {
             await dataSource.destroy();
         }

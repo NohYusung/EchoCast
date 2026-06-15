@@ -87,8 +87,8 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(cueListResponse.body.data.total, 1);
         assert.equal(listedCue.characterId, character.id);
         assert.equal(listedCue.trackId, track.id);
-        assert.equal(listedCue.startTime, 0);
-        assert.equal(listedCue.endTime, 1000);
+        assert.equal(listedCue.startTime ?? undefined, undefined);
+        assert.equal(listedCue.endTime ?? undefined, undefined);
         assert.equal(listedCue.startPosition, 0);
         assert.equal(listedCue.endPosition, 0);
         assert.equal(listedCue.volume, 0.85);
@@ -97,14 +97,14 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
 
         const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
         const updatedTrack = listResponse.body.data.items.find(
-            (item: { id: number; cues: Array<{ startTime: number; endTime: number }> }) => item.id === track.id
+            (item: { id: number; cues: Array<{ startTime?: number; endTime?: number }> }) => item.id === track.id
         );
         assert.ok(updatedTrack);
         assert.equal(updatedTrack.cues.length, 1);
         assert.equal(updatedTrack.cues[0].characterId, character.id);
         assert.equal(updatedTrack.cues[0].trackId, track.id);
-        assert.equal(updatedTrack.cues[0].startTime, 0);
-        assert.equal(updatedTrack.cues[0].endTime, 1000);
+        assert.equal(updatedTrack.cues[0].startTime ?? undefined, undefined);
+        assert.equal(updatedTrack.cues[0].endTime ?? undefined, undefined);
         assert.equal(updatedTrack.cues[0].startPosition, 0);
         assert.equal(updatedTrack.cues[0].endPosition, 0);
         assert.equal(updatedTrack.cues[0].volume, 0.85);

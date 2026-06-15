@@ -9,8 +9,6 @@ import { TrackRepository } from '../../tracks/repository/track.repository';
 import { Cue } from '../domain/cue.entity';
 import { CueRepository } from '../repository/cue.repository';
 
-const DEFAULT_PENDING_CUE_DURATION_MS = 1000;
-
 @Injectable()
 export class CueService extends DddService {
     constructor(
@@ -59,11 +57,7 @@ export class CueService extends DddService {
         if (!script.trim()) {
             throw new BadRequestException('큐 대사가 필요합니다.');
         }
-        const resolvedStartTime = startTime ?? 0;
-        const resolvedEndTime = endTime ?? resolvedStartTime + DEFAULT_PENDING_CUE_DURATION_MS;
-        if (!Number.isFinite(resolvedStartTime) || !Number.isFinite(resolvedEndTime) || resolvedEndTime <= resolvedStartTime) {
-            throw new BadRequestException('큐 endTime은 startTime보다 커야 합니다.');
-        }
+        this.validateTimelineRange({ startTime, endTime });
         const audio = await this.resolveAudio({ track, audioId });
         this.validateAudioSourceRange({
             audioId,
@@ -92,8 +86,8 @@ export class CueService extends DddService {
             audioId,
             startCanvasMediaId: resolvedStartCanvasMediaId,
             endCanvasMediaId: resolvedEndCanvasMediaId,
-            startTime: resolvedStartTime,
-            endTime: resolvedEndTime,
+            startTime,
+            endTime,
             audioStartTime,
             audioEndTime,
             startPosition,
@@ -172,11 +166,10 @@ export class CueService extends DddService {
             throw new BadRequestException('큐 대사가 필요합니다.');
         }
 
-        const nextStartTime = startTime ?? cue.startTime;
-        const nextEndTime = endTime ?? cue.endTime;
-        if (!Number.isFinite(nextStartTime) || !Number.isFinite(nextEndTime) || nextEndTime <= nextStartTime) {
-            throw new BadRequestException('큐 endTime은 startTime보다 커야 합니다.');
-        }
+        this.validateTimelineRange({
+            startTime: startTime ?? cue.startTime ?? undefined,
+            endTime: endTime ?? cue.endTime ?? undefined,
+        });
         const nextAudioId = audioId !== undefined ? audioId : (cue.audioId ?? undefined);
         const audio = await this.resolveAudio({ track, audioId: nextAudioId });
         const nextAudioStartTime = audioStartTime !== undefined ? audioStartTime : (cue.audioStartTime ?? undefined);
@@ -237,14 +230,19 @@ export class CueService extends DddService {
         if (!cue.audioId) {
             throw new BadRequestException('오디오 큐만 분할할 수 있습니다.');
         }
-        if (!Number.isFinite(splitTime) || splitTime <= cue.startTime || splitTime >= cue.endTime) {
+        if (typeof cue.startTime !== 'number' || typeof cue.endTime !== 'number') {
+            throw new BadRequestException('시간이 배정된 큐만 분할할 수 있습니다.');
+        }
+
+        const { startTime, endTime } = cue;
+        if (!Number.isFinite(splitTime) || splitTime <= startTime || splitTime >= endTime) {
             throw new BadRequestException('큐 splitTime은 큐 시간 범위 안에 있어야 합니다.');
         }
 
         const audioStartTime = cue.audioStartTime ?? 0;
-        const audioEndTime = cue.audioEndTime ?? audioStartTime + (cue.endTime - cue.startTime);
+        const audioEndTime = cue.audioEndTime ?? audioStartTime + (endTime - startTime);
         const sourceDuration = audioEndTime - audioStartTime;
-        const splitRatio = (splitTime - cue.startTime) / (cue.endTime - cue.startTime);
+        const splitRatio = (splitTime - startTime) / (endTime - startTime);
         const splitAudioTime = Math.round(audioStartTime + sourceDuration * splitRatio);
 
         this.validateAudioSourceRange({
@@ -262,7 +260,7 @@ export class CueService extends DddService {
             startCanvasMediaId: cue.startCanvasMediaId,
             endCanvasMediaId: cue.endCanvasMediaId,
             startTime: splitTime,
-            endTime: cue.endTime,
+            endTime,
             audioStartTime: splitAudioTime,
             audioEndTime,
             startPosition: cue.startPosition,
@@ -306,6 +304,21 @@ export class CueService extends DddService {
             endPosition > 100
         ) {
             throw new BadRequestException('큐 위치는 0 이상 100 이하여야 합니다.');
+        }
+    }
+
+    private validateTimelineRange({ startTime, endTime }: { startTime?: number | null; endTime?: number | null }) {
+        if (startTime == null && endTime == null) {
+            return;
+        }
+        if (
+            startTime == null ||
+            endTime == null ||
+            !Number.isFinite(startTime) ||
+            !Number.isFinite(endTime) ||
+            endTime <= startTime
+        ) {
+            throw new BadRequestException('큐 endTime은 startTime보다 커야 합니다.');
         }
     }
 

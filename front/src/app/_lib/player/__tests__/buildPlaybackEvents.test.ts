@@ -12,6 +12,37 @@ test('buildPlaybackEvents schedules cue records before tts fallback for the same
     assert.equal(ttsEvent, undefined);
 });
 
+test('buildPlaybackEvents uses the accepted record when a cue has multiple records', () => {
+    const events = buildPlaybackEvents({
+        ...sampleManifest,
+        records: [
+            {
+                id: 'record-5001-draft',
+                cueId: 'cue-5001',
+                artistId: 'artist-1',
+                recordUrl: '/audio/record-5001-draft.wav',
+                duration: 2000,
+                volume: 1,
+                isAccepted: false,
+            },
+            {
+                id: 'record-5001-accepted',
+                cueId: 'cue-5001',
+                artistId: 'artist-1',
+                recordUrl: '/audio/record-5001-accepted.wav',
+                duration: 2100,
+                volume: 0.8,
+                isAccepted: true,
+            },
+        ],
+    });
+    const recordEvent = events.find((event) => event.cueId === 'cue-5001');
+
+    assert.equal(recordEvent?.sourceId, 'record-5001-accepted');
+    assert.equal(recordEvent?.url, '/audio/record-5001-accepted.wav');
+    assert.equal(recordEvent?.volume, 0.8);
+});
+
 test('buildPlaybackEvents schedules tts fallback when a cue has no record', () => {
     const events = buildPlaybackEvents(sampleManifest);
     const fallbackEvent = events.find((event) => event.sourceId === 'tts-5002');

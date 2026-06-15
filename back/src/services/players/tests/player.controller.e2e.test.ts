@@ -71,8 +71,9 @@ test('GET player manifest endpoint exposes episode playback content without draf
             new RecordEntity({
                 cueId: cue.id,
                 artistId: artist.id,
-                audioUrl: 'https://assets.example.com/api-record.wav',
+                recordUrl: 'https://assets.example.com/api-record.wav',
                 duration: 1700,
+                isAccepted: true,
             })
         );
 
@@ -82,6 +83,8 @@ test('GET player manifest endpoint exposes episode playback content without draf
 
         assert.equal(manifestResponse.body.data.episodeId, String(episode.id));
         assert.equal(manifestResponse.body.data.records[0].cueId, String(cue.id));
+        assert.equal(manifestResponse.body.data.records[0].recordUrl, 'https://assets.example.com/api-record.wav');
+        assert.equal(manifestResponse.body.data.records[0].isAccepted, true);
         assert.equal(manifestResponse.body.data.cues[0].approvedRecordUrl, 'https://assets.example.com/api-record.wav');
 
         await request(app.getHttpServer()).get(`/episodes/${episode.id}/player-draft`).expect(404);

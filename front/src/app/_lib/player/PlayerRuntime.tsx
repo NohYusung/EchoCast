@@ -1,36 +1,31 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { buildPlaybackEvents } from './buildPlaybackEvents';
 import type { PlaybackEvent } from './buildPlaybackEvents';
 import type { PlayerManifest } from './playerManifest.types';
 import { syncPreviewVideoPlayback, type PreviewVideoClip } from './previewVideoPlayback';
-import { getPreviewScrollOffset, type PreviewScrollVisualSegment } from './previewScrollPosition';
+import type { PreviewScrollVisualSegment } from './previewScrollPosition';
+import {
+    advancePlayerRuntimePlayhead,
+    getPlayerRuntimePlayheadFromScroll,
+    shouldSyncPlayerRuntimeScroll,
+    toPlayerRuntimeScrollAnchors,
+    toPlayerRuntimeScrollEvents,
+} from './playerRuntimeScroll';
 import { buildPlayerScenes, type PlayerScene } from './playerScenes';
 
-type IconName = 'back' | 'mute' | 'pause' | 'play' | 'studio' | 'volume';
+type IconName = 'back' | 'pause' | 'play' | 'studio';
 
 const iconPaths: Record<IconName, ReactNode> = {
     back: <path d="m15 18-6-6 6-6" />,
-    mute: (
-        <>
-            <path d="M4 10v4h4l5 4V6L8 10z" />
-            <path d="m18 9 3 3m0-3-3 3" />
-        </>
-    ),
     pause: <path d="M8 5h3v14H8zM13 5h3v14h-3z" />,
     play: <path d="M8 5v14l11-7z" />,
     studio: (
         <>
             <path d="M4 6h16v12H4z" />
             <path d="M8 10h8M8 14h5" />
-        </>
-    ),
-    volume: (
-        <>
-            <path d="M4 10v4h4l5 4V6L8 10z" />
-            <path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10" />
         </>
     ),
 };
@@ -104,19 +99,8 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
     const audioRefs = useRef(new Map<string, HTMLAudioElement>());
     const videoRefs = useRef(new Map<string, HTMLVideoElement>());
     const scenes = useMemo(() => buildPlayerScenes(manifest), [manifest]);
-    const scrollEvents = useMemo(
-        () =>
-            (manifest.scrolls ?? []).map((scroll) => ({
-                canvasId: scroll.canvasId,
-                start: scroll.startTime,
-                duration: Math.max(0, scroll.endTime - scroll.startTime),
-                startIndex: scroll.startIndex,
-                endIndex: scroll.endIndex,
-                startPosition: scroll.startPosition,
-                endPosition: scroll.endPosition,
-            })),
-        [manifest.scrolls],
-    );
+    const scrollEvents = useMemo(() => toPlayerRuntimeScrollEvents(manifest.scrolls), [manifest.scrolls]);
+    const scrollAnchors = useMemo(() => toPlayerRuntimeScrollAnchors(manifest.anchors), [manifest.anchors]);
     const playbackEvents = useMemo(() => buildPlaybackEvents(manifest), [manifest]);
     const durationMs = Math.max(
         1000,
@@ -126,9 +110,6 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
     );
     const [playheadMs, setPlayheadMs] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [isLooping, setIsLooping] = useState(false);
-    const [isMuted, setIsMuted] = useState(false);
-    const [volume, setVolume] = useState(82);
     const videoClips = useMemo<PreviewVideoClip[]>(
         () =>
             scenes.map((scene) => ({
@@ -140,12 +121,12 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                 hasTimelineControls: scene.hasTimelineControls,
                 sourceStart: toSeconds(scene.trimStartTime),
                 sourceEnd: toSeconds(scene.trimEndTime),
-                volume: clamp(((scene.volume ?? 1) * volume) / 100, 0, 1),
-                isMuted: isMuted || scene.isMuted === true,
+                volume: clamp(scene.volume ?? 1, 0, 1),
+                isMuted: scene.isMuted === true,
                 start: scene.startTime / 1000,
                 duration: getVideoSceneDurationMs(scene) / 1000,
             })),
-        [isMuted, scenes, volume],
+        [scenes],
     );
     const activeScene = getActiveScene(scenes, playheadMs);
     const activeEvents = getActivePlaybackEvents(playbackEvents, playheadMs);
@@ -165,16 +146,17 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
             previousTimestamp = timestamp;
 
             setPlayheadMs((current) => {
-                const next = current + elapsedMs;
+                const next = advancePlayerRuntimePlayhead({
+                    currentTimeMs: current,
+                    elapsedMs,
+                    durationMs,
+                });
 
-                if (next >= durationMs) {
-                    if (isLooping) return 0;
-
+                if (next.isEnded) {
                     setIsPlaying(false);
-                    return durationMs;
                 }
 
-                return next;
+                return next.playheadMs;
             });
 
             animationFrame = requestAnimationFrame(tick);
@@ -183,12 +165,10 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
         animationFrame = requestAnimationFrame(tick);
 
         return () => cancelAnimationFrame(animationFrame);
-    }, [durationMs, isLooping, isPlaying]);
+    }, [durationMs, isPlaying]);
 
-    useEffect(() => {
-        const scroller = scrollerRef.current;
-        if (!scroller || scrollEvents.length === 0) return;
-
+    const syncPlayheadFromScroll = useCallback((scroller: HTMLDivElement | null = scrollerRef.current) => {
+        if (!scroller || !shouldSyncPlayerRuntimeScroll(scrollEvents, scrollAnchors)) return;
         const scrollerRect = scroller.getBoundingClientRect();
         const visualSegments: PreviewScrollVisualSegment[] = scenes.flatMap((scene): PreviewScrollVisualSegment[] => {
             const sceneElement = sceneRefs.current.get(scene.id);
@@ -209,18 +189,28 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                 },
             ];
         });
-        const nextTop = getPreviewScrollOffset({
-            playhead: playheadMs,
-            scrollEvents,
-            stripHeightPx: scroller.scrollHeight,
-            viewportHeightPx: scroller.clientHeight,
-            visualSegments,
+        setPlayheadMs((current) => {
+            const nextPlayheadMs = getPlayerRuntimePlayheadFromScroll({
+                scrollTopPx: scroller.scrollTop,
+                currentPlayheadMs: current,
+                scrollEvents,
+                anchors: scrollAnchors,
+                stripHeightPx: scroller.scrollHeight,
+                viewportHeightPx: scroller.clientHeight,
+                visualSegments,
+            });
+
+            if (nextPlayheadMs === undefined) return current;
+
+            const next = clamp(nextPlayheadMs, 0, durationMs);
+
+            return Math.abs(current - next) < 16 ? current : next;
         });
+    }, [durationMs, scenes, scrollAnchors, scrollEvents]);
 
-        if (nextTop === undefined) return;
-
-        scroller.scrollTo({ top: nextTop });
-    }, [playheadMs, scenes, scrollEvents]);
+    useEffect(() => {
+        syncPlayheadFromScroll();
+    }, [syncPlayheadFromScroll]);
 
     useEffect(() => {
         const activeEventIds = new Set(activeEvents.map((event) => event.id));
@@ -230,8 +220,8 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
             if (!audio) continue;
 
             const isActive = activeEventIds.has(event.id);
-            audio.muted = isMuted;
-            audio.volume = clamp((event.volume * volume) / 100, 0, 1);
+            audio.muted = false;
+            audio.volume = clamp(event.volume, 0, 1);
 
             if (!isActive) {
                 audio.pause();
@@ -250,7 +240,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                 audio.pause();
             }
         }
-    }, [activeEvents, isMuted, isPlaying, playbackEvents, playheadMs, volume]);
+    }, [activeEvents, isPlaying, playbackEvents, playheadMs]);
 
     useEffect(() => {
         syncPreviewVideoPlayback({
@@ -267,10 +257,6 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
             videoRefs.current.forEach((video) => video.pause());
         };
     }, []);
-
-    const seekTo = (milliseconds: number) => {
-        setPlayheadMs(clamp(milliseconds, 0, durationMs));
-    };
 
     const activeLabel =
         activeEvents[0]?.kind === 'record'
@@ -297,7 +283,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
             </header>
 
             <main className="vpp-stage">
-                <div className="vpp-scroll" ref={scrollerRef}>
+                <div className="vpp-scroll" onScroll={(event) => syncPlayheadFromScroll(event.currentTarget)} ref={scrollerRef}>
                     <div className="vpp-work">
                         {scenes.map((scene) => (
                             <section
@@ -353,20 +339,6 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                         <strong>{activeLabel}</strong>
                         <span>{activeScene?.label ?? 'SCENE'} · {activeEvents[0]?.url ?? '오디오 없음'}</span>
                     </div>
-                    <button className={`vpp-chip-button ${isLooping ? 'is-active' : ''}`} onClick={() => setIsLooping((current) => !current)} type="button">
-                        LOOP
-                    </button>
-                    <button className="vpp-icon-button" onClick={() => setIsMuted((current) => !current)} type="button" aria-label={isMuted ? '음소거 해제' : '음소거'}>
-                        <PlayerIcon name={isMuted ? 'mute' : 'volume'} size={19} />
-                    </button>
-                </div>
-                <div className="vpp-progress-row">
-                    <span>{formatPlayerTime(playheadMs)}</span>
-                    <input max={durationMs} min={0} onChange={(event) => seekTo(Number(event.target.value))} step={100} type="range" value={playheadMs} />
-                    <span>{formatPlayerTime(durationMs)}</span>
-                </div>
-                <div className="vpp-volume-row">
-                    <input aria-label="볼륨" max={100} min={0} onChange={(event) => setVolume(Number(event.target.value))} type="range" value={volume} />
                 </div>
             </footer>
 

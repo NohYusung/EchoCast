@@ -40,6 +40,8 @@ describe('Cue entity', () => {
             assert.equal(columnNames.includes('endPosition'), true);
             assert.equal(columnNames.includes('audioStartTime'), true);
             assert.equal(columnNames.includes('audioEndTime'), true);
+            assert.equal(metadata.findColumnWithPropertyName('startTime')?.isNullable, true);
+            assert.equal(metadata.findColumnWithPropertyName('endTime')?.isNullable, true);
         } finally {
             await dataSource.destroy();
         }

@@ -80,9 +80,10 @@ export interface PlayerDraft {
         id: string;
         cueId: string;
         artistId: string;
-        audioUrl: string;
+        recordUrl: string;
         duration?: number;
         volume: number;
+        isAccepted: boolean;
     }>;
     screenEffects?: Array<{
         type: 'effect';

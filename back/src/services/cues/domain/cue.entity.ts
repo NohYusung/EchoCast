@@ -12,8 +12,8 @@ type Ctor = {
     audioId?: number;
     startCanvasMediaId?: number;
     endCanvasMediaId?: number;
-    startTime: number;
-    endTime: number;
+    startTime?: number;
+    endTime?: number;
     audioStartTime?: number;
     audioEndTime?: number;
     startPosition?: number;
@@ -44,11 +44,11 @@ export class Cue extends DddAggregate {
     @Column({ comment: '큐 종료 위치가 속한 캔버스 미디어 id', nullable: true })
     endCanvasMediaId?: number;
 
-    @Column({ comment: '큐 시작 시간' })
-    startTime!: number;
+    @Column({ comment: '큐 시작 시간', nullable: true })
+    startTime?: number;
 
-    @Column({ comment: '큐 종료 시간' })
-    endTime!: number;
+    @Column({ comment: '큐 종료 시간', nullable: true })
+    endTime?: number;
 
     @Column({ comment: '원본 오디오 시작 시간', nullable: true })
     audioStartTime?: number;

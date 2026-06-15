@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
 import { AnchorRepository } from '../../anchors/repository/anchor.repository';
-import { PauseRepository } from '../../pauses/repository/pause.repository';
 import { Scroll } from '../domain/scroll.entity';
 import { ScrollRepository } from '../repository/scroll.repository';
 
@@ -25,8 +24,7 @@ function toScrollResponse(scroll: Scroll) {
 export class ScrollsService extends DddService {
     constructor(
         private readonly scrollRepository: ScrollRepository,
-        private readonly anchorRepository: AnchorRepository,
-        private readonly pauseRepository?: PauseRepository
+        private readonly anchorRepository: AnchorRepository
     ) {
         super();
     }
@@ -163,15 +161,6 @@ export class ScrollsService extends DddService {
 
         if (existingScroll && existingScroll.id !== scrollId) {
             throw new BadRequestException('앵커에 이미 스크롤 이벤트가 등록되어 있습니다.');
-        }
-        if (!this.pauseRepository) {
-            return;
-        }
-
-        const [existingPause] = await this.pauseRepository.find({ trackId, anchorId: startAnchorId });
-
-        if (existingPause) {
-            throw new BadRequestException('앵커에 이미 일시정지 이벤트가 등록되어 있습니다.');
         }
     }
 }

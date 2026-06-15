@@ -27,6 +27,10 @@ export type PreviewScrollAnchor = {
     position: number;
 };
 
+export type PreviewScrollTimedAnchor = PreviewScrollAnchor & {
+    time: number;
+};
+
 function clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
 }
@@ -123,11 +127,13 @@ export function getPreviewScrollPixel({
 export function getPreviewScrollPosition({
     playhead,
     scrollEvents,
+    anchors = [],
     stripHeightPx,
     visualSegments = [],
 }: {
     playhead: number;
     scrollEvents: readonly PreviewScrollPositionEvent[];
+    anchors?: readonly PreviewScrollTimedAnchor[];
     stripHeightPx: number;
     visualSegments?: readonly PreviewScrollVisualSegment[];
 }) {
@@ -139,7 +145,21 @@ export function getPreviewScrollPosition({
         const lastCompletedEvent = [...orderedEvents].reverse().find((event) => playhead >= event.start + event.duration);
 
         if (!lastCompletedEvent) {
-            return undefined;
+            const latestAnchor = [...anchors]
+                .filter((anchor) => Number.isFinite(anchor.time) && playhead >= anchor.time)
+                .sort((a, b) => b.time - a.time)[0];
+
+            if (!latestAnchor) {
+                return undefined;
+            }
+
+            return getPreviewScrollPixel({
+                canvasId: latestAnchor.canvasId,
+                index: latestAnchor.index,
+                position: latestAnchor.position,
+                stripHeightPx: coordinateHeightPx,
+                visualSegments,
+            });
         }
 
         return getPreviewScrollPixel({
@@ -181,17 +201,19 @@ export function getPreviewScrollPosition({
 export function getPreviewScrollOffset({
     playhead,
     scrollEvents,
+    anchors = [],
     stripHeightPx,
     viewportHeightPx,
     visualSegments = [],
 }: {
     playhead: number;
     scrollEvents: readonly PreviewScrollPositionEvent[];
+    anchors?: readonly PreviewScrollTimedAnchor[];
     stripHeightPx: number;
     viewportHeightPx: number;
     visualSegments?: readonly PreviewScrollVisualSegment[];
 }) {
-    const anchorPixel = getPreviewScrollPosition({ playhead, scrollEvents, stripHeightPx, visualSegments });
+    const anchorPixel = getPreviewScrollPosition({ playhead, scrollEvents, anchors, stripHeightPx, visualSegments });
 
     if (anchorPixel === undefined) {
         return undefined;
@@ -249,6 +271,22 @@ export function getPreviewScrollOffsetForPixel({
     const maxOffsetPx = Math.max(0, coordinateHeightPx - viewportHeight);
 
     return clamp(Math.round(pixel - viewportCenterPx), 0, maxOffsetPx);
+}
+
+export function resolvePreviewScrollOffset({
+    isPlaying,
+    playbackOffsetPx,
+    selectedAnchorOffsetPx,
+}: {
+    isPlaying: boolean;
+    playbackOffsetPx: number | undefined;
+    selectedAnchorOffsetPx: number | undefined;
+}) {
+    if (isPlaying) {
+        return playbackOffsetPx;
+    }
+
+    return selectedAnchorOffsetPx ?? playbackOffsetPx;
 }
 
 export function getSelectedPreviewVisual<TVisual extends PreviewSelectableVisual>(visualClips: readonly TVisual[], selectedId: string) {

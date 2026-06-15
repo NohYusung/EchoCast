@@ -4,10 +4,12 @@
  * 방식으로 이 파일을 로드하도록 고정할 때 사용합니다.
  */
 const { app, BrowserWindow, dialog } = require('electron/main');
+const path = require('node:path');
 const { getDesktopConfig, startManagedProcesses, stopManagedProcesses, waitForHttp } = require('./services.cjs');
 
 let managedProcesses = [];
 let mainWindow = null;
+const appIconPath = path.join(__dirname, 'assets', 'tooned-player-app-icon.png');
 
 function createWindow(config) {
     mainWindow = new BrowserWindow({
@@ -16,6 +18,7 @@ function createWindow(config) {
         minWidth: 1120,
         minHeight: 760,
         backgroundColor: '#05070a',
+        icon: appIconPath,
         title: 'test-player',
         webPreferences: {
             contextIsolation: true,
@@ -37,6 +40,10 @@ function shutdownManagedProcesses() {
 
 async function bootDesktopApp() {
     const config = getDesktopConfig();
+
+    if (process.platform === 'darwin' && app.dock) {
+        app.dock.setIcon(appIconPath);
+    }
 
     managedProcesses = startManagedProcesses(config);
 

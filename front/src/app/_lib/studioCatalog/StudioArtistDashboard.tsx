@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { DragEvent, FormEvent } from 'react';
+import { ToonedBrand } from '../brand/ToonedBrand';
 import { StudioCatalogIcon } from './StudioCatalogIcon';
 
 type ProductStatus = 'live' | 'done' | 'draft';
@@ -109,7 +110,10 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
         setIsLoading(true);
         setMessage('');
 
-        Promise.all([retrieveProduct(resolveProductApiId(productId, initialProduct)), listCharacters(resolveProductApiId(productId, initialProduct))])
+        Promise.all([
+            retrieveProduct(resolveProductApiId(productId, initialProduct)),
+            listCharacters(resolveProductApiId(productId, initialProduct)),
+        ])
             .then(([retrievedProduct, listedCharacters]) => {
                 if (ignore) return;
                 setProduct(toProduct(retrievedProduct, initialProduct));
@@ -187,7 +191,9 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
 
         setArtists((current) => {
             const nextArtists = editingArtistId
-                ? current.map((artist) => (artist.id === editingArtistId ? { ...artist, ...draft, name, tags: [...draft.tags] } : artist))
+                ? current.map((artist) =>
+                      artist.id === editingArtistId ? { ...artist, ...draft, name, tags: [...draft.tags] } : artist
+                  )
                 : [{ id: newArtistId, ...draft, name, tags: [...draft.tags] }, ...current];
 
             writeStoredArtists(nextArtists);
@@ -207,7 +213,9 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
             return nextArtists;
         });
         setAssignments((current) => {
-            const nextAssignments = Object.fromEntries(Object.entries(current).filter(([, artistId]) => artistId !== editingArtistId));
+            const nextAssignments = Object.fromEntries(
+                Object.entries(current).filter(([, artistId]) => artistId !== editingArtistId)
+            );
             writeAssignments(productId, nextAssignments);
             return nextAssignments;
         });
@@ -250,8 +258,7 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
         <main className="tp-catalog" data-testid="studio-artist-dashboard">
             <header className="tp-topbar">
                 <Link className="tp-brand" href="/studio/products">
-                    <span><StudioCatalogIcon name="asset" /></span>
-                    Tooned
+                    <ToonedBrand />
                 </Link>
                 <div className="tp-crumb">
                     <span>/</span>
@@ -265,7 +272,11 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                 <label className="tp-topsearch">
                     <span className="sr-only">성우 검색</span>
                     <StudioCatalogIcon name="search" />
-                    <input onChange={(event) => setQuery(event.target.value)} placeholder="성우 검색..." value={query} />
+                    <input
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="성우 검색..."
+                        value={query}
+                    />
                     <kbd>/</kbd>
                 </label>
                 <button className="tp-new-btn" onClick={openCreateModal} type="button">
@@ -286,7 +297,9 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
 
                         <section className="tp-page-head compact">
                             <div>
-                                <span className={`tp-status ${product.status}`}>{productStatusLabels[product.status]}</span>
+                                <span className={`tp-status ${product.status}`}>
+                                    {productStatusLabels[product.status]}
+                                </span>
                                 <h1>성우 등록</h1>
                                 <p>{product.title}의 캐릭터별 담당 성우와 녹음 준비 상태를 관리합니다.</p>
                             </div>
@@ -295,13 +308,47 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                             </span>
                         </section>
 
-                        {message ? <p className={message.includes('못했습니다') ? 'tp-character-message is-error' : 'tp-character-message'}>{message}</p> : null}
+                        {message ? (
+                            <p
+                                className={
+                                    message.includes('못했습니다')
+                                        ? 'tp-character-message is-error'
+                                        : 'tp-character-message'
+                                }
+                            >
+                                {message}
+                            </p>
+                        ) : null}
 
                         <section className="tp-stats">
-                            <StatCard icon="mic" label="성우 풀" value={artists.length} detail="브라우저 로컬 등록" tone="blue" />
-                            <StatCard icon="users" label="캐릭터" value={characters.length} detail="작품 API 응답 기준" tone="teal" />
-                            <StatCard icon="check" label="배정 완료" value={assignedCount} detail={`미배정 ${Math.max(0, characters.length - assignedCount)}`} tone="violet" />
-                            <StatCard icon="asset" label="검색 결과" value={filteredArtists.length} detail="현재 필터 기준" tone="amber" />
+                            <StatCard
+                                icon="mic"
+                                label="성우 풀"
+                                value={artists.length}
+                                detail="브라우저 로컬 등록"
+                                tone="blue"
+                            />
+                            <StatCard
+                                icon="users"
+                                label="캐릭터"
+                                value={characters.length}
+                                detail="작품 API 응답 기준"
+                                tone="teal"
+                            />
+                            <StatCard
+                                icon="check"
+                                label="배정 완료"
+                                value={assignedCount}
+                                detail={`미배정 ${Math.max(0, characters.length - assignedCount)}`}
+                                tone="violet"
+                            />
+                            <StatCard
+                                icon="asset"
+                                label="검색 결과"
+                                value={filteredArtists.length}
+                                detail="현재 필터 기준"
+                                tone="amber"
+                            />
                         </section>
 
                         <section className="tp-admin-grid artists">
@@ -320,7 +367,9 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                     {filteredArtists.length > 0 ? (
                                         filteredArtists.map((artist) => {
                                             const isSelected = artist.id === selectedArtistId;
-                                            const assignmentTotal = Object.values(assignments).filter((artistId) => artistId === artist.id).length;
+                                            const assignmentTotal = Object.values(assignments).filter(
+                                                (artistId) => artistId === artist.id
+                                            ).length;
 
                                             return (
                                                 <article
@@ -335,7 +384,10 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                                         event.dataTransfer.effectAllowed = 'copy';
                                                     }}
                                                 >
-                                                    <span className="tp-artist-avatar" style={{ background: artist.color }}>
+                                                    <span
+                                                        className="tp-artist-avatar"
+                                                        style={{ background: artist.color }}
+                                                    >
                                                         {artist.name.trim().charAt(0) || '?'}
                                                     </span>
                                                     <span className="tp-artist-meta">
@@ -343,9 +395,14 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                                             {artist.name}
                                                             <em>{kindLabels[artist.kind]}</em>
                                                         </strong>
-                                                        <small>{sexLabels[artist.sex]} · {ageLabels[artist.age]} · 배정 {assignmentTotal}</small>
+                                                        <small>
+                                                            {sexLabels[artist.sex]} · {ageLabels[artist.age]} · 배정{' '}
+                                                            {assignmentTotal}
+                                                        </small>
                                                         <span>
-                                                            {artist.tags.slice(0, 3).map((tag) => <b key={tag}>{tag}</b>)}
+                                                            {artist.tags.slice(0, 3).map((tag) => (
+                                                                <b key={tag}>{tag}</b>
+                                                            ))}
                                                         </span>
                                                     </span>
                                                     <button
@@ -377,14 +434,18 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                         <h2>캐릭터 성우 배정</h2>
                                         <p>선택한 성우를 각 캐릭터에 배정합니다.</p>
                                     </div>
-                                    <span className="tp-count">{selectedArtist ? `선택: ${selectedArtist.name}` : '성우 선택 필요'}</span>
+                                    <span className="tp-count">
+                                        {selectedArtist ? `선택: ${selectedArtist.name}` : '성우 선택 필요'}
+                                    </span>
                                 </div>
                                 <div className="tp-casting-list">
                                     {isLoading ? (
                                         <div className="tp-character-empty">캐릭터 목록을 불러오는 중입니다.</div>
                                     ) : characters.length > 0 ? (
                                         characters.map((character, index) => {
-                                            const assignedArtist = artists.find((artist) => artist.id === assignments[String(character.id)]);
+                                            const assignedArtist = artists.find(
+                                                (artist) => artist.id === assignments[String(character.id)]
+                                            );
 
                                             return (
                                                 <article
@@ -401,7 +462,9 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                                                 : { background: colors[index % colors.length] }
                                                         }
                                                     >
-                                                        {character.imageUrl ? null : character.name.trim().charAt(0) || '?'}
+                                                        {character.imageUrl
+                                                            ? null
+                                                            : character.name.trim().charAt(0) || '?'}
                                                     </span>
                                                     <span className="tp-character-meta">
                                                         <strong>
@@ -410,12 +473,19 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                                         </strong>
                                                         <small>캐릭터 ID {character.id}</small>
                                                     </span>
-                                                    <span className={`tp-assignment-slot ${assignedArtist ? 'filled' : ''}`}>
+                                                    <span
+                                                        className={`tp-assignment-slot ${assignedArtist ? 'filled' : ''}`}
+                                                    >
                                                         {assignedArtist ? (
                                                             <>
-                                                                <i style={{ background: assignedArtist.color }}>{assignedArtist.name.charAt(0)}</i>
+                                                                <i style={{ background: assignedArtist.color }}>
+                                                                    {assignedArtist.name.charAt(0)}
+                                                                </i>
                                                                 <b>{assignedArtist.name}</b>
-                                                                <small>{sexLabels[assignedArtist.sex]} · {ageLabels[assignedArtist.age]}</small>
+                                                                <small>
+                                                                    {sexLabels[assignedArtist.sex]} ·{' '}
+                                                                    {ageLabels[assignedArtist.age]}
+                                                                </small>
                                                             </>
                                                         ) : (
                                                             <small>성우 미배정</small>
@@ -425,7 +495,10 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                                         <button
                                                             className="tp-btn ghost mini"
                                                             disabled={!selectedArtistId}
-                                                            onClick={() => selectedArtistId && assignArtist(character.id, selectedArtistId)}
+                                                            onClick={() =>
+                                                                selectedArtistId &&
+                                                                assignArtist(character.id, selectedArtistId)
+                                                            }
                                                             type="button"
                                                         >
                                                             배정
@@ -443,7 +516,9 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                             );
                                         })
                                     ) : (
-                                        <div className="tp-character-empty">먼저 작품 상세에서 캐릭터를 등록해 주세요.</div>
+                                        <div className="tp-character-empty">
+                                            먼저 작품 상세에서 캐릭터를 등록해 주세요.
+                                        </div>
                                     )}
                                 </div>
                             </section>
@@ -454,11 +529,19 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
 
             {isModalOpen ? (
                 <div className="tp-modal-overlay compact" role="presentation">
-                    <form aria-label="성우 등록" aria-modal="true" className="tp-episode-modal" onSubmit={saveArtist} role="dialog">
+                    <form
+                        aria-label="성우 등록"
+                        aria-modal="true"
+                        className="tp-episode-modal"
+                        onSubmit={saveArtist}
+                        role="dialog"
+                    >
                         <div className="tp-modal-head">
                             <div>
                                 <h2>{editingArtistId ? '성우 정보 편집' : '성우 등록'}</h2>
-                                <p>이 정보는 현재 브라우저에 저장됩니다. 성우 API가 연결되면 서버 저장으로 교체됩니다.</p>
+                                <p>
+                                    이 정보는 현재 브라우저에 저장됩니다. 성우 API가 연결되면 서버 저장으로 교체됩니다.
+                                </p>
                             </div>
                             <button aria-label="닫기" onClick={closeModal} type="button">
                                 <StudioCatalogIcon name="close" />
@@ -470,7 +553,9 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                 <input
                                     className={showNameError ? 'error' : ''}
                                     onBlur={() => setNameTouched(true)}
-                                    onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                                    onChange={(event) =>
+                                        setDraft((current) => ({ ...current, name: event.target.value }))
+                                    }
                                     placeholder="예: 한서윤"
                                     value={draft.name}
                                 />
@@ -481,7 +566,12 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                 등록 유형
                                 <div className="tp-segment">
                                     {(['real', 'tts'] as ArtistKind[]).map((kind) => (
-                                        <button className={draft.kind === kind ? 'on' : ''} key={kind} onClick={() => setDraft((current) => ({ ...current, kind }))} type="button">
+                                        <button
+                                            className={draft.kind === kind ? 'on' : ''}
+                                            key={kind}
+                                            onClick={() => setDraft((current) => ({ ...current, kind }))}
+                                            type="button"
+                                        >
                                             {kindLabels[kind]}
                                         </button>
                                     ))}
@@ -492,7 +582,12 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                 성별 톤
                                 <div className="tp-segment">
                                     {(['F', 'M', 'N'] as ArtistSex[]).map((sex) => (
-                                        <button className={draft.sex === sex ? 'on' : ''} key={sex} onClick={() => setDraft((current) => ({ ...current, sex }))} type="button">
+                                        <button
+                                            className={draft.sex === sex ? 'on' : ''}
+                                            key={sex}
+                                            onClick={() => setDraft((current) => ({ ...current, sex }))}
+                                            type="button"
+                                        >
                                             {sexLabels[sex]}
                                         </button>
                                     ))}
@@ -501,8 +596,17 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
 
                             <label className="tp-field">
                                 연령대
-                                <select onChange={(event) => setDraft((current) => ({ ...current, age: event.target.value as ArtistAge }))} value={draft.age}>
-                                    {(Object.keys(ageLabels) as ArtistAge[]).map((age) => <option key={age} value={age}>{ageLabels[age]}</option>)}
+                                <select
+                                    onChange={(event) =>
+                                        setDraft((current) => ({ ...current, age: event.target.value as ArtistAge }))
+                                    }
+                                    value={draft.age}
+                                >
+                                    {(Object.keys(ageLabels) as ArtistAge[]).map((age) => (
+                                        <option key={age} value={age}>
+                                            {ageLabels[age]}
+                                        </option>
+                                    ))}
                                 </select>
                             </label>
 
@@ -510,7 +614,12 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                                 보이스 태그
                                 <div className="tp-setting-chips">
                                     {tagOptions.map((tag) => (
-                                        <button className={draft.tags.includes(tag) ? 'on' : ''} key={tag} onClick={() => toggleTag(tag)} type="button">
+                                        <button
+                                            className={draft.tags.includes(tag) ? 'on' : ''}
+                                            key={tag}
+                                            onClick={() => toggleTag(tag)}
+                                            type="button"
+                                        >
                                             {tag}
                                         </button>
                                     ))}
@@ -520,7 +629,9 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                             <label className="tp-field">
                                 메모
                                 <textarea
-                                    onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))}
+                                    onChange={(event) =>
+                                        setDraft((current) => ({ ...current, note: event.target.value }))
+                                    }
                                     placeholder="녹음 가능 시간, 특징, 계약 메모"
                                     value={draft.note}
                                 />
@@ -544,13 +655,19 @@ export function StudioArtistDashboard({ productId }: { productId: string }) {
                         </div>
                         <div className="tp-modal-foot">
                             {editingArtistId ? (
-                                <button className="tp-danger-text" onClick={deleteArtist} type="button">성우 삭제</button>
+                                <button className="tp-danger-text" onClick={deleteArtist} type="button">
+                                    성우 삭제
+                                </button>
                             ) : (
                                 <span />
                             )}
                             <div>
-                                <button className="tp-btn ghost" onClick={closeModal} type="button">취소</button>
-                                <button className="tp-btn primary" type="submit">{editingArtistId ? '저장' : '등록'}</button>
+                                <button className="tp-btn ghost" onClick={closeModal} type="button">
+                                    취소
+                                </button>
+                                <button className="tp-btn primary" type="submit">
+                                    {editingArtistId ? '저장' : '등록'}
+                                </button>
                             </div>
                         </div>
                     </form>
@@ -627,9 +744,36 @@ function createArtistDraft(color = colors[0]): ArtistDraft {
 
 function seedArtists(): VoiceArtist[] {
     return [
-        { id: 'artist-seoyun', name: '한서윤', kind: 'real', sex: 'F', age: 'young', tags: ['차분함', '감정연기'], color: '#f472b6', note: '주연 여성 톤' },
-        { id: 'artist-dohyun', name: '민도현', kind: 'real', sex: 'M', age: 'young', tags: ['저음', '허스키'], color: '#5b9bff', note: '긴장감 있는 독백' },
-        { id: 'artist-jiwoo', name: '이지우', kind: 'tts', sex: 'N', age: 'teen', tags: ['소년', '밝음'], color: '#34d399', note: '중성적 청소년 톤' },
+        {
+            id: 'artist-seoyun',
+            name: '한서윤',
+            kind: 'real',
+            sex: 'F',
+            age: 'young',
+            tags: ['차분함', '감정연기'],
+            color: '#f472b6',
+            note: '주연 여성 톤',
+        },
+        {
+            id: 'artist-dohyun',
+            name: '민도현',
+            kind: 'real',
+            sex: 'M',
+            age: 'young',
+            tags: ['저음', '허스키'],
+            color: '#5b9bff',
+            note: '긴장감 있는 독백',
+        },
+        {
+            id: 'artist-jiwoo',
+            name: '이지우',
+            kind: 'tts',
+            sex: 'N',
+            age: 'teen',
+            tags: ['소년', '밝음'],
+            color: '#34d399',
+            note: '중성적 청소년 톤',
+        },
     ];
 }
 
@@ -666,7 +810,10 @@ function readAssignments(productId: string) {
     if (typeof window === 'undefined') return {};
 
     try {
-        return JSON.parse(window.localStorage.getItem(assignmentStorageKey(productId)) || '{}') as Record<string, string>;
+        return JSON.parse(window.localStorage.getItem(assignmentStorageKey(productId)) || '{}') as Record<
+            string,
+            string
+        >;
     } catch {
         return {};
     }
@@ -724,7 +871,9 @@ async function retrieveProduct(productId: string) {
 }
 
 async function listCharacters(productId: string) {
-    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/products/${productId}/characters`, { cache: 'no-store' });
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/products/${productId}/characters`, {
+        cache: 'no-store',
+    });
 
     if (!response.ok) {
         throw new Error(`Character list failed: ${response.status}`);

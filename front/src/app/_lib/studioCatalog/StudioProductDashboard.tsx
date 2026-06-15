@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
+import { ToonedBrand } from '../brand/ToonedBrand';
 import { StudioCatalogIcon } from './StudioCatalogIcon';
 
 type StudioProductStatus = 'live' | 'done' | 'draft';
@@ -442,7 +443,9 @@ export function StudioProductDashboard() {
                                     </span>
                                     <strong>{coverImageFile ? coverImageFile.name : '클릭하여 업로드'}</strong>
                                     <small>
-                                        {coverImageFile ? '등록 시 표지로 업로드됩니다.' : '프로젝트 표지 이미지 파일을 선택하세요.'}
+                                        {coverImageFile
+                                            ? '등록 시 표지로 업로드됩니다.'
+                                            : '프로젝트 표지 이미지 파일을 선택하세요.'}
                                     </small>
                                 </label>
 
@@ -675,7 +678,12 @@ function toStudioProduct(product: ProductListItem): StudioProduct {
 }
 
 function getProductCoverUploadKey(file: File) {
-    const extension = file.name.split('.').filter(Boolean).pop()?.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    const extension = file.name
+        .split('.')
+        .filter(Boolean)
+        .pop()
+        ?.replace(/[^a-z0-9]/gi, '')
+        .toLowerCase();
     const safeExtension = extension || 'png';
 
     return `products/covers/${Date.now()}-${crypto.randomUUID()}.${safeExtension}`;
@@ -705,10 +713,7 @@ function Topbar({
     return (
         <header className="tp-topbar">
             <Link className="tp-brand" href="/studio/products">
-                <span>
-                    <StudioCatalogIcon name="asset" />
-                </span>
-                Tooned
+                <ToonedBrand />
             </Link>
             <div className="tp-crumb">
                 <span>/</span>

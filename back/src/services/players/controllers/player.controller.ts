@@ -40,9 +40,10 @@ export class PlayerController {
      *         id: '1',
      *         cueId: '1',
      *         artistId: '1',
-     *         audioUrl: 'https://assets.example.com/record.wav',
+     *         recordUrl: 'https://assets.example.com/record.wav',
      *         duration: 1700,
-     *         volume: 1
+     *         volume: 1,
+     *         isAccepted: true
      *       }
      *     ],
      *     tts: []

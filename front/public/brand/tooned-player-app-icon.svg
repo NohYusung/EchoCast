@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+    <title id="title">Tooned Player app icon</title>
+    <desc id="desc">A desktop application icon for Tooned Player with a bold T monogram and play symbol.</desc>
+    <defs>
+        <radialGradient id="bg" cx="38%" cy="20%" r="82%">
+            <stop offset="0" stop-color="#223a5f" />
+            <stop offset=".55" stop-color="#0d1422" />
+            <stop offset="1" stop-color="#06080d" />
+        </radialGradient>
+        <linearGradient id="mark" x1="236" y1="170" x2="726" y2="816" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#7cc7ff" />
+            <stop offset=".5" stop-color="#38d6c6" />
+            <stop offset="1" stop-color="#c8d96a" />
+        </linearGradient>
+        <linearGradient id="play" x1="564" y1="388" x2="760" y2="572" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#fff7cf" />
+            <stop offset="1" stop-color="#ffbd45" />
+        </linearGradient>
+    </defs>
+    <rect width="1024" height="1024" rx="224" fill="url(#bg)" />
+    <g>
+        <path
+            d="M238 194h548c30 0 54 24 54 54v82c0 30-24 54-54 54H611v386c0 30-24 54-54 54h-90c-30 0-54-24-54-54V384H238c-30 0-54-24-54-54v-82c0-30 24-54 54-54Z"
+            fill="url(#mark)"
+        />
+        <path d="M584 421c0-22 24-35 43-23l180 108c18 11 18 37 0 48L627 662c-19 12-43-1-43-23V421Z" fill="url(#play)" />
+    </g>
+    <path d="M232 850h150M642 850h150" stroke="#536174" stroke-width="34" stroke-linecap="round" opacity=".72" />
+</svg>

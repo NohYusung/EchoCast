@@ -48,10 +48,10 @@ export class TrackCueResponseDto {
     audio?: TrackCueAudioResponseDto;
 
     @Expose()
-    startTime!: number;
+    startTime?: number;
 
     @Expose()
-    endTime!: number;
+    endTime?: number;
 
     @Expose()
     audioStartTime?: number;

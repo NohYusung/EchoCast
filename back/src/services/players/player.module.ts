@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { DatabasesModule } from '../../databases';
+import { AnchorRepository } from '../anchors/repository/anchor.repository';
 import { AudioRepository } from '../audios/repository/audio.repository';
 import { CanvasRepository } from '../canvases/repository/canvas.repository';
 import { CharacterRepository } from '../characters/repository/characater.repository';
@@ -47,6 +48,11 @@ import { PlayerController } from './controllers/player.controller';
             useFactory: (dataSource: DataSource) => new AudioRepository(dataSource),
         },
         {
+            provide: AnchorRepository,
+            inject: [DataSource],
+            useFactory: (dataSource: DataSource) => new AnchorRepository(dataSource),
+        },
+        {
             provide: ScrollRepository,
             inject: [DataSource],
             useFactory: (dataSource: DataSource) => new ScrollRepository(dataSource),
@@ -65,6 +71,7 @@ import { PlayerController } from './controllers/player.controller';
                 CanvasRepository,
                 CueRepository,
                 AudioRepository,
+                AnchorRepository,
                 ScrollRepository,
                 RecordRepository,
             ],
@@ -75,6 +82,7 @@ import { PlayerController } from './controllers/player.controller';
                 canvasRepository: CanvasRepository,
                 cueRepository: CueRepository,
                 audioRepository: AudioRepository,
+                anchorRepository: AnchorRepository,
                 scrollRepository: ScrollRepository,
                 recordRepository: RecordRepository
             ) =>
@@ -85,6 +93,7 @@ import { PlayerController } from './controllers/player.controller';
                     canvasRepository,
                     cueRepository,
                     audioRepository,
+                    anchorRepository,
                     scrollRepository,
                     recordRepository
                 ),

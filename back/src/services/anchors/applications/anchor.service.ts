@@ -1,8 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
 import { CanvasRepository } from '../../canvases/repository/canvas.repository';
-import { Pause } from '../../pauses/domain/pause.entity';
-import { PauseRepository } from '../../pauses/repository/pause.repository';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
 import { TrackRepository } from '../../tracks/repository/track.repository';
@@ -26,21 +24,7 @@ function toScrollEventResponse(scroll: Scroll) {
     };
 }
 
-function toPauseEventResponse(pause: Pause) {
-    return {
-        type: 'pause' as const,
-        id: pause.id,
-        pauseId: pause.id,
-        anchorId: pause.anchorId,
-        duration: pause.duration,
-        canvasId: pause.canvasId,
-        index: pause.index,
-        time: pause.time,
-        position: pause.position,
-    };
-}
-
-type AnchorEventResponse = ReturnType<typeof toScrollEventResponse> | ReturnType<typeof toPauseEventResponse>;
+type AnchorEventResponse = ReturnType<typeof toScrollEventResponse>;
 
 function toAnchorResponse(anchor: Anchor, event: AnchorEventResponse | null = null) {
     return {
@@ -60,8 +44,7 @@ export class AnchorService extends DddService {
         private readonly anchorRepository: AnchorRepository,
         private readonly trackRepository: TrackRepository,
         private readonly canvasRepository: CanvasRepository,
-        private readonly scrollRepository: ScrollRepository,
-        private readonly pauseRepository: PauseRepository
+        private readonly scrollRepository: ScrollRepository
     ) {
         super();
     }
@@ -116,22 +99,16 @@ export class AnchorService extends DddService {
     }
 
     async list({ trackId }: { trackId: number }) {
-        const [anchors, total, scrolls, pauses] = await Promise.all([
+        const [anchors, total, scrolls] = await Promise.all([
             this.anchorRepository.find({ trackId }, { options: { sort: 'id', order: 'ASC' } }),
             this.anchorRepository.count({ trackId }),
             this.scrollRepository.find({ trackId }, { relations: { startAnchor: true, endAnchor: true } }),
-            this.pauseRepository.find({ trackId }, { relations: { anchor: true } }),
         ]);
         const scrollByStartAnchorId = new Map(scrolls.map((scroll) => [scroll.startAnchorId, scroll]));
-        const pauseByAnchorId = new Map(pauses.map((pause) => [pause.anchorId, pause]));
         const items = anchors.map((anchor) => {
             const scroll = scrollByStartAnchorId.get(anchor.id);
-            const pause = pauseByAnchorId.get(anchor.id);
 
-            return toAnchorResponse(
-                anchor,
-                scroll ? toScrollEventResponse(scroll) : pause ? toPauseEventResponse(pause) : null
-            );
+            return toAnchorResponse(anchor, scroll ? toScrollEventResponse(scroll) : null);
         });
 
         return { items, total };
@@ -193,11 +170,10 @@ export class AnchorService extends DddService {
     }
 
     async delete({ trackId, anchorId }: { trackId: number; anchorId: number }) {
-        const [[anchor], scrollsStartingAtAnchor, scrollsEndingAtAnchor, pauses] = await Promise.all([
+        const [[anchor], scrollsStartingAtAnchor, scrollsEndingAtAnchor] = await Promise.all([
             this.anchorRepository.find({ id: anchorId, trackId }),
             this.scrollRepository.find({ trackId, startAnchorId: anchorId }),
             this.scrollRepository.find({ trackId, endAnchorId: anchorId }),
-            this.pauseRepository.find({ trackId, anchorId }),
         ]);
 
         if (!anchor) {
@@ -212,9 +188,6 @@ export class AnchorService extends DddService {
         if (scrolls.length > 0) {
             await this.scrollRepository.softRemove(scrolls);
         }
-        if (pauses.length > 0) {
-            await this.pauseRepository.softRemove(pauses);
-        }
         await this.anchorRepository.softRemove([anchor]);
     }
 
@@ -223,90 +196,61 @@ export class AnchorService extends DddService {
         anchorId,
         type,
         endAnchorId,
-        duration,
     }: {
         trackId: number;
         anchorId: number;
-        type: 'scroll' | 'pause';
+        type: string;
         endAnchorId?: number;
-        duration?: number;
     }) {
-        const [[anchor], ownedScroll, ownedPause] = await Promise.all([
+        const [[anchor], ownedScroll] = await Promise.all([
             this.anchorRepository.find({ id: anchorId, trackId }),
             this.findOwnedScroll({ trackId, anchorId, withDeleted: true }),
-            this.findOwnedPause({ trackId, anchorId, withDeleted: true }),
         ]);
 
         if (!anchor) {
             throw new NotFoundException('앵커를 찾을 수 없습니다.');
         }
-        if (type === 'scroll') {
-            if (!Number.isInteger(endAnchorId)) {
-                throw new BadRequestException('앵커 스크롤 이벤트의 endAnchorId가 필요합니다.');
-            }
-            const nextEndAnchorId = Number(endAnchorId);
-
-            const [endAnchor] = await this.anchorRepository.find({ id: nextEndAnchorId });
-
-            if (!endAnchor) {
-                throw new NotFoundException('앵커 스크롤 이벤트의 종료 앵커를 찾을 수 없습니다.');
-            }
-            if (endAnchor.trackId !== trackId) {
-                throw new BadRequestException('앵커 스크롤 이벤트의 종료 앵커는 대상 트랙에 속해야 합니다.');
-            }
-            if (anchor.id === endAnchor.id) {
-                throw new BadRequestException('앵커 스크롤 이벤트의 종료 앵커는 시작 앵커와 달라야 합니다.');
-            }
-            if (anchor.canvasId !== endAnchor.canvasId) {
-                throw new BadRequestException('앵커 스크롤 이벤트의 앵커들은 같은 캔버스에 속해야 합니다.');
-            }
-            if (!Number.isFinite(anchor.time) || !Number.isFinite(endAnchor.time) || endAnchor.time <= anchor.time) {
-                throw new BadRequestException(
-                    '앵커 스크롤 이벤트의 종료 앵커 시간은 시작 앵커 시간보다 커야 합니다.'
-                );
-            }
-            if (ownedPause && !ownedPause.deletedAt) {
-                await this.pauseRepository.softRemove([ownedPause]);
-            }
-
-            const scroll =
-                ownedScroll ?? new Scroll({ trackId, startAnchorId: anchor.id, endAnchorId: nextEndAnchorId });
-
-            scroll.deletedAt = null;
-            scroll.update({ endAnchorId: nextEndAnchorId });
-            scroll.startAnchor = anchor;
-            scroll.endAnchor = endAnchor;
-            await this.scrollRepository.save([scroll]);
-
-            return toAnchorResponse(anchor, toScrollEventResponse(scroll));
+        if (type !== 'scroll') {
+            throw new BadRequestException('앵커 이벤트 타입이 올바르지 않습니다.');
         }
-        if (type === 'pause') {
-            const nextDuration = Number(duration);
-            if (!Number.isFinite(nextDuration) || nextDuration <= 0) {
-                throw new BadRequestException('앵커 일시정지 이벤트의 duration은 0보다 커야 합니다.');
-            }
-            if (ownedScroll && !ownedScroll.deletedAt) {
-                await this.scrollRepository.softRemove([ownedScroll]);
-            }
+        if (!Number.isInteger(endAnchorId)) {
+            throw new BadRequestException('앵커 스크롤 이벤트의 endAnchorId가 필요합니다.');
+        }
+        const nextEndAnchorId = Number(endAnchorId);
 
-            const pause = ownedPause ?? new Pause({ trackId, anchorId: anchor.id, duration: nextDuration });
+        const [endAnchor] = await this.anchorRepository.find({ id: nextEndAnchorId });
 
-            pause.deletedAt = null;
-            pause.update({ duration: nextDuration });
-            pause.anchor = anchor;
-            await this.pauseRepository.save([pause]);
-
-            return toAnchorResponse(anchor, toPauseEventResponse(pause));
+        if (!endAnchor) {
+            throw new NotFoundException('앵커 스크롤 이벤트의 종료 앵커를 찾을 수 없습니다.');
+        }
+        if (endAnchor.trackId !== trackId) {
+            throw new BadRequestException('앵커 스크롤 이벤트의 종료 앵커는 대상 트랙에 속해야 합니다.');
+        }
+        if (anchor.id === endAnchor.id) {
+            throw new BadRequestException('앵커 스크롤 이벤트의 종료 앵커는 시작 앵커와 달라야 합니다.');
+        }
+        if (anchor.canvasId !== endAnchor.canvasId) {
+            throw new BadRequestException('앵커 스크롤 이벤트의 앵커들은 같은 캔버스에 속해야 합니다.');
+        }
+        if (!Number.isFinite(anchor.time) || !Number.isFinite(endAnchor.time) || endAnchor.time <= anchor.time) {
+            throw new BadRequestException('앵커 스크롤 이벤트의 종료 앵커 시간은 시작 앵커 시간보다 커야 합니다.');
         }
 
-        throw new BadRequestException('앵커 이벤트 타입이 올바르지 않습니다.');
+        const scroll = ownedScroll ?? new Scroll({ trackId, startAnchorId: anchor.id, endAnchorId: nextEndAnchorId });
+
+        scroll.deletedAt = null;
+        scroll.update({ endAnchorId: nextEndAnchorId });
+        scroll.startAnchor = anchor;
+        scroll.endAnchor = endAnchor;
+        await this.scrollRepository.save([scroll]);
+
+        return toAnchorResponse(anchor, toScrollEventResponse(scroll));
     }
 
     async deleteEvent({ trackId, anchorId }: { trackId: number; anchorId: number }) {
-        const [[anchor], ownedScrolls, ownedPauses] = await Promise.all([
+        const [[anchor], ownedScrolls] = await Promise.all([
             this.anchorRepository.find({ id: anchorId, trackId }),
             this.scrollRepository.find({ trackId, startAnchorId: anchorId }),
-            this.pauseRepository.find({ trackId, anchorId }),
         ]);
 
         if (!anchor) {
@@ -314,9 +258,6 @@ export class AnchorService extends DddService {
         }
         if (ownedScrolls.length > 0) {
             await this.scrollRepository.softRemove(ownedScrolls);
-        }
-        if (ownedPauses.length > 0) {
-            await this.pauseRepository.softRemove(ownedPauses);
         }
     }
 
@@ -335,28 +276,6 @@ export class AnchorService extends DddService {
             .leftJoinAndSelect('scroll.endAnchor', 'endAnchor')
             .where('scroll.trackId = :trackId', { trackId })
             .andWhere('scroll.startAnchorId = :anchorId', { anchorId });
-
-        if (withDeleted) {
-            query.withDeleted();
-        }
-
-        return query.getOne();
-    }
-
-    private async findOwnedPause({
-        trackId,
-        anchorId,
-        withDeleted,
-    }: {
-        trackId: number;
-        anchorId: number;
-        withDeleted?: boolean;
-    }) {
-        const query = this.pauseRepository
-            .createQueryBuilder('pause')
-            .leftJoinAndSelect('pause.anchor', 'anchor')
-            .where('pause.trackId = :trackId', { trackId })
-            .andWhere('pause.anchorId = :anchorId', { anchorId });
 
         if (withDeleted) {
             query.withDeleted();

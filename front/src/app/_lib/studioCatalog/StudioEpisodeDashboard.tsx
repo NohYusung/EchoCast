@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
+import { ToonedBrand } from '../brand/ToonedBrand';
 import { StudioCatalogIcon } from './StudioCatalogIcon';
 
 type StudioProductStatus = 'live' | 'done' | 'draft';
@@ -110,7 +111,20 @@ const episodeStatusLabels: Record<StudioEpisodeStatus, string> = {
     draft: '임시저장',
 };
 const productStatusOptions: StudioProductStatus[] = ['live', 'done', 'draft'];
-const genreOptions = ['로맨스', '판타지', '스릴러', '드라마', '액션', '일상', '코미디', '공포', '학원', '무협', 'SF', 'BL'];
+const genreOptions = [
+    '로맨스',
+    '판타지',
+    '스릴러',
+    '드라마',
+    '액션',
+    '일상',
+    '코미디',
+    '공포',
+    '학원',
+    '무협',
+    'SF',
+    'BL',
+];
 const ratingOptions = ['전체', '12+', '15+', '19+'];
 const characterRoleOptions: CharacterRole[] = ['starring', 'supporting', 'minor', 'narrator', 'unknown'];
 const characterRoleLabels: Record<CharacterRole, string> = {
@@ -151,7 +165,9 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     const [newCharacterImageFile, setNewCharacterImageFile] = useState<File | null>(null);
     const [settingsCoverImageFile, setSettingsCoverImageFile] = useState<File | null>(null);
     const [settingsCoverImagePreviewUrl, setSettingsCoverImagePreviewUrl] = useState<string | null>(null);
-    const [settingsDraft, setSettingsDraft] = useState<ProductSettingsDraft>(() => toProductSettingsDraft(getInitialStudioProduct(productId)));
+    const [settingsDraft, setSettingsDraft] = useState<ProductSettingsDraft>(() =>
+        toProductSettingsDraft(getInitialStudioProduct(productId))
+    );
     const [episodeNumberTouched, setEpisodeNumberTouched] = useState(false);
     const [titleTouched, setTitleTouched] = useState(false);
     const [characterNameTouched, setCharacterNameTouched] = useState(false);
@@ -240,7 +256,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                 acc.voiceCount += episode.voiceCount;
                 return acc;
             },
-            { all: 0, published: 0, editing: 0, draft: 0, voiceCount: 0 },
+            { all: 0, published: 0, editing: 0, draft: 0, voiceCount: 0 }
         );
     }, [episodes]);
 
@@ -542,8 +558,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
         <main className="tp-catalog" data-testid="studio-episode-dashboard">
             <header className="tp-topbar">
                 <Link className="tp-brand" href="/studio/products">
-                    <span><StudioCatalogIcon name="asset" /></span>
-                    Tooned
+                    <ToonedBrand />
                 </Link>
                 <div className="tp-crumb">
                     <span>/</span>
@@ -555,12 +570,15 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                 <label className="tp-topsearch">
                     <span className="sr-only">에피소드 검색</span>
                     <StudioCatalogIcon name="search" />
-                    <input onChange={(event) => setQuery(event.target.value)} placeholder="에피소드 검색..." value={query} />
+                    <input
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="에피소드 검색..."
+                        value={query}
+                    />
                     <kbd>/</kbd>
                 </label>
                 <button className="tp-new-btn" onClick={openCreateModal} type="button">
-                    <StudioCatalogIcon name="plus" />
-                    새 에피소드
+                    <StudioCatalogIcon name="plus" />새 에피소드
                 </button>
                 <div className="tp-avatar">TP</div>
             </header>
@@ -571,12 +589,27 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                         <StudioCatalogIcon name="panel" />
                         <span>프로젝트</span>
                     </Link>
-                    <button type="button"><StudioCatalogIcon name="chart" /><span>통계</span></button>
-                    <button type="button"><StudioCatalogIcon name="image" /><span>에셋</span></button>
-                    <button type="button"><StudioCatalogIcon name="users" /><span>멤버</span></button>
+                    <button type="button">
+                        <StudioCatalogIcon name="chart" />
+                        <span>통계</span>
+                    </button>
+                    <button type="button">
+                        <StudioCatalogIcon name="image" />
+                        <span>에셋</span>
+                    </button>
+                    <button type="button">
+                        <StudioCatalogIcon name="users" />
+                        <span>멤버</span>
+                    </button>
                     <span className="tp-rail-spacer" />
-                    <button type="button"><StudioCatalogIcon name="trash" /><span>휴지통</span></button>
-                    <button type="button"><StudioCatalogIcon name="settings" /><span>설정</span></button>
+                    <button type="button">
+                        <StudioCatalogIcon name="trash" />
+                        <span>휴지통</span>
+                    </button>
+                    <button type="button">
+                        <StudioCatalogIcon name="settings" />
+                        <span>설정</span>
+                    </button>
                 </nav>
 
                 <section className="tp-catalog-content">
@@ -591,27 +624,49 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                 <span>{product.rating}</span>
                             </div>
                             <div className="tp-episode-info">
-                                <span className={`tp-status ${product.status}`}>{productStatusLabels[product.status]}</span>
+                                <span className={`tp-status ${product.status}`}>
+                                    {productStatusLabels[product.status]}
+                                </span>
                                 <h1>{product.title}</h1>
                                 {product.logline ? <p>{product.logline}</p> : null}
                                 <div className="tp-tag-row">
-                                    {product.genres.map((genre) => <span key={genre}>{genre}</span>)}
+                                    {product.genres.map((genre) => (
+                                        <span key={genre}>{genre}</span>
+                                    ))}
                                 </div>
                                 <dl className="tp-metrics">
-                                    <div><dt>에피소드</dt><dd>{episodes.length}<small>편</small></dd></div>
-                                    <div><dt>총 보이스 클립</dt><dd>{statusCounts.voiceCount}</dd></div>
-                                    <div><dt>최근 작업</dt><dd>{latestEpisode?.updatedAtLabel ?? product.updatedAtLabel}</dd></div>
+                                    <div>
+                                        <dt>에피소드</dt>
+                                        <dd>
+                                            {episodes.length}
+                                            <small>편</small>
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt>총 보이스 클립</dt>
+                                        <dd>{statusCounts.voiceCount}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>최근 작업</dt>
+                                        <dd>{latestEpisode?.updatedAtLabel ?? product.updatedAtLabel}</dd>
+                                    </div>
                                 </dl>
                                 <div className="tp-hero-actions">
                                     {latestEpisode ? (
-                                        <Link className="tp-btn primary" href={`/studio/products/${product.id}/episodes/${latestEpisode.id}`}>
+                                        <Link
+                                            className="tp-btn primary"
+                                            href={`/studio/products/${product.id}/episodes/${latestEpisode.id}`}
+                                        >
                                             <StudioCatalogIcon name="play" />
                                             이어서 작업하기
                                         </Link>
                                     ) : null}
-                                    <button className={latestEpisode ? 'tp-btn ghost' : 'tp-btn primary'} onClick={openCreateModal} type="button">
-                                        <StudioCatalogIcon name="plus" />
-                                        새 에피소드
+                                    <button
+                                        className={latestEpisode ? 'tp-btn ghost' : 'tp-btn primary'}
+                                        onClick={openCreateModal}
+                                        type="button"
+                                    >
+                                        <StudioCatalogIcon name="plus" />새 에피소드
                                     </button>
                                     <button className="tp-btn ghost" onClick={openCharacterModal} type="button">
                                         <StudioCatalogIcon name="users" />
@@ -625,6 +680,12 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                         <StudioCatalogIcon name="mic" />
                                         성우 등록
                                     </Link>
+                                    {latestEpisode ? (
+                                        <Link className="tp-btn ghost" href={`/studio/products/${product.id}/episodes/${latestEpisode.id}/record`}>
+                                            <StudioCatalogIcon name="mic" />
+                                            녹음실
+                                        </Link>
+                                    ) : null}
                                     <button className="tp-btn ghost" onClick={openSettingsModal} type="button">
                                         <StudioCatalogIcon name="settings" />
                                         작품 설정
@@ -661,8 +722,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                 <h3>아직 에피소드가 없어요</h3>
                                 <p>첫 에피소드를 만들어 웹툰 스트립에 목소리를 입혀 보세요.</p>
                                 <button className="tp-btn primary" onClick={openCreateModal} type="button">
-                                    <StudioCatalogIcon name="plus" />
-                                    첫 에피소드 만들기
+                                    <StudioCatalogIcon name="plus" />첫 에피소드 만들기
                                 </button>
                             </div>
                         ) : (
@@ -674,31 +734,45 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                         href={`/studio/products/${product.id}/episodes/${episode.id}`}
                                         key={episode.id}
                                     >
-                                        <span className="tp-episode-num"><b>{episode.episodeNumber}</b>EP</span>
+                                        <span className="tp-episode-num">
+                                            <b>{episode.episodeNumber}</b>EP
+                                        </span>
                                         <span className="tp-episode-thumb" style={{ background: episode.thumbnail }}>
                                             <small>{episode.durationLabel}</small>
-                                            <i><StudioCatalogIcon name="play" /></i>
+                                            <i>
+                                                <StudioCatalogIcon name="play" />
+                                            </i>
                                         </span>
                                         <span className="tp-episode-main">
                                             <span>
                                                 <strong>{episode.title}</strong>
-                                                <em className={`tp-episode-badge ${episode.status}`}>{episodeStatusLabels[episode.status]}</em>
+                                                <em className={`tp-episode-badge ${episode.status}`}>
+                                                    {episodeStatusLabels[episode.status]}
+                                                </em>
                                             </span>
                                             <small>
-                                                <span><StudioCatalogIcon name="mic" /> 보이스 {episode.voiceCount}</span>
+                                                <span>
+                                                    <StudioCatalogIcon name="mic" /> 보이스 {episode.voiceCount}
+                                                </span>
                                                 <span>컷 {episode.cutCount}</span>
                                                 <span>{episode.updatedAtLabel} 수정</span>
                                             </small>
                                         </span>
                                         <span className="tp-episode-progress">
                                             <small>{episode.progress}%</small>
-                                            <i><b style={{ width: `${episode.progress}%` }} /></i>
+                                            <i>
+                                                <b style={{ width: `${episode.progress}%` }} />
+                                            </i>
                                         </span>
-                                        <span className="tp-open-hint">편집기 열기 <StudioCatalogIcon name="chevronRight" /></span>
+                                        <span className="tp-open-hint">
+                                            편집기 열기 <StudioCatalogIcon name="chevronRight" />
+                                        </span>
                                     </Link>
                                 ))}
                                 <button className="tp-episode-add" onClick={openCreateModal} type="button">
-                                    <span><StudioCatalogIcon name="plus" /></span>
+                                    <span>
+                                        <StudioCatalogIcon name="plus" />
+                                    </span>
                                     <strong>새 에피소드 추가</strong>
                                     <small>스트립을 올리고 목소리를 입혀 보세요.</small>
                                 </button>
@@ -734,7 +808,9 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                     type="number"
                                     value={newEpisodeNumber}
                                 />
-                                {showEpisodeNumberError ? <small className="tp-error">1 이상의 회차 번호를 입력해 주세요.</small> : null}
+                                {showEpisodeNumberError ? (
+                                    <small className="tp-error">1 이상의 회차 번호를 입력해 주세요.</small>
+                                ) : null}
                             </label>
                             <label className="tp-field">
                                 에피소드 제목 <b>*</b>
@@ -745,7 +821,9 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                     placeholder="예: 7화 - 옥상에서의 대화"
                                     value={newTitle}
                                 />
-                                {showTitleError ? <small className="tp-error">에피소드 제목을 입력해 주세요.</small> : null}
+                                {showTitleError ? (
+                                    <small className="tp-error">에피소드 제목을 입력해 주세요.</small>
+                                ) : null}
                             </label>
                             <label className="tp-field">
                                 에피소드 부제
@@ -764,7 +842,14 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                 {submitError ?? ''}
                             </span>
                             <div>
-                                <button className="tp-btn ghost" disabled={isSubmitting} onClick={closeCreateModal} type="button">취소</button>
+                                <button
+                                    className="tp-btn ghost"
+                                    disabled={isSubmitting}
+                                    onClick={closeCreateModal}
+                                    type="button"
+                                >
+                                    취소
+                                </button>
                                 <button className="tp-btn primary" disabled={isSubmitting} type="submit">
                                     {isSubmitting ? '등록 중' : '등록'}
                                 </button>
@@ -787,7 +872,11 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                             </button>
                         </div>
                         <div className="tp-form-col tp-scroll-form">
-                            {characterError ? <p className="tp-character-message is-error" role="alert">{characterError}</p> : null}
+                            {characterError ? (
+                                <p className="tp-character-message is-error" role="alert">
+                                    {characterError}
+                                </p>
+                            ) : null}
                             {isCharacterLoading ? (
                                 <div className="tp-character-empty">캐릭터 목록을 불러오는 중입니다.</div>
                             ) : characters.length > 0 ? (
@@ -799,7 +888,12 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                                 style={
                                                     character.imageUrl
                                                         ? { backgroundImage: `url(${character.imageUrl})` }
-                                                        : { background: characterAvatarColors[index % characterAvatarColors.length] }
+                                                        : {
+                                                              background:
+                                                                  characterAvatarColors[
+                                                                      index % characterAvatarColors.length
+                                                                  ],
+                                                          }
                                                 }
                                             >
                                                 {character.imageUrl ? null : character.name.trim().charAt(0) || '?'}
@@ -812,8 +906,12 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                                 <small>캐릭터 ID {character.id}</small>
                                             </span>
                                             <span className="tp-character-stats">
-                                                <span><b>{character.productId}</b>작품</span>
-                                                <span><b>{character.id}</b>ID</span>
+                                                <span>
+                                                    <b>{character.productId}</b>작품
+                                                </span>
+                                                <span>
+                                                    <b>{character.id}</b>ID
+                                                </span>
                                             </span>
                                         </article>
                                     ))}
@@ -825,8 +923,12 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                         <div className="tp-modal-foot">
                             <span />
                             <div>
-                                <button className="tp-btn ghost" onClick={closeCharacterModal} type="button">닫기</button>
-                                <button className="tp-btn primary" onClick={openCharacterCreateModal} type="button">새 캐릭터 등록하기</button>
+                                <button className="tp-btn ghost" onClick={closeCharacterModal} type="button">
+                                    닫기
+                                </button>
+                                <button className="tp-btn primary" onClick={openCharacterCreateModal} type="button">
+                                    새 캐릭터 등록하기
+                                </button>
                             </div>
                         </div>
                     </section>
@@ -841,7 +943,12 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                 <h2>새 캐릭터</h2>
                                 <p>{product.title}에 캐릭터 프로필을 등록합니다.</p>
                             </div>
-                            <button aria-label="닫기" disabled={isCharacterSubmitting} onClick={closeCharacterCreateModal} type="button">
+                            <button
+                                aria-label="닫기"
+                                disabled={isCharacterSubmitting}
+                                onClick={closeCharacterCreateModal}
+                                type="button"
+                            >
                                 <StudioCatalogIcon name="close" />
                             </button>
                         </div>
@@ -856,12 +963,16 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                     placeholder="예: 지후"
                                     value={newCharacterName}
                                 />
-                                {showCharacterNameError ? <small className="tp-error">캐릭터 이름을 입력해 주세요.</small> : null}
+                                {showCharacterNameError ? (
+                                    <small className="tp-error">캐릭터 이름을 입력해 주세요.</small>
+                                ) : null}
                             </label>
                             <div className="tp-field">
                                 캐릭터 이미지
                                 <label className="tp-character-image-picker">
-                                    <span>{newCharacterImageFile ? newCharacterImageFile.name : '이미지 파일 선택'}</span>
+                                    <span>
+                                        {newCharacterImageFile ? newCharacterImageFile.name : '이미지 파일 선택'}
+                                    </span>
                                     <input
                                         accept="image/*"
                                         disabled={isCharacterSubmitting}
@@ -882,7 +993,12 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                     />
                                 </label>
                                 {newCharacterImageFile ? (
-                                    <button className="tp-character-image-clear" disabled={isCharacterSubmitting} onClick={() => setNewCharacterImageFile(null)} type="button">
+                                    <button
+                                        className="tp-character-image-clear"
+                                        disabled={isCharacterSubmitting}
+                                        onClick={() => setNewCharacterImageFile(null)}
+                                        type="button"
+                                    >
                                         선택 해제
                                     </button>
                                 ) : null}
@@ -912,7 +1028,14 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                 {characterError ?? ''}
                             </span>
                             <div>
-                                <button className="tp-btn ghost" disabled={isCharacterSubmitting} onClick={closeCharacterCreateModal} type="button">취소</button>
+                                <button
+                                    className="tp-btn ghost"
+                                    disabled={isCharacterSubmitting}
+                                    onClick={closeCharacterCreateModal}
+                                    type="button"
+                                >
+                                    취소
+                                </button>
                                 <button className="tp-btn primary" disabled={isCharacterSubmitting} type="submit">
                                     {isCharacterSubmitting ? '등록 중' : '캐릭터 등록'}
                                 </button>
@@ -924,13 +1047,24 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
 
             {isSettingsModalOpen ? (
                 <div className="tp-modal-overlay compact" role="presentation">
-                    <form aria-label="작품 설정" aria-modal="true" className="tp-management-modal" onSubmit={saveProductSettings} role="dialog">
+                    <form
+                        aria-label="작품 설정"
+                        aria-modal="true"
+                        className="tp-management-modal"
+                        onSubmit={saveProductSettings}
+                        role="dialog"
+                    >
                         <div className="tp-modal-head">
                             <div>
                                 <h2>작품 설정</h2>
                                 <p>작품 상세 상단과 목록 카드에 표시되는 정보를 조정합니다.</p>
                             </div>
-                            <button aria-label="닫기" disabled={isSettingsSubmitting} onClick={closeSettingsModal} type="button">
+                            <button
+                                aria-label="닫기"
+                                disabled={isSettingsSubmitting}
+                                onClick={closeSettingsModal}
+                                type="button"
+                            >
                                 <StudioCatalogIcon name="close" />
                             </button>
                         </div>
@@ -941,17 +1075,23 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                     className={showSettingsTitleError ? 'error' : ''}
                                     disabled={isSettingsSubmitting}
                                     onBlur={() => setSettingsTitleTouched(true)}
-                                    onChange={(event) => setSettingsDraft((current) => ({ ...current, title: event.target.value }))}
+                                    onChange={(event) =>
+                                        setSettingsDraft((current) => ({ ...current, title: event.target.value }))
+                                    }
                                     placeholder="작품 제목"
                                     value={settingsDraft.title}
                                 />
-                                {showSettingsTitleError ? <small className="tp-error">작품 제목을 입력해 주세요.</small> : null}
+                                {showSettingsTitleError ? (
+                                    <small className="tp-error">작품 제목을 입력해 주세요.</small>
+                                ) : null}
                             </label>
                             <label className="tp-field">
                                 한 줄 소개 <span>작품 카드와 상세 상단에 표시돼요</span>
                                 <textarea
                                     disabled={isSettingsSubmitting}
-                                    onChange={(event) => setSettingsDraft((current) => ({ ...current, logline: event.target.value }))}
+                                    onChange={(event) =>
+                                        setSettingsDraft((current) => ({ ...current, logline: event.target.value }))
+                                    }
                                     placeholder="작품을 한 문장으로 소개해 주세요"
                                     value={settingsDraft.logline}
                                 />
@@ -998,7 +1138,10 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                         return (
                                             <button
                                                 className={isSelected ? 'on' : ''}
-                                                disabled={isSettingsSubmitting || (!isSelected && settingsDraft.genres.length >= 3)}
+                                                disabled={
+                                                    isSettingsSubmitting ||
+                                                    (!isSelected && settingsDraft.genres.length >= 3)
+                                                }
                                                 key={genre}
                                                 onClick={() => toggleSettingsGenre(genre)}
                                                 type="button"
@@ -1012,11 +1155,23 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                             <div className="tp-field">
                                 작품 이미지
                                 <label className="tp-character-image-picker">
-                                    <span>{settingsCoverImageFile ? settingsCoverImageFile.name : '이미지 파일 선택'}</span>
-                                    <input accept="image/*" disabled={isSettingsSubmitting} onChange={selectSettingsCoverImage} type="file" />
+                                    <span>
+                                        {settingsCoverImageFile ? settingsCoverImageFile.name : '이미지 파일 선택'}
+                                    </span>
+                                    <input
+                                        accept="image/*"
+                                        disabled={isSettingsSubmitting}
+                                        onChange={selectSettingsCoverImage}
+                                        type="file"
+                                    />
                                 </label>
                                 {settingsCoverImageFile ? (
-                                    <button className="tp-character-image-clear" disabled={isSettingsSubmitting} onClick={clearSettingsCoverImage} type="button">
+                                    <button
+                                        className="tp-character-image-clear"
+                                        disabled={isSettingsSubmitting}
+                                        onClick={clearSettingsCoverImage}
+                                        type="button"
+                                    >
                                         선택 해제
                                     </button>
                                 ) : null}
@@ -1042,12 +1197,24 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                             </div>
                         </div>
                         <div className="tp-modal-foot">
-                            <button className="tp-danger-text" disabled={isSettingsSubmitting} onClick={() => setSettingsMessage('작품 삭제 API 연결 전입니다.')} type="button">
+                            <button
+                                className="tp-danger-text"
+                                disabled={isSettingsSubmitting}
+                                onClick={() => setSettingsMessage('작품 삭제 API 연결 전입니다.')}
+                                type="button"
+                            >
                                 작품 삭제
                             </button>
                             <span role={settingsMessage ? 'status' : undefined}>{settingsMessage}</span>
                             <div>
-                                <button className="tp-btn ghost" disabled={isSettingsSubmitting} onClick={closeSettingsModal} type="button">취소</button>
+                                <button
+                                    className="tp-btn ghost"
+                                    disabled={isSettingsSubmitting}
+                                    onClick={closeSettingsModal}
+                                    type="button"
+                                >
+                                    취소
+                                </button>
                                 <button className="tp-btn primary" disabled={isSettingsSubmitting} type="submit">
                                     {isSettingsSubmitting ? '저장 중' : '변경사항 저장'}
                                 </button>

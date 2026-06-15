@@ -11,6 +11,7 @@ import type {
 } from 'react';
 import type { StudioEpisodeDetails } from './getEpisodeDetails';
 import { getCutEditMediaDetails } from './cutEditMediaDetails';
+import { ToonedBrand } from '../brand/ToonedBrand';
 import {
     confirmImageCompositionDraft,
     createEmptyImageCompositionDraft,
@@ -68,10 +69,13 @@ import {
     getPreviewScrollPixel,
     getPreviewScrollPosition,
     getSelectedPreviewVisual,
+    resolvePreviewScrollOffset,
     type PreviewScrollAnchor,
     type PreviewScrollPositionEvent,
+    type PreviewScrollTimedAnchor,
     type PreviewScrollVisualSegment,
 } from './previewScrollPosition';
+import { toPreviewPlaybackAnchors } from './previewPlaybackAnchors';
 import { syncPreviewVideoPlayback } from './previewVideoPlayback';
 import {
     MIN_TIMELINE_ITEM_DURATION_SECONDS,
@@ -125,6 +129,9 @@ const MIN_TIMELINE_GRIDLINE_PX = 56;
 const MIN_PREVIEW_ZOOM = 0.75;
 const MAX_PREVIEW_ZOOM = 1.55;
 const PREVIEW_ZOOM_STEP = 0.05;
+const MIN_CUT_EDITOR_ZOOM = 0.55;
+const MAX_CUT_EDITOR_ZOOM = 3;
+const CUT_EDITOR_ZOOM_STEP = 0.1;
 const DEFAULT_PREVIEW_CANVAS_WIDTH = 420;
 const DEFAULT_PREVIEW_CANVAS_HEIGHT = 760;
 const MIN_PREVIEW_CANVAS_WIDTH = 260;
@@ -146,9 +153,7 @@ const MEDIA_DRAG_MIME = 'application/x-tooned-media-id';
 const MEDIA_BATCH_DRAG_MIME = 'application/x-tooned-media-ids';
 const AUDIO_DRAG_MIME = 'application/x-tooned-audio-id';
 const defaultAnchorEventDraft: AnchorEventDraft = {
-    type: 'scroll',
     endAnchorId: '',
-    duration: '1000',
     isSaving: false,
     error: null,
 };
@@ -689,32 +694,20 @@ type CanvasUpdateMediaRequest = {
     volume?: number;
     isMuted?: boolean;
 };
-type AnchorEvent =
-    | {
-          type: 'scroll';
-          id: number;
-          scrollId: number;
-          startAnchorId: number;
-          endAnchorId: number;
-          canvasId?: number;
-          startIndex?: number;
-          endIndex?: number;
-          startTime?: number;
-          endTime?: number;
-          startPosition?: number;
-          endPosition?: number;
-      }
-    | {
-          type: 'pause';
-          id: number;
-          pauseId: number;
-          anchorId: number;
-          duration: number;
-          canvasId?: number;
-          index?: number;
-          time?: number;
-          position?: number;
-      };
+type AnchorEvent = {
+    type: 'scroll';
+    id: number;
+    scrollId: number;
+    startAnchorId: number;
+    endAnchorId: number;
+    canvasId?: number;
+    startIndex?: number;
+    endIndex?: number;
+    startTime?: number;
+    endTime?: number;
+    startPosition?: number;
+    endPosition?: number;
+};
 type AnchorListItem = {
     id: number;
     trackId: number;
@@ -731,13 +724,11 @@ type AnchorListResponse = {
     };
 };
 type AnchorEventDraft = {
-    type: 'scroll' | 'pause';
     endAnchorId: string;
-    duration: string;
     isSaving: boolean;
     error: string | null;
 };
-type AnchorEventMutationRequest = { type: 'scroll'; endAnchorId: number } | { type: 'pause'; duration: number };
+type AnchorEventMutationRequest = { type: 'scroll'; endAnchorId: number };
 type CharacterCreateDraft = {
     name: string;
     role: CharacterRole;
@@ -2394,10 +2385,11 @@ function getMediaThumbStyle(media: MediaListItem, fallbackIndex: number): CSSPro
 function getPreviewPlayheadPixel(
     playhead: number,
     scrollEvents: PreviewScrollPositionEvent[],
+    anchors: PreviewScrollTimedAnchor[],
     stripHeightPx: number,
     visualSegments: PreviewScrollVisualSegment[]
 ) {
-    return getPreviewScrollPosition({ playhead, scrollEvents, stripHeightPx, visualSegments });
+    return getPreviewScrollPosition({ playhead, scrollEvents, anchors, stripHeightPx, visualSegments });
 }
 
 function getScrollEventStartPixel(
@@ -2523,29 +2515,8 @@ function applyScrollAnchorToEvent(
     };
 }
 
-function toPreviewPlaybackScrollEvents(
-    scrollEvents: ScrollEventClip[],
-    anchors: AnchorListItem[]
-): PreviewScrollPositionEvent[] {
-    const pauseEvents = anchors.flatMap((anchor): PreviewScrollPositionEvent[] => {
-        if (anchor.event?.type !== 'pause') {
-            return [];
-        }
-
-        return [
-            {
-                start: toTimelineSeconds(anchor.time),
-                duration: Math.max(anchor.event.duration / 1000, 0.001),
-                canvasId: anchor.canvasId,
-                startIndex: anchor.index,
-                endIndex: anchor.index,
-                startPosition: anchor.position,
-                endPosition: anchor.position,
-            },
-        ];
-    });
-
-    return [...scrollEvents, ...pauseEvents].sort((a, b) => a.start - b.start || a.duration - b.duration);
+function toPreviewPlaybackScrollEvents(scrollEvents: ScrollEventClip[]): PreviewScrollPositionEvent[] {
+    return [...scrollEvents].sort((a, b) => a.start - b.start || a.duration - b.duration);
 }
 
 function getPreviewScrollEditAnchors(edit: PreviewScrollPointerEdit, clientY: number) {
@@ -3410,6 +3381,7 @@ function CutEditWorkspace({
         activeCanvasVisualClips[0];
     const cutBaseHeight = getPreviewCutHeight(activeCanvasVisualClips.length);
     const cutEditCoordinateHeightPx = getPreviewCoordinateHeight(previewStripHeightPx);
+    const playbackAnchors = useMemo(() => toPreviewPlaybackAnchors(anchors), [anchors]);
     const activeScrollEvent = scrollEvents.find(
         (event) => playhead >= event.start && playhead < event.start + event.duration
     );
@@ -3424,6 +3396,7 @@ function CutEditWorkspace({
     const previewPlayheadPixel = getPreviewPlayheadPixel(
         playhead,
         playbackScrollEvents,
+        playbackAnchors,
         cutEditCoordinateHeightPx,
         previewVisualSegments
     );
@@ -3473,7 +3446,9 @@ function CutEditWorkspace({
         [activeCanvasVisualClips, cueTracks, cutEditCoordinateHeightPx, previewVisualSegments]
     );
     const handleZoomStep = (delta: number) => {
-        setCutEditorZoom((current) => clamp(Number((current + delta).toFixed(2)), 0.55, 1.45));
+        setCutEditorZoom((current) =>
+            clamp(Number((current + delta).toFixed(2)), MIN_CUT_EDITOR_ZOOM, MAX_CUT_EDITOR_ZOOM)
+        );
     };
     useEffect(() => {
         const strip = cutEditStripRef.current;
@@ -3694,11 +3669,21 @@ function CutEditWorkspace({
                             : '캔버스 등록 후 미디어를 레이어로 추가'}
                     </span>
                     <div className="odx-cut-edit-zoom" role="group" aria-label="컷 편집 확대">
-                        <button aria-label="컷 편집 축소" onClick={() => handleZoomStep(-0.1)} type="button">
+                        <button
+                            aria-label="컷 편집 축소"
+                            disabled={cutEditorZoom <= MIN_CUT_EDITOR_ZOOM}
+                            onClick={() => handleZoomStep(-CUT_EDITOR_ZOOM_STEP)}
+                            type="button"
+                        >
                             -
                         </button>
                         <b>{Math.round(cutEditorZoom * 100)}%</b>
-                        <button aria-label="컷 편집 확대" onClick={() => handleZoomStep(0.1)} type="button">
+                        <button
+                            aria-label="컷 편집 확대"
+                            disabled={cutEditorZoom >= MAX_CUT_EDITOR_ZOOM}
+                            onClick={() => handleZoomStep(CUT_EDITOR_ZOOM_STEP)}
+                            type="button"
+                        >
                             +
                         </button>
                         <button onClick={() => setCutEditorZoom(1)} type="button">
@@ -4321,15 +4306,18 @@ function PreviewCanvas({
     const displayActiveVisual = isCutEditMode ? activeVisual : previewActiveVisual;
     const previewCoordinateHeightPx = getPreviewCoordinateHeight(previewStripHeightPx);
     const previewViewportHeightPx = Math.max(1, Math.round(canvasSize.height * previewZoom) - 34);
+    const playbackAnchors = useMemo(() => toPreviewPlaybackAnchors(anchors), [anchors]);
     const previewPlayheadPixel = getPreviewPlayheadPixel(
         playhead,
         playbackScrollEvents,
+        playbackAnchors,
         previewCoordinateHeightPx,
         previewVisualSegments
     );
     const playbackPreviewScrollOffsetPx = getPreviewScrollOffset({
         playhead,
         scrollEvents: playbackScrollEvents,
+        anchors: playbackAnchors,
         stripHeightPx: previewCoordinateHeightPx,
         viewportHeightPx: previewViewportHeightPx,
         visualSegments: previewVisualSegments,
@@ -4344,7 +4332,11 @@ function PreviewCanvas({
               visualSegments: previewVisualSegments,
           })
         : undefined;
-    const previewScrollOffsetPx = selectedAnchorScrollOffsetPx ?? playbackPreviewScrollOffsetPx;
+    const previewScrollOffsetPx = resolvePreviewScrollOffset({
+        isPlaying,
+        playbackOffsetPx: playbackPreviewScrollOffsetPx,
+        selectedAnchorOffsetPx: selectedAnchorScrollOffsetPx,
+    });
     const activeFxNames = effects.map((effectId) => effectById.get(effectId)?.name ?? effectId).filter(Boolean);
     useEffect(() => {
         if (isCutEditMode) {
@@ -4827,7 +4819,7 @@ function InspectorPanel({
     previewStripHeightPx: number;
     previewVisualSegments: PreviewScrollVisualSegment[];
     cueScriptState: CueScriptPanelState;
-    onAnchorEventDraftChange: (patch: Partial<Pick<AnchorEventDraft, 'type' | 'endAnchorId' | 'duration'>>) => void;
+    onAnchorEventDraftChange: (patch: Partial<Pick<AnchorEventDraft, 'endAnchorId'>>) => void;
     onSaveAnchorEvent: () => Promise<void> | void;
     onDeleteAnchorEvent: () => Promise<void> | void;
     onDeleteAnchor: () => Promise<void> | void;
@@ -4912,9 +4904,7 @@ function InspectorPanel({
     const anchorEventLabel =
         isAnchor && item.event?.type === 'scroll'
             ? `스크롤 · A${item.event.startAnchorId} -> A${item.event.endAnchorId}`
-            : isAnchor && item.event?.type === 'pause'
-              ? `정지 · ${Math.round(item.event.duration)}ms`
-              : '이벤트 없음';
+            : '이벤트 없음';
     const showAudioCueScript = isAudioClip && audioInspectorSectionIds.includes('cueScript');
     const showAudioTiming = isAudioClip && audioInspectorSectionIds.includes('timing');
 
@@ -4986,60 +4976,28 @@ function InspectorPanel({
                                 void onSaveAnchorEvent();
                             }}
                         >
-                            <div className="odx-anchor-event-toggle" role="group" aria-label="앵커 이벤트 유형">
-                                <button
-                                    className={anchorEventDraft.type === 'scroll' ? 'is-active' : ''}
-                                    disabled={anchorEventDraft.isSaving}
-                                    onClick={() => onAnchorEventDraftChange({ type: 'scroll' })}
-                                    type="button"
+                            <label className="odx-anchor-event-field">
+                                <span>종료 앵커</span>
+                                <select
+                                    disabled={anchorEventDraft.isSaving || anchorEventEndOptions.length === 0}
+                                    onChange={(event) =>
+                                        onAnchorEventDraftChange({ endAnchorId: event.currentTarget.value })
+                                    }
+                                    value={anchorEventDraft.endAnchorId}
                                 >
-                                    스크롤
-                                </button>
-                                <button
-                                    className={anchorEventDraft.type === 'pause' ? 'is-active' : ''}
-                                    disabled={anchorEventDraft.isSaving}
-                                    onClick={() => onAnchorEventDraftChange({ type: 'pause' })}
-                                    type="button"
-                                >
-                                    정지
-                                </button>
-                            </div>
-                            {anchorEventDraft.type === 'scroll' ? (
-                                <label className="odx-anchor-event-field">
-                                    <span>종료 앵커</span>
-                                    <select
-                                        disabled={anchorEventDraft.isSaving || anchorEventEndOptions.length === 0}
-                                        onChange={(event) =>
-                                            onAnchorEventDraftChange({ endAnchorId: event.currentTarget.value })
-                                        }
-                                        value={anchorEventDraft.endAnchorId}
-                                    >
-                                        <option value="">종료 앵커 선택</option>
-                                        {anchorEventEndOptions.map((anchor) => (
-                                            <option key={anchor.id} value={anchor.id}>
-                                                {`A${anchor.id} · ${formatTime(toTimelineSeconds(anchor.time))} · ${formatScrollIndexedPosition(anchor.index, anchor.position)}`}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {anchorEventEndOptions.length === 0 ? (
-                                        <small>같은 캔버스에서 뒤쪽 앵커를 하나 더 추가해야 합니다.</small>
-                                    ) : null}
-                                </label>
-                            ) : (
-                                <label className="odx-anchor-event-field">
-                                    <span>정지 시간(ms)</span>
-                                    <input
-                                        disabled={anchorEventDraft.isSaving}
-                                        min="1"
-                                        onChange={(event) =>
-                                            onAnchorEventDraftChange({ duration: event.currentTarget.value })
-                                        }
-                                        step="100"
-                                        type="number"
-                                        value={anchorEventDraft.duration}
-                                    />
-                                </label>
-                            )}
+                                    <option value="">종료 앵커 선택</option>
+                                    {anchorEventEndOptions.map((anchor) => (
+                                        <option key={anchor.id} value={anchor.id}>
+                                            {`A${anchor.id} · ${formatTime(toTimelineSeconds(anchor.time))} · ${formatScrollIndexedPosition(anchor.index, anchor.position)}`}
+                                        </option>
+                                    ))}
+                                </select>
+                                {anchorEventEndOptions.length === 0 ? (
+                                    <small>같은 캔버스에서 뒤쪽 앵커를 하나 더 추가해야 합니다.</small>
+                                ) : (
+                                    <small>정지는 같은 위치의 뒤쪽 앵커를 선택해 표현합니다.</small>
+                                )}
+                            </label>
                             {anchorEventDraft.error ? (
                                 <p className="odx-cue-script-error" role="alert">
                                     {anchorEventDraft.error}
@@ -6648,10 +6606,7 @@ export function StudioEditor({
         () => new Map(anchors.map((anchor) => [getAnchorSelectionId(anchor.id), toAnchorSelection(anchor)])),
         [anchors]
     );
-    const playbackScrollEvents = useMemo(
-        () => toPreviewPlaybackScrollEvents(scrollEvents, anchors),
-        [anchors, scrollEvents]
-    );
+    const playbackScrollEvents = useMemo(() => toPreviewPlaybackScrollEvents(scrollEvents), [scrollEvents]);
     const stageAnchors = useMemo(
         () => filterPreviewCanvasItems(anchors, activeStageCanvasId),
         [activeStageCanvasId, anchors]
@@ -6751,20 +6706,7 @@ export function StudioEditor({
 
         if (event?.type === 'scroll') {
             setAnchorEventDraft({
-                type: 'scroll',
                 endAnchorId: String(event.endAnchorId),
-                duration: '1000',
-                isSaving: false,
-                error: null,
-            });
-            return;
-        }
-
-        if (event?.type === 'pause') {
-            setAnchorEventDraft({
-                type: 'pause',
-                endAnchorId: '',
-                duration: String(event.duration),
                 isSaving: false,
                 error: null,
             });
@@ -7375,30 +7317,11 @@ export function StudioEditor({
         setPlayhead(toTimelineSeconds(anchor.time));
     };
 
-    const handleAnchorEventDraftChange = (
-        patch: Partial<Pick<AnchorEventDraft, 'type' | 'endAnchorId' | 'duration'>>
-    ) => {
+    const handleAnchorEventDraftChange = (patch: Partial<Pick<AnchorEventDraft, 'endAnchorId'>>) => {
         setAnchorEventDraft((current) => {
-            const nextType = patch.type ?? current.type;
-            const nextEndAnchorId =
-                patch.endAnchorId ??
-                (patch.type === 'scroll' && !current.endAnchorId && selectedItem && isAnchorSelection(selectedItem)
-                    ? String(
-                          anchors.find(
-                              (anchor) =>
-                                  String(anchor.trackId) === selectedItem.trackId &&
-                                  anchor.id !== selectedItem.anchorId &&
-                                  anchor.canvasId === selectedItem.canvasId &&
-                                  anchor.time > selectedItem.time
-                          )?.id ?? ''
-                      )
-                    : current.endAnchorId);
-
             return {
                 ...current,
                 ...patch,
-                type: nextType,
-                endAnchorId: nextEndAnchorId,
                 error: null,
             };
         });
@@ -7409,34 +7332,21 @@ export function StudioEditor({
             return;
         }
 
-        let request: AnchorEventMutationRequest;
+        const endAnchorId = Number(anchorEventDraft.endAnchorId);
 
-        if (anchorEventDraft.type === 'scroll') {
-            const endAnchorId = Number(anchorEventDraft.endAnchorId);
-
-            if (!Number.isInteger(endAnchorId) || endAnchorId <= 0) {
-                setAnchorEventDraft((current) => ({ ...current, error: '종료 앵커를 선택해 주세요.' }));
-                return;
-            }
-            if (endAnchorId === selectedItem.anchorId) {
-                setAnchorEventDraft((current) => ({
-                    ...current,
-                    error: '스크롤 종료 앵커는 현재 앵커와 달라야 합니다.',
-                }));
-                return;
-            }
-
-            request = { type: 'scroll', endAnchorId };
-        } else {
-            const duration = Number(anchorEventDraft.duration);
-
-            if (!Number.isFinite(duration) || duration <= 0) {
-                setAnchorEventDraft((current) => ({ ...current, error: '정지 시간은 0보다 큰 ms 값이어야 합니다.' }));
-                return;
-            }
-
-            request = { type: 'pause', duration };
+        if (!Number.isInteger(endAnchorId) || endAnchorId <= 0) {
+            setAnchorEventDraft((current) => ({ ...current, error: '종료 앵커를 선택해 주세요.' }));
+            return;
         }
+        if (endAnchorId === selectedItem.anchorId) {
+            setAnchorEventDraft((current) => ({
+                ...current,
+                error: '스크롤 종료 앵커는 현재 앵커와 달라야 합니다.',
+            }));
+            return;
+        }
+
+        const request: AnchorEventMutationRequest = { type: 'scroll', endAnchorId };
 
         try {
             setAnchorEventDraft((current) => ({ ...current, isSaving: true, error: null }));
@@ -7857,7 +7767,9 @@ export function StudioEditor({
 
         markImageCompositionCanvasDirty(targetCanvasId);
         setEditableVisualClips(nextVisualClips);
-        setImageCompositionDraft((current) => syncImageCompositionDraft(toImageCompositionSources(nextVisualClips), current));
+        setImageCompositionDraft((current) =>
+            syncImageCompositionDraft(toImageCompositionSources(nextVisualClips), current)
+        );
         setActiveCutCanvasId(targetCanvasId);
         setSelectedId(nextSelectedVisual?.id ?? '');
         setRangeSelectionIds([]);
@@ -7908,7 +7820,9 @@ export function StudioEditor({
             setEditableVisualClips(nextVisualClips);
             setDirtyImageCompositionCanvasIds([]);
             setActiveCutCanvasId(createdCanvasId);
-            setSelectedPreviewCanvasId((current) => resolvePreviewCanvasId(nextCanvasItems, current) ?? createdCanvasId);
+            setSelectedPreviewCanvasId(
+                (current) => resolvePreviewCanvasId(nextCanvasItems, current) ?? createdCanvasId
+            );
             setSelectedId((current) => {
                 const firstCreatedClip = nextVisualClips.find((clip) => clip.canvasId === createdCanvasId);
 
@@ -7969,15 +7883,23 @@ export function StudioEditor({
                 const refreshedVisualClips = toVisualClips(nextCanvasItems);
                 const createdCanvasId = resolveCreatedCanvasId(previousCanvasItems, nextCanvasItems);
                 const firstDroppedClip = refreshedVisualClips.find(
-                    (clip) => clip.canvasId === createdCanvasId && canvasMedias.some((media) => media.mediaId === clip.mediaId)
+                    (clip) =>
+                        clip.canvasId === createdCanvasId &&
+                        canvasMedias.some((media) => media.mediaId === clip.mediaId)
                 );
 
                 setCanvasItems(nextCanvasItems);
                 setEditableVisualClips(refreshedVisualClips);
                 setDirtyImageCompositionCanvasIds([]);
                 setActiveCutCanvasId(createdCanvasId);
-                setSelectedPreviewCanvasId((current) => resolvePreviewCanvasId(nextCanvasItems, current) ?? createdCanvasId);
-                setSelectedId(firstDroppedClip?.id ?? refreshedVisualClips.find((clip) => clip.canvasId === createdCanvasId)?.id ?? '');
+                setSelectedPreviewCanvasId(
+                    (current) => resolvePreviewCanvasId(nextCanvasItems, current) ?? createdCanvasId
+                );
+                setSelectedId(
+                    firstDroppedClip?.id ??
+                        refreshedVisualClips.find((clip) => clip.canvasId === createdCanvasId)?.id ??
+                        ''
+                );
                 setRangeSelectionIds([]);
                 setMediaContextMenu(null);
             } catch (error) {
@@ -9899,8 +9821,7 @@ export function StudioEditor({
         <div className="odx-editor" data-testid="tooned-index-editor">
             <header className="odx-topbar">
                 <div className="odx-brand">
-                    <span>Tooned</span>
-                    <b>Studio</b>
+                    <ToonedBrand context="studio" />
                 </div>
                 <div className="odx-project">
                     <strong>{episodeTitle}</strong>

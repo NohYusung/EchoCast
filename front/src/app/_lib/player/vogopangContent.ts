@@ -100,7 +100,7 @@ function resolveVogopangRecord({
 }): VogopangContentRecord {
     if (record) {
         return {
-            src: record.audioUrl,
+            src: record.recordUrl,
             artist_no: Number(record.artistId.replace(/\D/g, '')) || 0,
             margin: 0,
         };

@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { checkInValue } from '../../../libs/utils/typeorm';
 import { DddService } from '../../../libs/ddd';
+import { AnchorRepository } from '../../anchors/repository/anchor.repository';
 import { AudioRepository } from '../../audios/repository/audio.repository';
 import type { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import type { Canvas } from '../../canvases/domain/canvas.entity';
 import { CanvasRepository } from '../../canvases/repository/canvas.repository';
 import { CharacterRepository } from '../../characters/repository/characater.repository';
+import type { Cue } from '../../cues/domain/cue.entity';
 import { CueRepository } from '../../cues/repository/cue.repository';
 import { EpisodeRepository } from '../../episodes/repository/episode.repository';
 import { Record as RecordEntity } from '../../records/domain/record.entity';
@@ -134,13 +136,22 @@ type PlayerDraft = {
         startPosition: number;
         endPosition: number;
     }>;
+    anchors: Array<{
+        id: string;
+        trackId: string;
+        canvasId: string;
+        time: number;
+        position: number;
+        index: number;
+    }>;
     records: Array<{
         id: string;
         cueId: string;
         artistId: string;
-        audioUrl: string;
+        recordUrl: string;
         duration?: number;
         volume: number;
+        isAccepted: boolean;
     }>;
     screenEffects: Array<{ type: 'effect'; uuid: string; time_ms: number; params: Record<string, unknown> }>;
 };
@@ -172,6 +183,7 @@ type PlayerManifest = {
     media: Array<Omit<PlayerDraft['media'][number], 'episodeId'>>;
     records: PlayerDraft['records'];
     scrolls: PlayerDraft['scrolls'];
+    anchors: PlayerDraft['anchors'];
     tts: Array<{ id: string; cueId: string; voiceId: string; provider: string; voiceName: string; audioUrl: string }>;
 };
 
@@ -188,6 +200,10 @@ function toTrackKind(type: TrackType): PlayerTrackKind {
     if (type === 'audio' || type === 'bgm') return 'audio';
     if (type === 'effect') return 'effect';
     return 'visual';
+}
+
+function hasAssignedCueTime(cue: Cue): cue is Cue & { startTime: number; endTime: number } {
+    return typeof cue.startTime === 'number' && typeof cue.endTime === 'number';
 }
 
 function toPlayerCanvasMediaTimelineControls(canvasMedia: CanvasMedia | undefined) {
@@ -278,6 +294,7 @@ export class PlayerService extends DddService {
         private readonly canvasRepository: CanvasRepository,
         private readonly cueRepository: CueRepository,
         private readonly audioRepository: AudioRepository,
+        private readonly anchorRepository: AnchorRepository,
         private readonly scrollRepository: ScrollRepository,
         private readonly recordRepository: RecordRepository
     ) {
@@ -331,22 +348,31 @@ export class PlayerService extends DddService {
         const playerCanvases = toPlayerCanvases(canvases);
         const previewVisualTimings = getPreviewVisualTimingItems(visualMediaItems);
         const trackIds = tracks.map((track) => track.id);
-        const [cues, scrolls] =
+        const [cues, anchors, scrolls] =
             trackIds.length > 0
                 ? await Promise.all([
                       this.cueRepository.find(
                           { trackId: checkInValue(trackIds) },
                           { options: { sort: 'startTime', order: 'ASC' } }
                       ),
+                      this.anchorRepository.find(
+                          { trackId: checkInValue(trackIds) },
+                          { options: { sort: 'time', order: 'ASC' } }
+                      ),
                       this.scrollRepository.find(
                           { trackId: checkInValue(trackIds) },
                           { relations: { startAnchor: true, endAnchor: true } }
                       ),
                   ])
-                : [[], []];
-        cues.sort((a, b) => a.startTime - b.startTime || a.id - b.id);
+                : [[], [], []];
+        cues.sort(
+            (a, b) =>
+                (a.startTime ?? Number.MAX_SAFE_INTEGER) - (b.startTime ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
+        );
+        anchors.sort((a, b) => a.time - b.time || a.id - b.id);
         scrolls.sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0) || a.id - b.id);
-        const cueIds = cues.map((cue) => cue.id);
+        const scheduledCues = cues.filter(hasAssignedCueTime);
+        const cueIds = scheduledCues.map((cue) => cue.id);
         const records: RecordEntity[] =
             cueIds.length > 0
                 ? await this.recordRepository.find(
@@ -355,7 +381,7 @@ export class PlayerService extends DddService {
                   )
                 : [];
         records.sort((a, b) => a.cueId - b.cueId || a.id - b.id);
-        const scripts = cues.map((cue, index) => ({
+        const scripts = scheduledCues.map((cue, index) => ({
             id: toCueScriptId(cue.id),
             episodeId: toId(episode.id),
             characterId: cue.characterId ? toId(cue.characterId) : '',
@@ -449,7 +475,7 @@ export class PlayerService extends DddService {
                         volume: canvasMedia.isMuted ? 0 : canvasMedia.volume,
                     };
                 }),
-                ...cues.map((cue) => ({
+                ...scheduledCues.map((cue) => ({
                     id: `cue-${cue.id}`,
                     trackId: toId(cue.trackId),
                     kind:
@@ -486,7 +512,7 @@ export class PlayerService extends DddService {
                     durationMs: audio.duration,
                 })),
             ],
-            cues: cues.map((cue) => ({
+            cues: scheduledCues.map((cue) => ({
                 id: toId(cue.id),
                 episodeId: toId(episode.id),
                 scriptId: toCueScriptId(cue.id),
@@ -512,13 +538,22 @@ export class PlayerService extends DddService {
                 startPosition: scroll.startPosition ?? 0,
                 endPosition: scroll.endPosition ?? scroll.startPosition ?? 0,
             })),
+            anchors: anchors.map((anchor) => ({
+                id: toId(anchor.id),
+                trackId: toId(anchor.trackId),
+                canvasId: toId(anchor.canvasId),
+                time: anchor.time,
+                position: anchor.position,
+                index: anchor.index,
+            })),
             records: records.map((record) => ({
                 id: toId(record.id),
                 cueId: toId(record.cueId),
                 artistId: toId(record.artistId),
-                audioUrl: record.audioUrl,
+                recordUrl: record.recordUrl,
                 duration: record.duration ?? undefined,
                 volume: record.volume,
+                isAccepted: record.isAccepted,
             })),
             screenEffects: [],
         };
@@ -531,7 +566,8 @@ export class PlayerService extends DddService {
     toManifest(draft: PlayerDraft): PlayerManifest {
         const recordByCueId = new Map<string, PlayerDraft['records'][number]>();
         for (const record of draft.records) {
-            if (!recordByCueId.has(record.cueId)) {
+            const currentRecord = recordByCueId.get(record.cueId);
+            if (!currentRecord || (!currentRecord.isAccepted && record.isAccepted)) {
                 recordByCueId.set(record.cueId, record);
             }
         }
@@ -543,7 +579,7 @@ export class PlayerService extends DddService {
             audioId: cue.audioId,
             startTime: cue.startTime,
             endTime: cue.endTime,
-            approvedRecordUrl: recordByCueId.get(cue.id)?.audioUrl,
+            approvedRecordUrl: recordByCueId.get(cue.id)?.recordUrl,
             ttsUrl: cue.ttsUrl,
             volume: cue.volume,
         }));
@@ -552,6 +588,7 @@ export class PlayerService extends DddService {
             ...draft.items.map((item) => item.endTime),
             ...draft.cues.map((cue) => cue.endTime),
             ...draft.scrolls.map((scroll) => scroll.endTime),
+            ...draft.anchors.map((anchor) => anchor.time),
             ...draft.cues.map((cue) => {
                 const record = recordByCueId.get(cue.id);
                 return record ? cue.startTime + (record.duration ?? cue.endTime - cue.startTime) : 0;
@@ -572,6 +609,7 @@ export class PlayerService extends DddService {
             media: draft.media.map(({ episodeId: _episodeId, ...media }) => media),
             records: draft.records,
             scrolls: draft.scrolls,
+            anchors: draft.anchors,
             tts: [],
         };
     }

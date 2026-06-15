@@ -63,9 +63,10 @@ describe('Record', () => {
                 new Record({
                     cueId: cue.id,
                     artistId: artist.id,
-                    audioUrl: 'https://assets.example.com/record.wav',
+                    recordUrl: 'https://assets.example.com/record.wav',
                     duration: 2000,
                     volume: 0.8,
+                    isAccepted: true,
                 })
             );
 
@@ -79,9 +80,10 @@ describe('Record', () => {
             assert.equal(storedRecord.cue.id, cue.id);
             assert.equal(storedRecord.artist.id, artist.id);
             assert.equal(storedRecord.artist.name, 'Record artist');
-            assert.equal(storedRecord.audioUrl, 'https://assets.example.com/record.wav');
+            assert.equal(storedRecord.recordUrl, 'https://assets.example.com/record.wav');
             assert.equal(storedRecord.duration, 2000);
             assert.equal(storedRecord.volume, 0.8);
+            assert.equal(storedRecord.isAccepted, true);
         } finally {
             await dataSource.destroy();
         }
@@ -133,13 +135,14 @@ describe('Record', () => {
                 new Record({
                     cueId: cue.id,
                     artistId: artist.id,
-                    audioUrl: 'https://assets.example.com/record-without-duration.wav',
+                    recordUrl: 'https://assets.example.com/record-without-duration.wav',
                 })
             );
 
             const storedRecord = await dataSource.manager.findOneByOrFail(Record, { id: record.id });
 
             assert.equal(storedRecord.duration, null);
+            assert.equal(storedRecord.isAccepted, false);
         } finally {
             await dataSource.destroy();
         }

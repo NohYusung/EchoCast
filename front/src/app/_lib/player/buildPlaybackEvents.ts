@@ -16,7 +16,8 @@ export interface PlaybackEvent {
 export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
     const recordByCueId = new Map<string, PlayerManifest['records'][number]>();
     for (const record of manifest.records) {
-        if (!recordByCueId.has(record.cueId)) {
+        const currentRecord = recordByCueId.get(record.cueId);
+        if (!currentRecord || (!currentRecord.isAccepted && record.isAccepted)) {
             recordByCueId.set(record.cueId, record);
         }
     }
@@ -33,7 +34,7 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
                         cueId: cue.id,
                         kind: 'record',
                         sourceId: record.id,
-                        url: record.audioUrl,
+                        url: record.recordUrl,
                         startTime: cue.startTime,
                         endTime: cue.startTime + (record.duration ?? Math.max(0, cue.endTime - cue.startTime)),
                         volume: record.volume * cue.volume,

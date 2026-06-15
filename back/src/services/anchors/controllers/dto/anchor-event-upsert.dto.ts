@@ -1,5 +1,4 @@
 export class AnchorEventUpsertDto {
-    type!: 'scroll' | 'pause';
+    type!: 'scroll';
     endAnchorId?: number;
-    duration?: number;
 }

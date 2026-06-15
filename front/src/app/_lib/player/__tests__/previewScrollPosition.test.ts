@@ -7,6 +7,7 @@ import {
     getPreviewScrollPixel,
     getSelectedPreviewVisual,
     getPreviewScrollPosition,
+    resolvePreviewScrollOffset,
 } from '../previewScrollPosition';
 
 test('getPreviewScrollPosition returns no position when there is no active scroll event', () => {
@@ -18,6 +19,25 @@ test('getPreviewScrollPosition returns no position when there is no active scrol
             stripHeightPx: 2400,
         }),
         undefined,
+    );
+});
+
+test('getPreviewScrollPosition falls back to the latest anchor when no scroll event is active', () => {
+    assert.equal(
+        getPreviewScrollPosition({
+            playhead: 18,
+            scrollEvents: [],
+            anchors: [
+                { time: 10, canvasId: 11, index: 0, position: 50 },
+                { time: 20, canvasId: 11, index: 1, position: 40 },
+            ],
+            stripHeightPx: 800,
+            visualSegments: [
+                { id: 'clip-1', canvasId: 11, index: 0, top: 0, height: 300 },
+                { id: 'clip-2', canvasId: 11, index: 1, top: 300, height: 500 },
+            ],
+        }),
+        150,
     );
 });
 
@@ -203,6 +223,28 @@ test('getPreviewScrollOffset returns no offset outside stored scroll events', ()
             viewportHeightPx: 200,
         }),
         undefined,
+    );
+});
+
+test('resolvePreviewScrollOffset uses playback offset while preview is playing', () => {
+    assert.equal(
+        resolvePreviewScrollOffset({
+            isPlaying: true,
+            playbackOffsetPx: 240,
+            selectedAnchorOffsetPx: 80,
+        }),
+        240,
+    );
+});
+
+test('resolvePreviewScrollOffset uses selected anchor offset only while preview is not playing', () => {
+    assert.equal(
+        resolvePreviewScrollOffset({
+            isPlaying: false,
+            playbackOffsetPx: 240,
+            selectedAnchorOffsetPx: 80,
+        }),
+        80,
     );
 });
 

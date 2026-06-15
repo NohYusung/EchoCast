@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { DataSource } from 'typeorm';
 import { Anchor } from '../../anchors/domain/anchor.entity';
+import { AnchorRepository } from '../../anchors/repository/anchor.repository';
 import { Artist } from '../../artists/domain/artist.entity';
 import { Audio } from '../../audios/domain/audio.entity';
 import { AudioRepository } from '../../audios/repository/audio.repository';
@@ -152,9 +153,20 @@ describe('PlayerService', () => {
                 new RecordEntity({
                     cueId: cue.id,
                     artistId: artist.id,
-                    audioUrl: 'https://assets.example.com/record.wav',
+                    recordUrl: 'https://assets.example.com/record-draft.wav',
                     duration: 1900,
                     volume: 0.8,
+                    isAccepted: false,
+                })
+            );
+            await dataSource.manager.save(
+                new RecordEntity({
+                    cueId: cue.id,
+                    artistId: artist.id,
+                    recordUrl: 'https://assets.example.com/record.wav',
+                    duration: 1700,
+                    volume: 0.7,
+                    isAccepted: true,
                 })
             );
 
@@ -165,6 +177,7 @@ describe('PlayerService', () => {
                 new CanvasRepository(dataSource),
                 new CueRepository(dataSource),
                 new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
                 new ScrollRepository(dataSource),
                 new RecordRepository(dataSource)
             );
@@ -191,7 +204,10 @@ describe('PlayerService', () => {
             assert.equal(draft.scripts[0].text, '플레이어 테스트 대사');
             assert.equal(draft.scripts[0].id, draft.cues[0].scriptId);
             assert.equal(draft.cues[0].id, String(cue.id));
-            assert.equal(draft.records[0].audioUrl, 'https://assets.example.com/record.wav');
+            assert.equal(draft.records[0].recordUrl, 'https://assets.example.com/record-draft.wav');
+            assert.equal(draft.records[0].isAccepted, false);
+            assert.equal(draft.records[1].recordUrl, 'https://assets.example.com/record.wav');
+            assert.equal(draft.records[1].isAccepted, true);
             assert.deepEqual(draft.scrolls, [
                 {
                     id: '1',
@@ -357,6 +373,7 @@ describe('PlayerService', () => {
                 new CanvasRepository(dataSource),
                 new CueRepository(dataSource),
                 new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
                 new ScrollRepository(dataSource),
                 new RecordRepository(dataSource)
             );
@@ -448,6 +465,7 @@ describe('PlayerService', () => {
                 new CanvasRepository(dataSource),
                 new CueRepository(dataSource),
                 new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
                 new ScrollRepository(dataSource),
                 new RecordRepository(dataSource)
             );
@@ -522,6 +540,7 @@ describe('PlayerService', () => {
                 new CanvasRepository(dataSource),
                 new CueRepository(dataSource),
                 new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
                 new ScrollRepository(dataSource),
                 new RecordRepository(dataSource)
             );
@@ -539,6 +558,125 @@ describe('PlayerService', () => {
                 { mediaId: String(firstMedia.id), startTime: 0, endTime: 1000 },
                 { mediaId: String(secondMedia.id), startTime: 1000, endTime: 2000 },
             ]);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('exposes anchors in player manifest without requiring scroll events', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Anchor,
+                Artist,
+                Audio,
+                CanvasMedia,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Anchor fallback product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Anchor fallback episode',
+                })
+            );
+            const scrollTrack = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Scroll',
+                    type: 'scroll',
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const media = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'anchor-fallback.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/anchor-fallback.png',
+                })
+            );
+            await dataSource.manager.save(new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 }));
+            await dataSource.manager.save([
+                new Anchor({
+                    trackId: scrollTrack.id,
+                    canvasId: canvas.id,
+                    time: 1000,
+                    index: 0,
+                    position: 25,
+                }),
+                new Anchor({
+                    trackId: scrollTrack.id,
+                    canvasId: canvas.id,
+                    time: 3000,
+                    index: 0,
+                    position: 75,
+                }),
+            ]);
+
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+
+            assert.equal(manifest.durationMs, 3000);
+            assert.deepEqual(
+                (manifest as typeof manifest & {
+                    anchors?: Array<{
+                        trackId: string;
+                        canvasId: string;
+                        time: number;
+                        index: number;
+                        position: number;
+                    }>;
+                }).anchors?.map((anchor) => ({
+                    trackId: anchor.trackId,
+                    canvasId: anchor.canvasId,
+                    time: anchor.time,
+                    index: anchor.index,
+                    position: anchor.position,
+                })),
+                [
+                    {
+                        trackId: String(scrollTrack.id),
+                        canvasId: String(canvas.id),
+                        time: 1000,
+                        index: 0,
+                        position: 25,
+                    },
+                    {
+                        trackId: String(scrollTrack.id),
+                        canvasId: String(canvas.id),
+                        time: 3000,
+                        index: 0,
+                        position: 75,
+                    },
+                ]
+            );
         } finally {
             await dataSource.destroy();
         }
@@ -607,6 +745,7 @@ describe('PlayerService', () => {
                 new CanvasRepository(dataSource),
                 new CueRepository(dataSource),
                 new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
                 new ScrollRepository(dataSource),
                 new RecordRepository(dataSource)
             );
@@ -746,6 +885,7 @@ describe('PlayerService', () => {
                 new CanvasRepository(dataSource),
                 new CueRepository(dataSource),
                 new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
                 new ScrollRepository(dataSource),
                 new RecordRepository(dataSource)
             );

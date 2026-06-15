@@ -6,9 +6,10 @@ import { Cue } from '../../cues/domain/cue.entity';
 type Ctor = {
     cueId: number;
     artistId: number;
-    audioUrl: string;
+    recordUrl: string;
     duration?: number;
     volume?: number;
+    isAccepted?: boolean;
 };
 
 @Entity('records')
@@ -23,13 +24,16 @@ export class Record extends DddAggregate {
     artistId!: number;
 
     @Column({ comment: '녹음 파일 URL' })
-    audioUrl!: string;
+    recordUrl!: string;
 
     @Column({ comment: '녹음 파일 길이(ms)', nullable: true })
     duration?: number;
 
     @Column({ type: 'real', comment: '녹음 볼륨', default: 1 })
     volume!: number;
+
+    @Column({ comment: '채택 여부', default: false })
+    isAccepted!: boolean;
 
     @ManyToOne(() => Cue, { nullable: false })
     @JoinColumn({ name: 'cueId' })
@@ -44,9 +48,41 @@ export class Record extends DddAggregate {
         if (args) {
             this.cueId = args.cueId;
             this.artistId = args.artistId;
-            this.audioUrl = args.audioUrl;
+            this.recordUrl = args.recordUrl;
             this.duration = args.duration;
             this.volume = args.volume ?? 1;
+            this.isAccepted = args.isAccepted ?? false;
         }
+    }
+
+    update({
+        cueId,
+        artistId,
+        recordUrl,
+        duration,
+        volume,
+        isAccepted,
+    }: {
+        cueId?: number;
+        artistId?: number;
+        recordUrl?: string;
+        duration?: number;
+        volume?: number;
+        isAccepted?: boolean;
+    }) {
+        const changedArgs = this.stripUnchanged({
+            cueId,
+            artistId,
+            recordUrl,
+            duration,
+            volume,
+            isAccepted,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
     }
 }

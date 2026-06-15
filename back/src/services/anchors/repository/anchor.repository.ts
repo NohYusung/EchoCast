@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { FindOperator } from 'typeorm';
 import { DddRepository } from '../../../libs/ddd';
 import { stripUndefined } from '../../../libs/utils/helper';
 import { convertOptions, type TypeormRelationOptions } from '../../../libs/utils/typeorm';
@@ -11,7 +12,7 @@ export class AnchorRepository extends DddRepository<Anchor> {
     async find(
         conditions: {
             id?: number;
-            trackId?: number;
+            trackId?: number | FindOperator<number>;
             canvasId?: number;
             time?: number;
             position?: number;

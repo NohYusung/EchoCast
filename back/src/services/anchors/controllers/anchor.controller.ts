@@ -88,12 +88,12 @@ export class AnchorController {
         @Body() body: AnchorEventUpsertDto
     ) {
         // 1. Destructure body, params, query
-        const { type, endAnchorId, duration } = body;
+        const { type, endAnchorId } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.anchorService.upsertEvent({ trackId, anchorId, type, endAnchorId, duration });
+        await this.anchorService.upsertEvent({ trackId, anchorId, type, endAnchorId });
 
         // 4. Send response
         return { data: {} };

@@ -13,7 +13,7 @@ import { Product } from '../../products/domain/product.entity';
 import { Track } from '../../tracks/domain/track.entity';
 import { Record } from '../domain/record.entity';
 
-test('POST /records creates a record for a cue and artist', async () => {
+test('records API creates, lists, updates, and deletes a record for a cue and artist', async () => {
     const moduleRef = await Test.createTestingModule({
         imports: [AppModule],
     }).compile();
@@ -61,9 +61,10 @@ test('POST /records creates a record for a cue and artist', async () => {
             .send({
                 cueId: cue.id,
                 artistId: artist.id,
-                audioUrl: 'https://assets.example.com/record-api.wav',
+                recordUrl: 'https://assets.example.com/record-api.wav',
                 duration: 1200,
                 volume: 0.75,
+                isAccepted: true,
             })
             .expect(201);
 
@@ -77,9 +78,94 @@ test('POST /records creates a record for a cue and artist', async () => {
         });
 
         assert.equal(storedRecords.length, 1);
-        assert.equal(storedRecords[0].audioUrl, 'https://assets.example.com/record-api.wav');
+        assert.equal(storedRecords[0].recordUrl, 'https://assets.example.com/record-api.wav');
         assert.equal(storedRecords[0].duration, 1200);
         assert.equal(storedRecords[0].volume, 0.75);
+        assert.equal(storedRecords[0].isAccepted, true);
+
+        const recordId = storedRecords[0].id;
+        await request(app.getHttpServer())
+            .post('/records')
+            .send({
+                cueId: cue.id,
+                artistId: artist.id,
+                recordUrl: 'https://assets.example.com/record-api-second.wav',
+                duration: 900,
+                volume: 0.9,
+                isAccepted: true,
+            })
+            .expect(201);
+
+        const acceptedAfterSecondCreate = await dataSource.manager.find(Record, {
+            where: {
+                cueId: cue.id,
+            },
+            order: {
+                id: 'ASC',
+            },
+        });
+        assert.equal(acceptedAfterSecondCreate.length, 2);
+        assert.equal(acceptedAfterSecondCreate[0].isAccepted, false);
+        assert.equal(acceptedAfterSecondCreate[1].isAccepted, true);
+
+        const listResponse = await request(app.getHttpServer()).get('/records').expect(200);
+        const listedRecord = listResponse.body.data.items.find((item: { id: number }) => item.id === recordId);
+
+        assert.equal(listResponse.body.data.total, 2);
+        assert.ok(listedRecord);
+        assert.equal(listedRecord.cueId, cue.id);
+        assert.equal(listedRecord.artistId, artist.id);
+        assert.equal(listedRecord.recordUrl, 'https://assets.example.com/record-api.wav');
+        assert.equal(listedRecord.duration, 1200);
+        assert.equal(listedRecord.volume, 0.75);
+        assert.equal(listedRecord.isAccepted, false);
+
+        const updateResponse = await request(app.getHttpServer())
+            .put(`/records/${recordId}`)
+            .send({
+                recordUrl: 'https://assets.example.com/record-api-updated.wav',
+                duration: 1500,
+                volume: 0.5,
+                isAccepted: true,
+            })
+            .expect(200);
+
+        assert.deepEqual(updateResponse.body, { data: {} });
+
+        const updatedRecord = await dataSource.manager.findOneByOrFail(Record, { id: recordId });
+        assert.equal(updatedRecord.recordUrl, 'https://assets.example.com/record-api-updated.wav');
+        assert.equal(updatedRecord.duration, 1500);
+        assert.equal(updatedRecord.volume, 0.5);
+        assert.equal(updatedRecord.isAccepted, true);
+        const acceptedAfterUpdate = await dataSource.manager.find(Record, {
+            where: {
+                cueId: cue.id,
+            },
+            order: {
+                id: 'ASC',
+            },
+        });
+        assert.equal(acceptedAfterUpdate[0].isAccepted, true);
+        assert.equal(acceptedAfterUpdate[1].isAccepted, false);
+
+        const deleteResponse = await request(app.getHttpServer()).delete(`/records/${recordId}`).expect(200);
+
+        assert.deepEqual(deleteResponse.body, { data: {} });
+        const remainingRecords = await dataSource.manager.find(Record, {
+            where: {
+                cueId: cue.id,
+                artistId: artist.id,
+            },
+        });
+        const [deletedRecord] = await dataSource.manager.find(Record, {
+            withDeleted: true,
+            where: {
+                id: recordId,
+            },
+        });
+
+        assert.equal(remainingRecords.length, 1);
+        assert.ok(deletedRecord.deletedAt);
     } finally {
         await app.close();
     }

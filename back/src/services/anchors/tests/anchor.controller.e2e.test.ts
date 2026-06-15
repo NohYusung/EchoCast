@@ -196,7 +196,7 @@ test('PUT /tracks/:trackId/anchors/:anchorId updates an anchor for a canvas-loca
     }
 });
 
-test('PUT /tracks/:trackId/anchors/:anchorId/event lets an anchor own a scroll or pause event', async () => {
+test('PUT /tracks/:trackId/anchors/:anchorId/event lets an anchor own a scroll event', async () => {
     const moduleRef = await Test.createTestingModule({
         imports: [AppModule],
     }).compile();
@@ -255,7 +255,7 @@ test('PUT /tracks/:trackId/anchors/:anchorId/event lets an anchor own a scroll o
             .expect(201);
         await request(app.getHttpServer())
             .post(`/tracks/${track.id}/anchors`)
-            .send({ canvasId: canvas.id, time: 3000, position: 70, index: 1 })
+            .send({ canvasId: canvas.id, time: 3000, position: 20, index: 1 })
             .expect(201);
 
         const anchorsResponse = await request(app.getHttpServer()).get(`/tracks/${track.id}/anchors`).expect(200);
@@ -281,23 +281,8 @@ test('PUT /tracks/:trackId/anchors/:anchorId/event lets an anchor own a scroll o
         assert.equal(scrollOwner.event.type, 'scroll');
         assert.equal(scrollOwner.event.startAnchorId, startAnchor.id);
         assert.equal(scrollOwner.event.endAnchorId, endAnchor.id);
-
-        await request(app.getHttpServer())
-            .put(`/tracks/${track.id}/anchors/${startAnchor.id}/event`)
-            .send({
-                type: 'pause',
-                duration: 1800,
-            })
-            .expect(200)
-            .expect({ data: {} });
-
-        const pauseEventAnchorsResponse = await request(app.getHttpServer()).get(`/tracks/${track.id}/anchors`).expect(200);
-        const pauseOwner = pauseEventAnchorsResponse.body.data.items.find(
-            (item: { id: number }) => item.id === startAnchor.id
-        );
-
-        assert.equal(pauseOwner.event.type, 'pause');
-        assert.equal(pauseOwner.event.duration, 1800);
+        assert.equal(scrollOwner.event.startPosition, 20);
+        assert.equal(scrollOwner.event.endPosition, 20);
 
         await request(app.getHttpServer())
             .delete(`/tracks/${track.id}/anchors/${startAnchor.id}/event`)
@@ -310,6 +295,14 @@ test('PUT /tracks/:trackId/anchors/:anchorId/event lets an anchor own a scroll o
         );
 
         assert.equal(emptyOwner.event, null);
+
+        await request(app.getHttpServer())
+            .put(`/tracks/${track.id}/anchors/${startAnchor.id}/event`)
+            .send({
+                type: 'pause',
+                duration: 1800,
+            })
+            .expect(400);
 
         await request(app.getHttpServer())
             .put(`/tracks/${track.id}/anchors/${startAnchor.id}/event`)

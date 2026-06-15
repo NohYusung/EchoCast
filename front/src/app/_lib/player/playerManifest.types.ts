@@ -32,6 +32,15 @@ export interface PlayerManifestScroll {
     endPosition: number;
 }
 
+export interface PlayerManifestAnchor {
+    id: string;
+    trackId: string;
+    canvasId: string | number;
+    time: number;
+    position: number;
+    index: number;
+}
+
 export interface CueManifest {
     id: string;
     scriptId: string;
@@ -49,9 +58,10 @@ export interface RecordManifest {
     id: string;
     cueId: string;
     artistId: string;
-    audioUrl: string;
+    recordUrl: string;
     duration?: number;
     volume: number;
+    isAccepted: boolean;
 }
 
 export interface TtsManifest {
@@ -76,6 +86,7 @@ export interface PlayerManifest {
     }>;
     items: PlayerManifestItem[];
     scrolls?: PlayerManifestScroll[];
+    anchors?: PlayerManifestAnchor[];
     cues: CueManifest[];
     canvases?: Array<CanvasVisualClipItem & { episodeId: number }>;
     media: Array<{
