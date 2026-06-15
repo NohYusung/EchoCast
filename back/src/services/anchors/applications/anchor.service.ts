@@ -85,22 +85,22 @@ export class AnchorService extends DddService {
         ]);
 
         if (!track) {
-            throw new NotFoundException('Track not found.');
+            throw new NotFoundException('트랙을 찾을 수 없습니다.');
         }
         if (!canvas) {
-            throw new NotFoundException('Canvas not found.');
+            throw new NotFoundException('캔버스를 찾을 수 없습니다.');
         }
         if (canvas.episodeId !== track.episodeId) {
-            throw new BadRequestException('Anchor canvas must belong to the track episode.');
+            throw new BadRequestException('앵커 캔버스는 트랙의 에피소드에 속해야 합니다.');
         }
         if (!Number.isFinite(time)) {
-            throw new BadRequestException('Anchor time is required.');
+            throw new BadRequestException('앵커 시간이 필요합니다.');
         }
         if (!Number.isInteger(index)) {
-            throw new BadRequestException('Anchor index must be an integer.');
+            throw new BadRequestException('앵커 인덱스는 정수여야 합니다.');
         }
         if (!Number.isFinite(position) || position < 0 || position > 100) {
-            throw new BadRequestException('Anchor position must be between 0 and 100.');
+            throw new BadRequestException('앵커 위치는 0 이상 100 이하여야 합니다.');
         }
 
         const anchor = new Anchor({
@@ -158,20 +158,20 @@ export class AnchorService extends DddService {
         ]);
 
         if (!track) {
-            throw new NotFoundException('Track not found.');
+            throw new NotFoundException('트랙을 찾을 수 없습니다.');
         }
         if (!anchor) {
-            throw new NotFoundException('Anchor not found.');
+            throw new NotFoundException('앵커를 찾을 수 없습니다.');
         }
 
         const nextCanvasId = canvasId ?? anchor.canvasId;
         const [canvas] = await this.canvasRepository.find({ id: nextCanvasId });
 
         if (!canvas) {
-            throw new NotFoundException('Canvas not found.');
+            throw new NotFoundException('캔버스를 찾을 수 없습니다.');
         }
         if (canvas.episodeId !== track.episodeId) {
-            throw new BadRequestException('Anchor canvas must belong to the track episode.');
+            throw new BadRequestException('앵커 캔버스는 트랙의 에피소드에 속해야 합니다.');
         }
 
         const nextTime = time ?? anchor.time;
@@ -179,13 +179,13 @@ export class AnchorService extends DddService {
         const nextIndex = index ?? anchor.index;
 
         if (!Number.isFinite(nextTime)) {
-            throw new BadRequestException('Anchor time is required.');
+            throw new BadRequestException('앵커 시간이 필요합니다.');
         }
         if (!Number.isInteger(nextIndex)) {
-            throw new BadRequestException('Anchor index must be an integer.');
+            throw new BadRequestException('앵커 인덱스는 정수여야 합니다.');
         }
         if (!Number.isFinite(nextPosition) || nextPosition < 0 || nextPosition > 100) {
-            throw new BadRequestException('Anchor position must be between 0 and 100.');
+            throw new BadRequestException('앵커 위치는 0 이상 100 이하여야 합니다.');
         }
 
         anchor.update({ canvasId, time, position, index });
@@ -201,7 +201,7 @@ export class AnchorService extends DddService {
         ]);
 
         if (!anchor) {
-            throw new NotFoundException('Anchor not found.');
+            throw new NotFoundException('앵커를 찾을 수 없습니다.');
         }
 
         const scrollsById = new Map(
@@ -238,31 +238,31 @@ export class AnchorService extends DddService {
         ]);
 
         if (!anchor) {
-            throw new NotFoundException('Anchor not found.');
+            throw new NotFoundException('앵커를 찾을 수 없습니다.');
         }
         if (type === 'scroll') {
             if (!Number.isInteger(endAnchorId)) {
-                throw new BadRequestException('Anchor scroll event endAnchorId is required.');
+                throw new BadRequestException('앵커 스크롤 이벤트의 endAnchorId가 필요합니다.');
             }
             const nextEndAnchorId = Number(endAnchorId);
 
             const [endAnchor] = await this.anchorRepository.find({ id: nextEndAnchorId });
 
             if (!endAnchor) {
-                throw new NotFoundException('Anchor scroll event end anchor not found.');
+                throw new NotFoundException('앵커 스크롤 이벤트의 종료 앵커를 찾을 수 없습니다.');
             }
             if (endAnchor.trackId !== trackId) {
-                throw new BadRequestException('Anchor scroll event end anchor must belong to the target track.');
+                throw new BadRequestException('앵커 스크롤 이벤트의 종료 앵커는 대상 트랙에 속해야 합니다.');
             }
             if (anchor.id === endAnchor.id) {
-                throw new BadRequestException('Anchor scroll event end anchor must be different.');
+                throw new BadRequestException('앵커 스크롤 이벤트의 종료 앵커는 시작 앵커와 달라야 합니다.');
             }
             if (anchor.canvasId !== endAnchor.canvasId) {
-                throw new BadRequestException('Anchor scroll event anchors must belong to the same canvas.');
+                throw new BadRequestException('앵커 스크롤 이벤트의 앵커들은 같은 캔버스에 속해야 합니다.');
             }
             if (!Number.isFinite(anchor.time) || !Number.isFinite(endAnchor.time) || endAnchor.time <= anchor.time) {
                 throw new BadRequestException(
-                    'Anchor scroll event end anchor time must be greater than owner anchor time.'
+                    '앵커 스크롤 이벤트의 종료 앵커 시간은 시작 앵커 시간보다 커야 합니다.'
                 );
             }
             if (ownedPause && !ownedPause.deletedAt) {
@@ -283,7 +283,7 @@ export class AnchorService extends DddService {
         if (type === 'pause') {
             const nextDuration = Number(duration);
             if (!Number.isFinite(nextDuration) || nextDuration <= 0) {
-                throw new BadRequestException('Anchor pause event duration must be greater than 0.');
+                throw new BadRequestException('앵커 일시정지 이벤트의 duration은 0보다 커야 합니다.');
             }
             if (ownedScroll && !ownedScroll.deletedAt) {
                 await this.scrollRepository.softRemove([ownedScroll]);
@@ -299,7 +299,7 @@ export class AnchorService extends DddService {
             return toAnchorResponse(anchor, toPauseEventResponse(pause));
         }
 
-        throw new BadRequestException('Anchor event type is invalid.');
+        throw new BadRequestException('앵커 이벤트 타입이 올바르지 않습니다.');
     }
 
     async deleteEvent({ trackId, anchorId }: { trackId: number; anchorId: number }) {
@@ -310,7 +310,7 @@ export class AnchorService extends DddService {
         ]);
 
         if (!anchor) {
-            throw new NotFoundException('Anchor not found.');
+            throw new NotFoundException('앵커를 찾을 수 없습니다.');
         }
         if (ownedScrolls.length > 0) {
             await this.scrollRepository.softRemove(ownedScrolls);

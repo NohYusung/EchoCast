@@ -80,7 +80,7 @@ export class PauseService extends DddService {
         const [pause] = await this.pauseRepository.find({ id: pauseId, trackId }, { relations: { anchor: true } });
 
         if (!pause) {
-            throw new NotFoundException('Pause not found.');
+            throw new NotFoundException('일시정지를 찾을 수 없습니다.');
         }
         if (duration !== undefined) {
             this.validateDuration({ duration });
@@ -99,7 +99,7 @@ export class PauseService extends DddService {
         const [pause] = await this.pauseRepository.find({ id: pauseId, trackId });
 
         if (!pause) {
-            throw new NotFoundException('Pause not found.');
+            throw new NotFoundException('일시정지를 찾을 수 없습니다.');
         }
 
         await this.pauseRepository.softRemove([pause]);
@@ -107,22 +107,22 @@ export class PauseService extends DddService {
 
     private validateDuration({ duration }: { duration: number }) {
         if (!Number.isFinite(duration) || duration <= 0) {
-            throw new BadRequestException('Pause duration must be greater than 0.');
+            throw new BadRequestException('일시정지 duration은 0보다 커야 합니다.');
         }
     }
 
     private async getPauseAnchor({ trackId, anchorId }: { trackId: number; anchorId: number }): Promise<Anchor> {
         if (!Number.isInteger(anchorId)) {
-            throw new BadRequestException('Pause anchorId is required.');
+            throw new BadRequestException('일시정지 anchorId가 필요합니다.');
         }
 
         const [anchor] = await this.anchorRepository.find({ id: anchorId });
 
         if (!anchor) {
-            throw new NotFoundException('Pause anchor not found.');
+            throw new NotFoundException('일시정지 앵커를 찾을 수 없습니다.');
         }
         if (anchor.trackId !== trackId) {
-            throw new BadRequestException('Pause anchor must belong to the target track.');
+            throw new BadRequestException('일시정지 앵커는 대상 트랙에 속해야 합니다.');
         }
 
         return anchor;
@@ -140,7 +140,7 @@ export class PauseService extends DddService {
         const [existingPause] = await this.pauseRepository.find({ trackId, anchorId });
 
         if (existingPause && existingPause.id !== pauseId) {
-            throw new BadRequestException('Anchor already owns a pause event.');
+            throw new BadRequestException('앵커에 이미 일시정지 이벤트가 등록되어 있습니다.');
         }
         if (!this.scrollRepository) {
             return;
@@ -149,7 +149,7 @@ export class PauseService extends DddService {
         const [existingScroll] = await this.scrollRepository.find({ trackId, startAnchorId: anchorId });
 
         if (existingScroll) {
-            throw new BadRequestException('Anchor already owns a scroll event.');
+            throw new BadRequestException('앵커에 이미 스크롤 이벤트가 등록되어 있습니다.');
         }
     }
 }

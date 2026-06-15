@@ -131,22 +131,25 @@ export class Cue extends DddAggregate {
         endPosition?: number;
         volume?: number;
     }) {
-        Object.assign(
-            this,
-            this.stripUnchanged({
-                script,
-                characterId,
-                audioId,
-                startCanvasMediaId,
-                endCanvasMediaId,
-                startTime,
-                endTime,
-                audioStartTime,
-                audioEndTime,
-                startPosition,
-                endPosition,
-                volume,
-            })
-        );
+        const changedArgs = this.stripUnchanged({
+            script,
+            characterId,
+            audioId,
+            startCanvasMediaId,
+            endCanvasMediaId,
+            startTime,
+            endTime,
+            audioStartTime,
+            audioEndTime,
+            startPosition,
+            endPosition,
+            volume,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
     }
 }

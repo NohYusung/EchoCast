@@ -77,7 +77,7 @@ export class TrackService extends DddService {
         const [track] = await this.trackRepository.find({ id: trackId, episodeId });
 
         if (!track) {
-            throw new NotFoundException('Track not found.');
+            throw new NotFoundException('트랙을 찾을 수 없습니다.');
         }
 
         await this.trackRepository.softRemove([track]);

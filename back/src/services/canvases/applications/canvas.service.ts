@@ -120,7 +120,7 @@ export class CanvasService extends DddService {
         const [canvas] = await this.canvasRepository.find({ id: canvasId, episodeId });
 
         if (!canvas) {
-            throw new NotFoundException('Canvas not found.');
+            throw new NotFoundException('캔버스를 찾을 수 없습니다.');
         }
 
         const mediaItems = await this.resolveMediaItems({ episodeId, medias });
@@ -154,10 +154,10 @@ export class CanvasService extends DddService {
     private async resolveMediaItems({ episodeId, medias }: { episodeId: number; medias: CanvasMediaInput[] }) {
         return Promise.all(
             medias.map(async (media) => {
-                const mediaItem = await this.mediaRepository.findOneByEpisodeId({ episodeId, mediaId: media.mediaId });
+                const [mediaItem] = await this.mediaRepository.find({ id: media.mediaId, episodeId });
 
                 if (!mediaItem) {
-                    throw new NotFoundException('Media not found.');
+                    throw new NotFoundException('미디어를 찾을 수 없습니다.');
                 }
 
                 return mediaItem;

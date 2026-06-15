@@ -54,7 +54,9 @@ export abstract class DddAggregate {
             return acc;
         }, {});
 
-        return stripUndefined(compared);
+        const stripped = stripUndefined(compared);
+
+        return Object.keys(stripped).length === 0 ? undefined : stripped;
     }
 
     toInstance<T>(dto: new (args: any[]) => T) {

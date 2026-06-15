@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
 import { Character, type CharacterRole } from '../domain/character.entity';
 import { CharacterRepository } from '../repository/characater.repository';
@@ -41,5 +41,15 @@ export class CharacterService extends DddService {
         }));
 
         return { items, total };
+    }
+
+    async delete({ productId, characterId }: { productId: number; characterId: number }) {
+        const [character] = await this.characterRepository.find({ id: characterId, productId });
+
+        if (!character) {
+            throw new NotFoundException('캐릭터를 찾을 수 없습니다.');
+        }
+
+        await this.characterRepository.softRemove([character]);
     }
 }

@@ -8,12 +8,6 @@ type Ctor = {
     coverImageUrl?: string;
 };
 
-type UpdateArgs = {
-    title?: string;
-    subtitle?: string;
-    coverImageUrl?: string;
-};
-
 @Entity('products')
 export class Product extends DddAggregate {
     @PrimaryGeneratedColumn()
@@ -40,15 +34,25 @@ export class Product extends DddAggregate {
         }
     }
 
-    update({ title, subtitle, coverImageUrl }: UpdateArgs) {
-        if (title !== undefined) {
-            this.title = title;
+    update({
+        title,
+        subtitle,
+        coverImageUrl,
+    }: {
+        title?: string;
+        subtitle?: string;
+        coverImageUrl?: string;
+    }) {
+        const changedArgs = this.stripUnchanged({
+            title,
+            subtitle,
+            coverImageUrl,
+        });
+
+        if (!changedArgs) {
+            return;
         }
-        if (subtitle !== undefined) {
-            this.subtitle = subtitle;
-        }
-        if (coverImageUrl !== undefined) {
-            this.coverImageUrl = coverImageUrl;
-        }
+
+        Object.assign(this, changedArgs);
     }
 }

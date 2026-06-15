@@ -38,7 +38,7 @@ export class ProductService extends DddService {
         const [product] = await this.productRepository.find({ id: productId });
 
         if (!product) {
-            throw new NotFoundException('Product not found.');
+            throw new NotFoundException('작품을 찾을 수 없습니다.');
         }
 
         return {
@@ -63,7 +63,7 @@ export class ProductService extends DddService {
         const [product] = await this.productRepository.find({ id: productId });
 
         if (!product) {
-            throw new NotFoundException('Product not found.');
+            throw new NotFoundException('작품을 찾을 수 없습니다.');
         }
 
         product.update({ title, subtitle, coverImageUrl });

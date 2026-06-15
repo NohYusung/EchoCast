@@ -62,14 +62,17 @@ export class Audio extends DddAggregate {
         audioUrl?: string;
         duration?: number;
     }) {
-        Object.assign(
-            this,
-            this.stripUnchanged({
-                audioType,
-                name,
-                audioUrl,
-                duration,
-            })
-        );
+        const changedArgs = this.stripUnchanged({
+            audioType,
+            name,
+            audioUrl,
+            duration,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
     }
 }

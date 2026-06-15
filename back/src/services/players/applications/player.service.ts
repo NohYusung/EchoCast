@@ -2,17 +2,20 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { checkInValue } from '../../../libs/utils/typeorm';
 import { DddService } from '../../../libs/ddd';
 import { AudioRepository } from '../../audios/repository/audio.repository';
+import type { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
+import type { Canvas } from '../../canvases/domain/canvas.entity';
 import { CanvasRepository } from '../../canvases/repository/canvas.repository';
 import { CharacterRepository } from '../../characters/repository/characater.repository';
 import { CueRepository } from '../../cues/repository/cue.repository';
 import { EpisodeRepository } from '../../episodes/repository/episode.repository';
 import { Record as RecordEntity } from '../../records/domain/record.entity';
 import { RecordRepository } from '../../records/repository/record.repository';
-import type { Scroll } from '../../scrolls/domain/scroll.entity';
 import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
 import type { TrackType } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
 type PlayerTrackKind = 'visual' | 'dialogue' | 'audio' | 'effect';
+const MIN_TIMELINE_ITEM_DURATION_MS = 500;
+const CANVAS_MEDIA_SEQUENCE_UNIT_MS = 1000;
 
 /*
 AGENT
@@ -39,6 +42,44 @@ type PlayerItem = {
 
 /*
 AGENT
+- 타입을 따로 빼서 관리하지 않음.
+- 호출부에서 객체 형태로 바로 사용해.
+*/
+type PlayerCanvas = {
+    id: number;
+    episodeId: number;
+    mediaId?: number;
+    mediaName?: string;
+    mediaType?: 'image' | 'video' | 'audio';
+    mediaUrl?: string;
+    duration?: number;
+    canvasMediaId?: number;
+    index?: number;
+    startTime?: number;
+    endTime?: number;
+    sourceStartTime?: number;
+    sourceEndTime?: number;
+    volume?: number;
+    isMuted?: boolean;
+    medias: Array<{
+        canvasMediaId: number;
+        mediaId: number;
+        mediaName: string;
+        mediaType: 'image' | 'video' | 'audio';
+        mediaUrl: string;
+        duration?: number;
+        index?: number;
+        startTime?: number;
+        endTime?: number;
+        sourceStartTime?: number;
+        sourceEndTime?: number;
+        volume?: number;
+        isMuted?: boolean;
+    }>;
+};
+
+/*
+AGENT
 - 타입을 따로 빼서 관리하지 않음. 
 - 호출부에서 객체 형태로 바로 사용해. 
 */
@@ -56,6 +97,7 @@ type PlayerDraft = {
         isMuted: boolean;
     }>;
     items: PlayerItem[];
+    canvases: PlayerCanvas[];
     media: Array<{
         id: string;
         episodeId: string;
@@ -111,6 +153,7 @@ AGENT
 type PlayerManifest = {
     episodeId: string;
     durationMs: number;
+    previewCanvasId?: number;
     tracks: Array<{ id: string; name: string; kind: PlayerTrackKind; layerId: number; isMuted: boolean }>;
     items: Array<PlayerItem & { volume: number }>;
     cues: Array<{
@@ -125,6 +168,7 @@ type PlayerManifest = {
         ttsUrl?: string;
         volume: number;
     }>;
+    canvases: PlayerCanvas[];
     media: Array<Omit<PlayerDraft['media'][number], 'episodeId'>>;
     records: PlayerDraft['records'];
     scrolls: PlayerDraft['scrolls'];
@@ -146,6 +190,85 @@ function toTrackKind(type: TrackType): PlayerTrackKind {
     return 'visual';
 }
 
+function toPlayerCanvasMediaTimelineControls(canvasMedia: CanvasMedia | undefined) {
+    if (!canvasMedia) {
+        return {};
+    }
+
+    return {
+        ...(typeof canvasMedia.startTime === 'number' ? { startTime: canvasMedia.startTime } : {}),
+        ...(typeof canvasMedia.endTime === 'number' ? { endTime: canvasMedia.endTime } : {}),
+        ...(typeof canvasMedia.sourceStartTime === 'number' ? { sourceStartTime: canvasMedia.sourceStartTime } : {}),
+        ...(typeof canvasMedia.sourceEndTime === 'number' ? { sourceEndTime: canvasMedia.sourceEndTime } : {}),
+        ...(typeof canvasMedia.volume === 'number' ? { volume: canvasMedia.volume } : {}),
+        ...(typeof canvasMedia.isMuted === 'boolean' ? { isMuted: canvasMedia.isMuted } : {}),
+    };
+}
+
+function toPlayerCanvases(canvases: Canvas[]): PlayerCanvas[] {
+    return canvases.map((canvas) => {
+        const canvasMedias = [...canvas.canvasMedias].sort(
+            (a, b) =>
+                (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER) ||
+                a.media.id - b.media.id
+        );
+        const [canvasMedia] = canvasMedias;
+        const media = canvasMedia?.media;
+
+        return {
+            id: canvas.id,
+            episodeId: canvas.episodeId,
+            mediaId: media?.id,
+            mediaName: media?.mediaName,
+            mediaType: media?.mediaType,
+            mediaUrl: media?.mediaUrl,
+            ...(typeof media?.duration === 'number' ? { duration: media.duration } : {}),
+            canvasMediaId: canvasMedia?.id,
+            index: canvasMedia?.index,
+            ...toPlayerCanvasMediaTimelineControls(canvasMedia),
+            medias: canvasMedias.map((canvasMediaItem) => ({
+                canvasMediaId: canvasMediaItem.id,
+                mediaId: canvasMediaItem.media.id,
+                mediaName: canvasMediaItem.media.mediaName,
+                mediaType: canvasMediaItem.media.mediaType,
+                mediaUrl: canvasMediaItem.media.mediaUrl,
+                ...(typeof canvasMediaItem.media.duration === 'number'
+                    ? { duration: canvasMediaItem.media.duration }
+                    : {}),
+                index: canvasMediaItem.index,
+                ...toPlayerCanvasMediaTimelineControls(canvasMediaItem),
+            })),
+        };
+    });
+}
+
+function getPreviewVisualTimingItems(visualMediaItems: Array<{ canvasMedia: CanvasMedia; media: CanvasMedia['media'] }>) {
+    let nextStartTime = 0;
+
+    return visualMediaItems.map(({ canvasMedia, media }) => {
+        const hasTimelineControls =
+            media.mediaType === 'video' &&
+            typeof canvasMedia.startTime === 'number' &&
+            typeof canvasMedia.endTime === 'number' &&
+            canvasMedia.endTime > canvasMedia.startTime;
+        const duration = hasTimelineControls
+            ? Math.max(MIN_TIMELINE_ITEM_DURATION_MS, canvasMedia.endTime! - canvasMedia.startTime!)
+            : media.mediaType === 'video' && typeof media.duration === 'number' && Number.isFinite(media.duration) && media.duration > 0
+              ? media.duration
+              : CANVAS_MEDIA_SEQUENCE_UNIT_MS;
+        const startTime = hasTimelineControls ? canvasMedia.startTime! : nextStartTime;
+        const endTime = startTime + duration;
+
+        nextStartTime = Math.max(nextStartTime, endTime);
+
+        return {
+            startTime,
+            endTime,
+            hasTimelineControls,
+        };
+    });
+}
+
 @Injectable()
 export class PlayerService extends DddService {
     constructor(
@@ -164,7 +287,7 @@ export class PlayerService extends DddService {
     async getDraft({ episodeId }: { episodeId: number }): Promise<PlayerDraft> {
         const [episode] = await this.episodeRepository.find({ id: episodeId }, { relations: { product: true } });
         if (!episode) {
-            throw new NotFoundException('Episode not found.');
+            throw new NotFoundException('에피소드를 찾을 수 없습니다.');
         }
 
         const [characters, tracks, canvases, audios] = await Promise.all([
@@ -205,6 +328,8 @@ export class PlayerService extends DddService {
                     a.canvas.id - b.canvas.id ||
                     a.media.id - b.media.id
             );
+        const playerCanvases = toPlayerCanvases(canvases);
+        const previewVisualTimings = getPreviewVisualTimingItems(visualMediaItems);
         const trackIds = tracks.map((track) => track.id);
         const [cues, scrolls] =
             trackIds.length > 0
@@ -221,13 +346,6 @@ export class PlayerService extends DddService {
                 : [[], []];
         cues.sort((a, b) => a.startTime - b.startTime || a.id - b.id);
         scrolls.sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0) || a.id - b.id);
-        const scrollByCanvasStartIndex = new Map<string, Scroll>();
-        scrolls.forEach((scroll) => {
-            if (typeof scroll.canvasId === 'number' && typeof scroll.startIndex === 'number') {
-                scrollByCanvasStartIndex.set(`${scroll.canvasId}:${scroll.startIndex}`, scroll);
-            }
-        });
-        const hasExplicitScrollMapping = scrollByCanvasStartIndex.size > 0;
         const cueIds = cues.map((cue) => cue.id);
         const records: RecordEntity[] =
             cueIds.length > 0
@@ -275,8 +393,6 @@ export class PlayerService extends DddService {
         }));
         const layerIdByTrackId = new Map(tracksDraft.map((track) => [track.id, track.layerId]));
         const trackKindById = new Map(tracksDraft.map((track) => [track.id, track.kind]));
-        const maxCueEndTime = Math.max(0, ...cues.map((cue) => cue.endTime));
-        const fallbackVisualEndTime = Math.max(maxCueEndTime, 1);
 
         return {
             products: [
@@ -302,24 +418,15 @@ export class PlayerService extends DddService {
             })),
             scripts,
             tracks: tracksDraft,
+            canvases: playerCanvases,
             items: [
                 ...visualMediaItems.map(({ canvas, canvasMedia, media }, index) => {
                     const mediaIndex = canvasMedia.index ?? index;
-                    const scroll =
-                        scrollByCanvasStartIndex.get(`${canvas.id}:${mediaIndex}`) ??
-                        (hasExplicitScrollMapping ? undefined : scrolls[index]);
-                    const fallbackStartTime = 0;
-                    const fallbackEndTime = fallbackVisualEndTime;
-                    const hasCanvasMediaTiming =
-                        typeof canvasMedia.startTime === 'number' &&
-                        typeof canvasMedia.endTime === 'number' &&
-                        canvasMedia.endTime > canvasMedia.startTime;
-                    const startTime = hasCanvasMediaTiming
-                        ? canvasMedia.startTime!
-                        : scroll?.startTime ?? fallbackStartTime;
-                    const endTime = hasCanvasMediaTiming
-                        ? canvasMedia.endTime!
-                        : scroll?.endTime ?? Math.max(fallbackEndTime, fallbackStartTime + 1);
+                    const timing = previewVisualTimings[index] ?? {
+                        startTime: 0,
+                        endTime: CANVAS_MEDIA_SEQUENCE_UNIT_MS,
+                        hasTimelineControls: false,
+                    };
 
                     return {
                         id:
@@ -328,8 +435,8 @@ export class PlayerService extends DddService {
                                 : `visual-${canvas.id}-${media.id}`,
                         trackId: visualTrack?.id ?? `visual-${episode.id}`,
                         kind: 'visual' as const,
-                        startTime,
-                        endTime,
+                        startTime: timing.startTime,
+                        endTime: timing.endTime,
                         canvasId: toId(canvas.id),
                         index: mediaIndex,
                         mediaId: toId(media.id),
@@ -337,7 +444,7 @@ export class PlayerService extends DddService {
                         trimStartTime:
                             typeof canvasMedia.sourceStartTime === 'number' ? canvasMedia.sourceStartTime : undefined,
                         trimEndTime: typeof canvasMedia.sourceEndTime === 'number' ? canvasMedia.sourceEndTime : undefined,
-                        hasTimelineControls: media.mediaType === 'video' && hasCanvasMediaTiming,
+                        hasTimelineControls: timing.hasTimelineControls,
                         isMuted: canvasMedia.isMuted === true,
                         volume: canvasMedia.isMuted ? 0 : canvasMedia.volume,
                     };
@@ -444,6 +551,7 @@ export class PlayerService extends DddService {
             0,
             ...draft.items.map((item) => item.endTime),
             ...draft.cues.map((cue) => cue.endTime),
+            ...draft.scrolls.map((scroll) => scroll.endTime),
             ...draft.cues.map((cue) => {
                 const record = recordByCueId.get(cue.id);
                 return record ? cue.startTime + (record.duration ?? cue.endTime - cue.startTime) : 0;
@@ -453,12 +561,14 @@ export class PlayerService extends DddService {
         return {
             episodeId: draft.episodes[0]?.id ?? '',
             durationMs,
+            previewCanvasId: draft.canvases[0]?.id,
             tracks: draft.tracks.map(({ episodeId: _episodeId, ...track }) => track),
             items: draft.items.map((item) => ({
                 ...item,
                 volume: item.volume ?? 1,
             })),
             cues,
+            canvases: draft.canvases,
             media: draft.media.map(({ episodeId: _episodeId, ...media }) => media),
             records: draft.records,
             scrolls: draft.scrolls,

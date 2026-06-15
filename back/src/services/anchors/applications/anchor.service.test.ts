@@ -310,7 +310,7 @@ describe('AnchorService', () => {
             assert.ok(scrollOwner?.event);
             assert.equal(scrollOwner.event.type, 'scroll');
             if (scrollOwner.event.type !== 'scroll') {
-                throw new Error('Expected scroll event.');
+                throw new Error('예상한 스크롤 이벤트가 없습니다.');
             }
             assert.equal(scrollOwner.event.startAnchorId, startAnchor.id);
             assert.equal(scrollOwner.event.endAnchorId, endAnchor.id);
@@ -330,7 +330,7 @@ describe('AnchorService', () => {
             assert.ok(pauseOwner?.event);
             assert.equal(pauseOwner.event.type, 'pause');
             if (pauseOwner.event.type !== 'pause') {
-                throw new Error('Expected pause event.');
+                throw new Error('예상한 일시정지 이벤트가 없습니다.');
             }
             assert.deepEqual(pauseOwner.event, {
                 type: 'pause',

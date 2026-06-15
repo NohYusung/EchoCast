@@ -1,3 +1,5 @@
+import type { CanvasVisualClipItem } from './visualClips';
+
 export type PlayerItemKind = 'visual' | 'audio' | 'effect' | 'cue';
 
 export interface PlayerManifestItem {
@@ -64,6 +66,7 @@ export interface TtsManifest {
 export interface PlayerManifest {
     episodeId: string;
     durationMs: number;
+    previewCanvasId?: number;
     tracks: Array<{
         id: string;
         name: string;
@@ -74,6 +77,7 @@ export interface PlayerManifest {
     items: PlayerManifestItem[];
     scrolls?: PlayerManifestScroll[];
     cues: CueManifest[];
+    canvases?: Array<CanvasVisualClipItem & { episodeId: number }>;
     media: Array<{
         id: string;
         kind: 'image' | 'video' | 'audio' | 'effect';

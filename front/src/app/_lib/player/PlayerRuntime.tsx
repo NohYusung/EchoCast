@@ -140,7 +140,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                 hasTimelineControls: scene.hasTimelineControls,
                 sourceStart: toSeconds(scene.trimStartTime),
                 sourceEnd: toSeconds(scene.trimEndTime),
-                volume: clamp((scene.volume * volume) / 100, 0, 1),
+                volume: clamp(((scene.volume ?? 1) * volume) / 100, 0, 1),
                 isMuted: isMuted || scene.isMuted === true,
                 start: scene.startTime / 1000,
                 duration: getVideoSceneDurationMs(scene) / 1000,

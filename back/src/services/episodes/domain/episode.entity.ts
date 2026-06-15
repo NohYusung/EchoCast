@@ -56,14 +56,17 @@ export class Episode extends DddAggregate {
         subTitle?: string;
         thumbnailImageUrl?: string;
     }) {
-        Object.assign(
-            this,
-            this.stripUnchanged({
-                episodeNumber,
-                title,
-                subTitle,
-                thumbnailImageUrl,
-            })
-        );
+        const changedArgs = this.stripUnchanged({
+            episodeNumber,
+            title,
+            subTitle,
+            thumbnailImageUrl,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
     }
 }

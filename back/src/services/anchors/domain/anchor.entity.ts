@@ -61,14 +61,17 @@ export class Anchor extends DddAggregate {
         position?: number;
         index?: number;
     }) {
-        Object.assign(
-            this,
-            this.stripUnchanged({
-                canvasId,
-                time,
-                position,
-                index,
-            })
-        );
+        const changedArgs = this.stripUnchanged({
+            canvasId,
+            time,
+            position,
+            index,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
     }
 }

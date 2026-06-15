@@ -63,12 +63,15 @@ export class Pause extends DddAggregate {
         anchorId?: number;
         duration?: number;
     }) {
-        Object.assign(
-            this,
-            this.stripUnchanged({
-                anchorId,
-                duration,
-            })
-        );
+        const changedArgs = this.stripUnchanged({
+            anchorId,
+            duration,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
     }
 }

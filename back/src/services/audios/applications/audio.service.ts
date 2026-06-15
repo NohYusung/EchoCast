@@ -93,15 +93,15 @@ export class AudioService extends DddService {
         const [audio] = await this.audioRepository.find({ id: audioId, episodeId });
 
         if (!audio) {
-            throw new NotFoundException('Audio not found.');
+            throw new NotFoundException('오디오를 찾을 수 없습니다.');
         }
         if (!Number.isFinite(startTime)) {
-            throw new BadRequestException('Cue startTime is required.');
+            throw new BadRequestException('큐 startTime이 필요합니다.');
         }
 
         const resolvedEndTime = endTime ?? startTime + (audio.duration ?? 4000);
         if (!Number.isFinite(resolvedEndTime) || resolvedEndTime <= startTime) {
-            throw new BadRequestException('Cue endTime must be greater than startTime.');
+            throw new BadRequestException('큐 endTime은 startTime보다 커야 합니다.');
         }
 
         const result = await this.audioRepository.entityManager.transaction(async (entityManager) => {
@@ -110,13 +110,13 @@ export class AudioService extends DddService {
                 : undefined;
 
             if (trackId && !targetTrack) {
-                throw new NotFoundException('Track not found.');
+                throw new NotFoundException('트랙을 찾을 수 없습니다.');
             }
             if (targetTrack && (targetTrack.type === 'scroll' || targetTrack.type === 'scrolls')) {
-                throw new BadRequestException('Audio cannot be dropped on a scroll track.');
+                throw new BadRequestException('오디오는 스크롤 트랙에 추가할 수 없습니다.');
             }
             if (targetTrack?.type === 'record' && !targetTrack.characterId) {
-                throw new BadRequestException('Record track must be linked to a character.');
+                throw new BadRequestException('녹음 트랙은 캐릭터와 연결되어야 합니다.');
             }
 
             const track =
@@ -131,7 +131,7 @@ export class AudioService extends DddService {
                 ));
 
             if (track.type === 'record' && !track.characterId) {
-                throw new BadRequestException('Record track must be linked to a character.');
+                throw new BadRequestException('녹음 트랙은 캐릭터와 연결되어야 합니다.');
             }
 
             const cue = await entityManager.save(

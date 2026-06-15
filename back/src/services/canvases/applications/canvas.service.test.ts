@@ -158,7 +158,7 @@ describe('CanvasService', () => {
 
             assert.ok(storedCanvas);
             assert.equal(storedCanvas.canvasMedias.length, 1);
-            assert.equal(await mediaRepository.countByEpisodeId(episode.id), 1);
+            assert.equal(await mediaRepository.count({ episodeId: episode.id }), 1);
             assert.deepEqual(result, {
                 id: storedCanvas.id,
                 episodeId: episode.id,

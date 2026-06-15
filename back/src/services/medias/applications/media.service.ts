@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
+import { Transactional } from '../../../libs/decorators/transactional.decorator';
 import { Media, type MediaType } from '../domain/media.entity';
 import { MediaRepository } from '../repository/media.repository';
 
@@ -9,6 +10,7 @@ export class MediaService extends DddService {
         super();
     }
 
+    @Transactional()
     async create({
         episodeId,
         mediaName,
@@ -30,22 +32,12 @@ export class MediaService extends DddService {
             duration,
         });
         await this.mediaRepository.save([media]);
-
-        return {
-            id: media.id,
-            episodeId: media.episodeId,
-            canvasId: undefined,
-            mediaName: media.mediaName,
-            mediaType: media.mediaType,
-            mediaUrl: media.mediaUrl,
-            ...(typeof media.duration === 'number' ? { duration: media.duration } : {}),
-        };
     }
 
     async list({ episodeId }: { episodeId: number }) {
         const [medias, total] = await Promise.all([
-            this.mediaRepository.findByEpisodeId(episodeId),
-            this.mediaRepository.countByEpisodeId(episodeId),
+            this.mediaRepository.find({ episodeId }, { options: { sort: 'id', order: 'ASC' } }),
+            this.mediaRepository.count({ episodeId }),
         ]);
         const items = medias.map((media) => {
             return {
@@ -62,11 +54,12 @@ export class MediaService extends DddService {
         return { items, total };
     }
 
+    @Transactional()
     async delete({ episodeId, mediaId }: { episodeId: number; mediaId: number }) {
-        const media = await this.mediaRepository.findOneByEpisodeId({ episodeId, mediaId });
+        const [media] = await this.mediaRepository.find({ id: mediaId, episodeId });
 
         if (!media) {
-            throw new NotFoundException('Media not found.');
+            throw new NotFoundException('미디어를 찾을 수 없습니다.');
         }
 
         await this.mediaRepository.softRemove([media]);

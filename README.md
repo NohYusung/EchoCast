@@ -21,9 +21,17 @@
 
 - `npm run dev:back`: run the NestJS API on `http://localhost:4100`.
 - `npm run dev:front`: run the Next.js app on `http://localhost:3000`.
+- `npm run desktop`: run the Electron desktop shell, which starts the NestJS API and Next.js frontend, opens an Electron window, and stops both child processes when the app exits.
 - `npm run typecheck`: typecheck all workspaces.
 - `npm test`: run all workspace tests.
 - `npm run build`: build all workspaces.
+
+## Desktop Shell
+
+- Default ports are `4100` for `back` and `3000` for `front`.
+- Set `TEST_PLAYER_DESKTOP_BACK_PORT` or `TEST_PLAYER_DESKTOP_FRONT_PORT` to override ports.
+- Set `TEST_PLAYER_DESKTOP_PATH` to open a specific route when the local backend already has the required data, for example:
+  `TEST_PLAYER_DESKTOP_PATH=/studio/products/1/episodes/1 npm run desktop`.
 
 ## Player Flow
 

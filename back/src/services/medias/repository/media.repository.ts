@@ -52,17 +52,4 @@ export class MediaRepository extends DddRepository<Media> {
         });
     }
 
-    async findByEpisodeId(episodeId: number) {
-        return this.find({ episodeId }, { options: { sort: 'id', order: 'ASC' } });
-    }
-
-    async countByEpisodeId(episodeId: number) {
-        return this.count({ episodeId });
-    }
-
-    async findOneByEpisodeId({ episodeId, mediaId }: { episodeId: number; mediaId: number }) {
-        const [media] = await this.find({ id: mediaId, episodeId });
-
-        return media;
-    }
 }

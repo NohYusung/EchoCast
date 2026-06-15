@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { Context } from '../../../common/context';
 import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Canvas } from '../../canvases/domain/canvas.entity';
 import { CanvasRepository } from '../../canvases/repository/canvas.repository';
@@ -12,6 +13,17 @@ import { Product } from '../../products/domain/product.entity';
 import { Media } from '../domain/media.entity';
 import { MediaRepository } from '../repository/media.repository';
 import { MediaService } from './media.service';
+
+function createMediaService(dataSource: DataSource) {
+    const context = new Context();
+    const mediaRepository = new MediaRepository(dataSource, context);
+    const mediaService = new MediaService(mediaRepository);
+
+    mediaService.entityManager = dataSource.manager;
+    mediaService.context = context;
+
+    return { mediaRepository, mediaService };
+}
 
 describe('MediaService', () => {
     it('creates media without creating a canvas and soft deletes it from the episode media list', async () => {
@@ -36,10 +48,9 @@ describe('MediaService', () => {
                     title: 'Media test episode',
                 })
             );
-            const mediaRepository = new MediaRepository(dataSource);
+            const { mediaRepository, mediaService } = createMediaService(dataSource);
             const canvasRepository = new CanvasRepository(dataSource);
-            const mediaService = new MediaService(mediaRepository);
-            const createdMedia = await mediaService.create({
+            const createResult = await mediaService.create({
                 episodeId: episode.id,
                 mediaName: 'media.png',
                 mediaType: 'image',
@@ -50,10 +61,11 @@ describe('MediaService', () => {
                 episodeId: episode.id,
             });
 
+            assert.equal(createResult, undefined);
             assert.deepEqual(createdMediaList, {
                 items: [
                     {
-                        id: createdMedia.id,
+                        id: createdMediaList.items[0].id,
                         episodeId: episode.id,
                         canvasId: undefined,
                         mediaName: 'media.png',
@@ -65,12 +77,12 @@ describe('MediaService', () => {
             });
             assert.deepEqual(remainingCanvases, []);
 
-            await mediaService.delete({ episodeId: episode.id, mediaId: createdMedia.id });
+            await mediaService.delete({ episodeId: episode.id, mediaId: createdMediaList.items[0].id });
 
             const mediaList = await mediaService.list({ episodeId: episode.id });
 
             assert.deepEqual(mediaList, { items: [], total: 0 });
-            assert.deepEqual(await mediaRepository.find({ id: createdMedia.id }), []);
+            assert.deepEqual(await mediaRepository.find({ id: createdMediaList.items[0].id }), []);
         } finally {
             await dataSource.destroy();
         }
@@ -98,8 +110,7 @@ describe('MediaService', () => {
                     title: 'Media video duration episode',
                 })
             );
-            const mediaRepository = new MediaRepository(dataSource);
-            const mediaService = new MediaService(mediaRepository);
+            const { mediaService } = createMediaService(dataSource);
 
             await mediaService.create({
                 episodeId: episode.id,
@@ -137,8 +148,7 @@ describe('MediaService', () => {
         await dataSource.initialize();
 
         try {
-            const mediaRepository = new MediaRepository(dataSource);
-            const mediaService = new MediaService(mediaRepository);
+            const { mediaService } = createMediaService(dataSource);
 
             await assert.rejects(
                 () => mediaService.delete({ episodeId: 1, mediaId: 1 }),

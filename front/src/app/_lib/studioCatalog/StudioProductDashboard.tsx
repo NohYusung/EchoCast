@@ -4,10 +4,23 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { StudioCatalogIcon } from './StudioCatalogIcon';
-import { productStatusLabels, type StudioProduct, type StudioProductStatus } from './studioCatalogMock';
 
+type StudioProductStatus = 'live' | 'done' | 'draft';
 type ProductFilter = 'all' | StudioProductStatus;
 type ProductSort = 'recent' | 'name' | 'episodes';
+type StudioProduct = {
+    id: string;
+    legacyId: string;
+    title: string;
+    status: StudioProductStatus;
+    genres: string[];
+    episodeCount: number;
+    rating: string;
+    updatedAtLabel: string;
+    progress: number;
+    cover: string;
+    logline: string;
+};
 type ProductListItem = {
     id: number;
     title: string;
@@ -36,6 +49,11 @@ const genreOptions = ['로맨스', '판타지', '액션', '스릴러', '드라�
 const visibilityOptions = ['비공개', '팀 공유', '공개'] as const;
 
 const statusOrder: ProductFilter[] = ['all', 'live', 'done', 'draft'];
+const productStatusLabels: Record<StudioProductStatus, string> = {
+    live: '연재중',
+    done: '완결',
+    draft: '임시저장',
+};
 const productApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100';
 
 export function StudioProductDashboard() {
@@ -74,7 +92,7 @@ export function StudioProductDashboard() {
             .catch(() => {
                 if (!ignore) {
                     setProducts([]);
-                    setProductsError('작품 목록을 불러오지 못했습니다. 백엔드 API 상태를 확인해 주세요.');
+                    setProductsError('프로젝트 목록을 불러오지 못했습니다. 백엔드 API 상태를 확인해 주세요.');
                 }
             })
             .finally(() => {
@@ -215,7 +233,7 @@ export function StudioProductDashboard() {
             const listedProducts = await listProducts();
             setProducts(listedProducts);
         } catch {
-            setSubmitError('작품 등록에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
+            setSubmitError('프로젝트 등록에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
             setIsSubmitting(false);
             return;
         }
@@ -242,13 +260,13 @@ export function StudioProductDashboard() {
     return (
         <main className="tp-catalog" data-testid="studio-product-dashboard">
             <Topbar
-                buttonLabel="새 작품 등록"
+                buttonLabel="새 프로젝트 등록"
                 onPrimaryClick={openCreateModal}
-                searchLabel="작품 검색"
-                searchPlaceholder="작품 검색..."
+                searchLabel="프로젝트 검색"
+                searchPlaceholder="프로젝트 검색..."
                 searchValue={query}
                 setSearchValue={setQuery}
-                title="내 작품"
+                title="프로젝트"
             />
             <div className="tp-catalog-body">
                 <StudioRail active="products" />
@@ -256,18 +274,18 @@ export function StudioProductDashboard() {
                     <div className="tp-catalog-inner">
                         <div className="tp-page-head">
                             <div>
-                                <h1>내 작품</h1>
-                                <p>작품을 등록하고 에피소드 단위로 영상을 제작하세요.</p>
+                                <h1>프로젝트</h1>
+                                <p>프로젝트를 등록하고 에피소드 단위로 영상을 제작하세요.</p>
                             </div>
                             <span className="tp-count">
-                                작품 {counts.all} · 에피소드 {counts.episodes}
+                                프로젝트 {counts.all} · 에피소드 {counts.episodes}
                             </span>
                         </div>
 
                         <section className="tp-stats">
                             <StatCard
                                 icon="panel"
-                                label="등록 작품"
+                                label="등록 프로젝트"
                                 value={counts.all}
                                 detail={`연재중 ${counts.live} · 완결 ${counts.done} · 임시저장 ${counts.draft}`}
                                 tone="blue"
@@ -285,13 +303,13 @@ export function StudioProductDashboard() {
                                 label="완료율"
                                 value={averageProgress}
                                 suffix="%"
-                                detail="등록 작품 평균"
+                                detail="등록 프로젝트 평균"
                                 tone="violet"
                             />
                         </section>
 
                         <div className="tp-toolbar">
-                            <div className="tp-tabs" role="tablist" aria-label="작품 상태 필터">
+                            <div className="tp-tabs" role="tablist" aria-label="프로젝트 상태 필터">
                                 {statusOrder.map((status) => (
                                     <button
                                         aria-selected={filter === status}
@@ -319,7 +337,7 @@ export function StudioProductDashboard() {
                         {isLoadingProducts ? (
                             <div className="tp-empty">
                                 <StudioCatalogIcon name="search" />
-                                <p>작품 목록을 불러오는 중입니다.</p>
+                                <p>프로젝트 목록을 불러오는 중입니다.</p>
                             </div>
                         ) : productsError ? (
                             <div className="tp-empty">
@@ -372,8 +390,8 @@ export function StudioProductDashboard() {
                                             <span className="tp-plus-box">
                                                 <StudioCatalogIcon name="plus" />
                                             </span>
-                                            <strong>새 작품 등록</strong>
-                                            <small>표지·장르·시놉시스를 입력해 새 작품을 만드세요.</small>
+                                            <strong>새 프로젝트 등록</strong>
+                                            <small>표지·장르·시놉시스를 입력해 새 프로젝트를 만드세요.</small>
                                         </button>
                                     ) : null}
                                 </div>
@@ -384,7 +402,7 @@ export function StudioProductDashboard() {
                                         <p>
                                             {query.trim() || filter !== 'all'
                                                 ? '검색 결과가 없습니다.'
-                                                : '등록된 작품이 없습니다.'}
+                                                : '등록된 프로젝트가 없습니다.'}
                                         </p>
                                     </div>
                                 ) : null}
@@ -402,8 +420,8 @@ export function StudioProductDashboard() {
                                 <StudioCatalogIcon name="plus" />
                             </span>
                             <div>
-                                <h2>새 작품 등록</h2>
-                                <p>작품 정보를 입력하면 첫 에피소드 작업 공간이 함께 생성됩니다.</p>
+                                <h2>새 프로젝트 등록</h2>
+                                <p>프로젝트 정보를 입력하면 첫 에피소드 작업 공간이 함께 생성됩니다.</p>
                             </div>
                             <button aria-label="닫기" disabled={isSubmitting} onClick={closeModal} type="button">
                                 <StudioCatalogIcon name="close" />
@@ -424,12 +442,12 @@ export function StudioProductDashboard() {
                                     </span>
                                     <strong>{coverImageFile ? coverImageFile.name : '클릭하여 업로드'}</strong>
                                     <small>
-                                        {coverImageFile ? '등록 시 표지로 업로드됩니다.' : '작품 표지 이미지 파일을 선택하세요.'}
+                                        {coverImageFile ? '등록 시 표지로 업로드됩니다.' : '프로젝트 표지 이미지 파일을 선택하세요.'}
                                     </small>
                                 </label>
 
                                 <label className="tp-field">
-                                    작품명 <b>*</b>
+                                    프로젝트명 <b>*</b>
                                     <input
                                         className={showTitleError ? 'error' : ''}
                                         maxLength={40}
@@ -439,7 +457,7 @@ export function StudioProductDashboard() {
                                         value={title}
                                     />
                                     {showTitleError ? (
-                                        <small className="tp-error">작품명을 입력해 주세요.</small>
+                                        <small className="tp-error">프로젝트명을 입력해 주세요.</small>
                                     ) : null}
                                 </label>
 
@@ -448,7 +466,7 @@ export function StudioProductDashboard() {
                                     <input
                                         maxLength={60}
                                         onChange={(event) => setLogline(event.target.value)}
-                                        placeholder="작품을 한 문장으로 소개해 주세요."
+                                        placeholder="프로젝트를 한 문장으로 소개해 주세요."
                                         value={logline}
                                     />
                                 </label>
@@ -495,7 +513,7 @@ export function StudioProductDashboard() {
                                     <textarea
                                         maxLength={500}
                                         onChange={(event) => setSynopsis(event.target.value)}
-                                        placeholder="작품의 줄거리와 세계관을 자유롭게 작성해 주세요."
+                                        placeholder="프로젝트의 줄거리와 세계관을 자유롭게 작성해 주세요."
                                         value={synopsis}
                                     />
                                 </label>
@@ -527,7 +545,7 @@ export function StudioProductDashboard() {
                                 <div className="tp-preview-card">
                                     <div className="tp-preview-cover" style={{ background: previewCover }}>
                                         <span>등록 예정</span>
-                                        <strong>{previewTitle || '작품명 미입력'}</strong>
+                                        <strong>{previewTitle || '프로젝트명 미입력'}</strong>
                                     </div>
                                     <div className="tp-preview-body">
                                         <p>{logline || '한 줄 소개가 여기에 표시됩니다.'}</p>
@@ -569,7 +587,7 @@ export function StudioProductDashboard() {
                                             '등록 중'
                                         ) : (
                                             <>
-                                                <StudioCatalogIcon name="check" /> 작품 등록
+                                                <StudioCatalogIcon name="check" /> 프로젝트 등록
                                             </>
                                         )}
                                     </button>
@@ -721,7 +739,7 @@ function StudioRail({ active }: { active: 'products' | 'stats' }) {
         <nav className="tp-rail" aria-label="studio catalog">
             <Link className={active === 'products' ? 'active' : ''} href="/studio/products">
                 <StudioCatalogIcon name="panel" />
-                <span>작품</span>
+                <span>프로젝트</span>
             </Link>
             <button className={active === 'stats' ? 'active' : ''} type="button">
                 <StudioCatalogIcon name="chart" />

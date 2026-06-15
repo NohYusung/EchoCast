@@ -1,4 +1,6 @@
 import type { PlayerManifest, PlayerManifestItem } from './playerManifest.types';
+import { filterPreviewCanvasItems, resolvePreviewCanvasId } from './previewCanvasSelection';
+import { toVisualClips, type VisualClip } from './visualClips';
 
 const DEFAULT_SCENE_HEIGHT = 620;
 const PLAYER_CONTENT_WIDTH = 720;
@@ -20,7 +22,7 @@ export type PlayerScene = {
     trimEndTime?: number;
     hasTimelineControls?: boolean;
     isMuted?: boolean;
-    volume: number;
+    volume?: number;
     height: number;
     background: string;
 };
@@ -53,6 +55,11 @@ export function shouldDriveStripScrollFromScenes(scenes: PlayerScene[]) {
 }
 
 export function buildPlayerScenes(manifest: PlayerManifest): PlayerScene[] {
+    const canvasScenes = buildCanvasPreviewScenes(manifest);
+    if (canvasScenes.length > 0) {
+        return canvasScenes;
+    }
+
     const mediaById = new Map(manifest.media.map((media) => [media.id, media]));
     const visualItems = manifest.items
         .filter((item) => item.kind === 'visual')
@@ -111,6 +118,48 @@ export function buildPlayerScenes(manifest: PlayerManifest): PlayerScene[] {
             volume: item.volume,
             height: getSceneHeight(item, media),
             background: `linear-gradient(160deg, hsl(${(index * 43) % 360} 34% 25%), #111827)`,
+        };
+    });
+}
+
+function getSceneHeightFromVisualClip(clip: VisualClip) {
+    if (clip.mediaType === 'image') return 0;
+    if (clip.mediaType === 'video') return 520;
+
+    return DEFAULT_SCENE_HEIGHT;
+}
+
+function buildCanvasPreviewScenes(manifest: PlayerManifest): PlayerScene[] {
+    if (!manifest.canvases || manifest.canvases.length === 0) {
+        return [];
+    }
+
+    const selectedCanvasId = resolvePreviewCanvasId(manifest.canvases, manifest.previewCanvasId);
+    const visualClips = filterPreviewCanvasItems(toVisualClips(manifest.canvases), selectedCanvasId);
+
+    return visualClips.map((clip, index) => {
+        const kind: PlayerSceneKind = clip.mediaType === 'video' ? 'video' : clip.mediaType === 'image' ? 'image' : 'placeholder';
+        const startTime = Math.round(clip.start * 1000);
+        const endTime = Math.round((clip.start + clip.duration) * 1000);
+
+        return {
+            id: clip.id,
+            kind,
+            label: clip.label || (kind === 'placeholder' ? `SCENE ${String(index + 1).padStart(2, '0')}` : `CUT ${String(index + 1).padStart(2, '0')}`),
+            startTime,
+            endTime,
+            canvasId: clip.canvasId,
+            index: clip.index ?? index,
+            mediaUrl: clip.mediaUrl,
+            mediaId: String(clip.mediaId),
+            mediaDuration: clip.mediaDuration,
+            trimStartTime: typeof clip.sourceStart === 'number' ? Math.round(clip.sourceStart * 1000) : undefined,
+            trimEndTime: typeof clip.sourceEnd === 'number' ? Math.round(clip.sourceEnd * 1000) : undefined,
+            hasTimelineControls: clip.hasTimelineControls,
+            isMuted: clip.isMuted,
+            volume: clip.volume,
+            height: getSceneHeightFromVisualClip(clip),
+            background: clip.background,
         };
     });
 }

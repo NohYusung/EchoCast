@@ -211,6 +211,59 @@ describe('PlayerService', () => {
             assert.equal(manifest.cues[0].approvedRecordUrl, 'https://assets.example.com/record.wav');
             assert.equal(manifest.items.find((item) => item.mediaId === String(media.id))?.canvasId, String(canvas.id));
             assert.equal(manifest.items.find((item) => item.mediaId === String(secondMedia.id))?.index, 1);
+            const playerCanvasManifest = manifest as typeof manifest & {
+                previewCanvasId?: number;
+                canvases?: Array<{
+                    id: number;
+                    episodeId: number;
+                    mediaId?: number;
+                    mediaName?: string;
+                    mediaType?: string;
+                    mediaUrl?: string;
+                    canvasMediaId?: number;
+                    index?: number;
+                    medias?: Array<{
+                        canvasMediaId?: number;
+                        mediaId: number;
+                        mediaName?: string;
+                        mediaType?: string;
+                        mediaUrl?: string;
+                        index?: number;
+                    }>;
+                }>;
+            };
+            assert.equal(playerCanvasManifest.previewCanvasId, canvas.id);
+            assert.equal(playerCanvasManifest.canvases?.[0]?.id, canvas.id);
+            assert.equal(playerCanvasManifest.canvases?.[0]?.episodeId, episode.id);
+            assert.equal(playerCanvasManifest.canvases?.[0]?.mediaId, media.id);
+            assert.equal(playerCanvasManifest.canvases?.[0]?.mediaName, 'visual.png');
+            assert.equal(playerCanvasManifest.canvases?.[0]?.mediaType, 'image');
+            assert.equal(playerCanvasManifest.canvases?.[0]?.mediaUrl, 'https://assets.example.com/visual.png');
+            assert.deepEqual(
+                playerCanvasManifest.canvases?.[0]?.medias?.map((item) => ({
+                    mediaId: item.mediaId,
+                    mediaName: item.mediaName,
+                    mediaType: item.mediaType,
+                    mediaUrl: item.mediaUrl,
+                    index: item.index,
+                })),
+                [
+                    {
+                        mediaId: media.id,
+                        mediaName: 'visual.png',
+                        mediaType: 'image',
+                        mediaUrl: 'https://assets.example.com/visual.png',
+                        index: 0,
+                    },
+                    {
+                        mediaId: secondMedia.id,
+                        mediaName: 'visual-2.png',
+                        mediaType: 'image',
+                        mediaUrl: 'https://assets.example.com/visual-2.png',
+                        index: 1,
+                    },
+                ]
+            );
             assert.deepEqual(manifest.scrolls, [
                 {
                     id: '1',
@@ -408,7 +461,7 @@ describe('PlayerService', () => {
         }
     });
 
-    it('does not split visual media into synthetic playback windows without timeline data', async () => {
+    it('uses preview visual clip sequence timing without stretching media across cue duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [
@@ -483,8 +536,8 @@ describe('PlayerService', () => {
                 }));
 
             assert.deepEqual(visualWindows, [
-                { mediaId: String(firstMedia.id), startTime: 0, endTime: 1 },
-                { mediaId: String(secondMedia.id), startTime: 0, endTime: 1 },
+                { mediaId: String(firstMedia.id), startTime: 0, endTime: 1000 },
+                { mediaId: String(secondMedia.id), startTime: 1000, endTime: 2000 },
             ]);
         } finally {
             await dataSource.destroy();
@@ -574,7 +627,7 @@ describe('PlayerService', () => {
         }
     });
 
-    it('maps scroll timing to visual media by canvas id and media index when explicit mapping exists', async () => {
+    it('keeps scroll timing separate from preview visual clip timing', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [
@@ -704,10 +757,42 @@ describe('PlayerService', () => {
                     .map((item) => [item.mediaId, item])
             );
 
-            assert.equal(visualByMediaId.get(String(firstMedia.id))?.startTime, 7000);
-            assert.equal(visualByMediaId.get(String(firstMedia.id))?.endTime, 9000);
+            assert.equal(visualByMediaId.get(String(firstMedia.id))?.startTime, 0);
+            assert.equal(visualByMediaId.get(String(firstMedia.id))?.endTime, 1000);
             assert.equal(visualByMediaId.get(String(secondMedia.id))?.startTime, 1000);
             assert.equal(visualByMediaId.get(String(secondMedia.id))?.endTime, 2000);
+            assert.deepEqual(
+                manifest.scrolls.map((scroll) => ({
+                    canvasId: scroll.canvasId,
+                    startIndex: scroll.startIndex,
+                    endIndex: scroll.endIndex,
+                    startTime: scroll.startTime,
+                    endTime: scroll.endTime,
+                    startPosition: scroll.startPosition,
+                    endPosition: scroll.endPosition,
+                })),
+                [
+                    {
+                        canvasId: String(canvas.id),
+                        startIndex: 1,
+                        endIndex: 1,
+                        startTime: 1000,
+                        endTime: 2000,
+                        startPosition: 10,
+                        endPosition: 20,
+                    },
+                    {
+                        canvasId: String(canvas.id),
+                        startIndex: 0,
+                        endIndex: 0,
+                        startTime: 7000,
+                        endTime: 9000,
+                        startPosition: 70,
+                        endPosition: 90,
+                    },
+                ]
+            );
+            assert.equal(manifest.durationMs, 9000);
         } finally {
             await dataSource.destroy();
         }

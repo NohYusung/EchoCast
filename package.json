@@ -9,16 +9,19 @@
   "scripts": {
     "dev:back": "npm run start:dev --workspace @test-player/back",
     "dev:front": "npm run dev --workspace @test-player/front",
+    "desktop": "electron desktop/main.cjs",
     "build": "npm run build --workspaces --if-present",
     "format": "prettier --write \"back/src/**/*.ts\" \"front/src/**/*.{ts,tsx}\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test:desktop && npm run test --workspaces --if-present",
+    "test:desktop": "node --test desktop/**/*.test.cjs",
     "test:e2e": "npm run build --workspace @test-player/front && npm run test:e2e --workspace @test-player/front"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "electron": "^39.8.10",
     "prettier": "^3.8.3",
     "tsx": "^4.20.6",
     "typescript": "^5.7.3"

@@ -51,18 +51,18 @@ export class CueService extends DddService {
         const [track] = await this.trackRepository.find({ id: trackId });
 
         if (!track) {
-            throw new NotFoundException('Track not found.');
+            throw new NotFoundException('트랙을 찾을 수 없습니다.');
         }
         if (track.type === 'record' && !track.characterId) {
-            throw new BadRequestException('Cue track must be linked to a character.');
+            throw new BadRequestException('큐 트랙은 캐릭터와 연결되어야 합니다.');
         }
         if (!script.trim()) {
-            throw new BadRequestException('Cue script is required.');
+            throw new BadRequestException('큐 대사가 필요합니다.');
         }
         const resolvedStartTime = startTime ?? 0;
         const resolvedEndTime = endTime ?? resolvedStartTime + DEFAULT_PENDING_CUE_DURATION_MS;
         if (!Number.isFinite(resolvedStartTime) || !Number.isFinite(resolvedEndTime) || resolvedEndTime <= resolvedStartTime) {
-            throw new BadRequestException('Cue endTime must be greater than startTime.');
+            throw new BadRequestException('큐 endTime은 startTime보다 커야 합니다.');
         }
         const audio = await this.resolveAudio({ track, audioId });
         this.validateAudioSourceRange({
@@ -111,7 +111,7 @@ export class CueService extends DddService {
         const [track] = await this.trackRepository.find({ id: trackId });
 
         if (!track) {
-            throw new NotFoundException('Track not found.');
+            throw new NotFoundException('트랙을 찾을 수 없습니다.');
         }
 
         const [cues, total] = await Promise.all([
@@ -155,27 +155,27 @@ export class CueService extends DddService {
         const [track] = await this.trackRepository.find({ id: trackId });
 
         if (!track) {
-            throw new NotFoundException('Track not found.');
+            throw new NotFoundException('트랙을 찾을 수 없습니다.');
         }
         if (track.type === 'record' && !track.characterId) {
-            throw new BadRequestException('Cue track must be linked to a character.');
+            throw new BadRequestException('큐 트랙은 캐릭터와 연결되어야 합니다.');
         }
 
         const [cue] = await this.cueRepository.find({ id: cueId, trackId });
 
         if (!cue) {
-            throw new NotFoundException('Cue not found.');
+            throw new NotFoundException('큐를 찾을 수 없습니다.');
         }
 
         const trimmedScript = script?.trim();
         if (script !== undefined && !trimmedScript) {
-            throw new BadRequestException('Cue script is required.');
+            throw new BadRequestException('큐 대사가 필요합니다.');
         }
 
         const nextStartTime = startTime ?? cue.startTime;
         const nextEndTime = endTime ?? cue.endTime;
         if (!Number.isFinite(nextStartTime) || !Number.isFinite(nextEndTime) || nextEndTime <= nextStartTime) {
-            throw new BadRequestException('Cue endTime must be greater than startTime.');
+            throw new BadRequestException('큐 endTime은 startTime보다 커야 합니다.');
         }
         const nextAudioId = audioId !== undefined ? audioId : (cue.audioId ?? undefined);
         const audio = await this.resolveAudio({ track, audioId: nextAudioId });
@@ -226,19 +226,19 @@ export class CueService extends DddService {
         const [track] = await this.trackRepository.find({ id: trackId });
 
         if (!track) {
-            throw new NotFoundException('Track not found.');
+            throw new NotFoundException('트랙을 찾을 수 없습니다.');
         }
 
         const [cue] = await this.cueRepository.find({ id: cueId, trackId }, { relations: { audio: true } });
 
         if (!cue) {
-            throw new NotFoundException('Cue not found.');
+            throw new NotFoundException('큐를 찾을 수 없습니다.');
         }
         if (!cue.audioId) {
-            throw new BadRequestException('Only audio cues can be split.');
+            throw new BadRequestException('오디오 큐만 분할할 수 있습니다.');
         }
         if (!Number.isFinite(splitTime) || splitTime <= cue.startTime || splitTime >= cue.endTime) {
-            throw new BadRequestException('Cue splitTime must be inside the cue time range.');
+            throw new BadRequestException('큐 splitTime은 큐 시간 범위 안에 있어야 합니다.');
         }
 
         const audioStartTime = cue.audioStartTime ?? 0;
@@ -290,7 +290,7 @@ export class CueService extends DddService {
         const [cue] = await this.cueRepository.find({ id: cueId, trackId });
 
         if (!cue) {
-            throw new NotFoundException('Cue not found.');
+            throw new NotFoundException('큐를 찾을 수 없습니다.');
         }
 
         await this.cueRepository.softRemove([cue]);
@@ -305,7 +305,7 @@ export class CueService extends DddService {
             endPosition < 0 ||
             endPosition > 100
         ) {
-            throw new BadRequestException('Cue positions must be between 0 and 100.');
+            throw new BadRequestException('큐 위치는 0 이상 100 이하여야 합니다.');
         }
     }
 
@@ -322,7 +322,7 @@ export class CueService extends DddService {
     }) {
         if (audioId === undefined) {
             if (audioStartTime !== undefined || audioEndTime !== undefined) {
-                throw new BadRequestException('Cue audio source range requires audioId.');
+                throw new BadRequestException('큐 오디오 소스 범위를 지정하려면 audioId가 필요합니다.');
             }
 
             return;
@@ -339,10 +339,10 @@ export class CueService extends DddService {
             audioStartTime < 0 ||
             audioEndTime <= audioStartTime
         ) {
-            throw new BadRequestException('Cue audio source range is invalid.');
+            throw new BadRequestException('큐 오디오 소스 범위가 올바르지 않습니다.');
         }
         if (typeof audioDuration === 'number' && audioEndTime > audioDuration) {
-            throw new BadRequestException('Cue audio source range exceeds audio duration.');
+            throw new BadRequestException('큐 오디오 소스 범위가 오디오 duration을 초과합니다.');
         }
     }
 
@@ -351,7 +351,7 @@ export class CueService extends DddService {
             return undefined;
         }
         if (!Number.isInteger(audioId)) {
-            throw new BadRequestException('Cue audioId must be an integer.');
+            throw new BadRequestException('큐 audioId는 정수여야 합니다.');
         }
 
         const audio = await this.cueRepository.entityManager.findOne(Audio, {
@@ -362,7 +362,7 @@ export class CueService extends DddService {
         });
 
         if (!audio) {
-            throw new NotFoundException('Cue audio not found.');
+            throw new NotFoundException('큐 오디오를 찾을 수 없습니다.');
         }
 
         return audio;
@@ -394,7 +394,7 @@ export class CueService extends DddService {
             };
         }
         if (ids.some((id) => !Number.isInteger(id))) {
-            throw new BadRequestException('Cue canvasMediaId must be an integer.');
+            throw new BadRequestException('큐 canvasMediaId는 정수여야 합니다.');
         }
 
         const canvasMedias = await this.canvasMediaRepository.find(
@@ -402,13 +402,13 @@ export class CueService extends DddService {
             { relations: { canvas: true } }
         );
         if (canvasMedias.length !== ids.length) {
-            throw new NotFoundException('Cue canvas media not found.');
+            throw new NotFoundException('큐 캔버스 미디어를 찾을 수 없습니다.');
         }
 
         const canvasMediaById = new Map(canvasMedias.map((canvasMedia) => [canvasMedia.id, canvasMedia]));
         for (const canvasMedia of canvasMedias) {
             if (canvasMedia.canvas.episodeId !== track.episodeId) {
-                throw new BadRequestException('Cue canvas media must belong to the track episode.');
+                throw new BadRequestException('큐 캔버스 미디어는 트랙의 에피소드에 속해야 합니다.');
             }
         }
 

@@ -46,9 +46,18 @@ test('cut edit keeps the right inspector visible when an item is selected', () =
 });
 
 test('canvas visual clips do not divide canvas media into equal timeline durations', () => {
-    const studioEditor = readFileSync(new URL('../StudioEditor.tsx', import.meta.url), 'utf8');
+    const visualClips = readFileSync(new URL('../visualClips.ts', import.meta.url), 'utf8');
 
-    assert.doesNotMatch(studioEditor, /TIMELINE_DURATION_SECONDS\s*\/\s*visualItems\.length/);
-    assert.match(studioEditor, /function getCanvasMediaClipDurationSeconds/);
-    assert.match(studioEditor, /item\.mediaType === 'video'/);
+    assert.doesNotMatch(visualClips, /TIMELINE_DURATION_SECONDS\s*\/\s*visualItems\.length/);
+    assert.match(visualClips, /function getCanvasMediaClipDurationSeconds/);
+    assert.match(visualClips, /item\.mediaType === 'video'/);
+});
+
+test('player video media uses preview contain sizing instead of cropping', () => {
+    const styles = readFileSync(new URL('../../../styles.css', import.meta.url), 'utf8');
+    const playerVideoRule = getCssRuleBlock(styles, '.vpp-scene.is-video .vpp-media');
+
+    assert.match(playerVideoRule, /height:\s*auto/);
+    assert.match(playerVideoRule, /object-fit:\s*contain/);
+    assert.doesNotMatch(playerVideoRule, /object-fit:\s*cover/);
 });

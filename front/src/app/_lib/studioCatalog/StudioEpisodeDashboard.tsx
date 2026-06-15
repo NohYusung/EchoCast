@@ -4,19 +4,36 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { StudioCatalogIcon } from './StudioCatalogIcon';
-import {
-    buildMockEpisodes,
-    episodeStatusLabels,
-    productStatusLabels,
-    resolveStudioProduct,
-    type StudioEpisode,
-    type StudioEpisodeStatus,
-    type StudioProduct,
-    type StudioProductStatus,
-} from './studioCatalogMock';
 
+type StudioProductStatus = 'live' | 'done' | 'draft';
+type StudioEpisodeStatus = 'published' | 'editing' | 'render' | 'draft';
 type EpisodeFilter = 'all' | 'published' | 'editing' | 'draft';
 type CharacterRole = 'starring' | 'supporting' | 'minor' | 'narrator' | 'unknown';
+type StudioProduct = {
+    id: string;
+    legacyId: string;
+    title: string;
+    status: StudioProductStatus;
+    genres: string[];
+    episodeCount: number;
+    rating: string;
+    updatedAtLabel: string;
+    progress: number;
+    cover: string;
+    logline: string;
+};
+type StudioEpisode = {
+    id: string;
+    episodeNumber: number;
+    title: string;
+    status: StudioEpisodeStatus;
+    progress: number;
+    thumbnail: string;
+    durationLabel: string;
+    voiceCount: number;
+    cutCount: number;
+    updatedAtLabel: string;
+};
 type CharacterListItem = {
     id: number;
     productId: number;
@@ -81,6 +98,17 @@ const filterLabels: Record<EpisodeFilter, string> = {
     editing: '작업중',
     draft: '임시저장',
 };
+const productStatusLabels: Record<StudioProductStatus, string> = {
+    live: '연재중',
+    done: '완결',
+    draft: '임시저장',
+};
+const episodeStatusLabels: Record<StudioEpisodeStatus, string> = {
+    published: '발행',
+    editing: '작업중',
+    render: '렌더 대기',
+    draft: '임시저장',
+};
 const productStatusOptions: StudioProductStatus[] = ['live', 'done', 'draft'];
 const genreOptions = ['로맨스', '판타지', '스릴러', '드라마', '액션', '일상', '코미디', '공포', '학원', '무협', 'SF', 'BL'];
 const ratingOptions = ['전체', '12+', '15+', '19+'];
@@ -106,8 +134,8 @@ const characterAvatarColors = ['#5b9bff', '#f472b6', '#34d399', '#fbbf24', '#a78
 const productApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100';
 
 export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
-    const [product, setProduct] = useState(() => resolveStudioProduct(productId));
-    const [episodes, setEpisodes] = useState<StudioEpisode[]>(() => buildMockEpisodes(resolveStudioProduct(productId)));
+    const [product, setProduct] = useState(() => getInitialStudioProduct(productId));
+    const [episodes, setEpisodes] = useState<StudioEpisode[]>([]);
     const [characters, setCharacters] = useState<CharacterListItem[]>([]);
     const [filter, setFilter] = useState<EpisodeFilter>('all');
     const [query, setQuery] = useState('');
@@ -123,7 +151,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     const [newCharacterImageFile, setNewCharacterImageFile] = useState<File | null>(null);
     const [settingsCoverImageFile, setSettingsCoverImageFile] = useState<File | null>(null);
     const [settingsCoverImagePreviewUrl, setSettingsCoverImagePreviewUrl] = useState<string | null>(null);
-    const [settingsDraft, setSettingsDraft] = useState<ProductSettingsDraft>(() => toProductSettingsDraft(resolveStudioProduct(productId)));
+    const [settingsDraft, setSettingsDraft] = useState<ProductSettingsDraft>(() => toProductSettingsDraft(getInitialStudioProduct(productId)));
     const [episodeNumberTouched, setEpisodeNumberTouched] = useState(false);
     const [titleTouched, setTitleTouched] = useState(false);
     const [characterNameTouched, setCharacterNameTouched] = useState(false);
@@ -138,13 +166,13 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
 
     useEffect(() => {
         let ignore = false;
-        const fallbackProduct = resolveStudioProduct(productId);
+        const initialProduct = getInitialStudioProduct(productId);
 
-        setProduct(fallbackProduct);
-        setEpisodes(buildMockEpisodes(fallbackProduct));
+        setProduct(initialProduct);
+        setEpisodes([]);
         setCharacters([]);
         setCharacterError(null);
-        setSettingsDraft(toProductSettingsDraft(fallbackProduct));
+        setSettingsDraft(toProductSettingsDraft(initialProduct));
         setSettingsCoverImageFile(null);
         setSettingsCoverImagePreviewUrl(null);
 
@@ -154,10 +182,10 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
             };
         }
 
-        retrieveProduct(resolveProductApiId(productId, fallbackProduct))
+        retrieveProduct(resolveProductApiId(productId, initialProduct))
             .then((retrievedProduct) => {
                 if (!ignore) {
-                    setProduct(toStudioProduct(retrievedProduct, fallbackProduct));
+                    setProduct(toStudioProduct(retrievedProduct, initialProduct));
                 }
             })
             .catch(() => undefined);
@@ -171,7 +199,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
             .catch(() => undefined);
 
         setIsCharacterLoading(true);
-        listCharacters(resolveProductApiId(productId, fallbackProduct))
+        listCharacters(resolveProductApiId(productId, initialProduct))
             .then((items) => {
                 if (!ignore) {
                     setCharacters(items);
@@ -519,7 +547,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                 </Link>
                 <div className="tp-crumb">
                     <span>/</span>
-                    <Link href="/studio/products">내 작품</Link>
+                    <Link href="/studio/products">프로젝트</Link>
                     <span>/</span>
                     <strong>{product.title}</strong>
                 </div>
@@ -541,7 +569,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                 <nav className="tp-rail" aria-label="studio catalog">
                     <Link className="active" href="/studio/products">
                         <StudioCatalogIcon name="panel" />
-                        <span>작품</span>
+                        <span>프로젝트</span>
                     </Link>
                     <button type="button"><StudioCatalogIcon name="chart" /><span>통계</span></button>
                     <button type="button"><StudioCatalogIcon name="image" /><span>에셋</span></button>
@@ -555,7 +583,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                     <div className="tp-catalog-inner narrow">
                         <Link className="tp-back" href="/studio/products">
                             <StudioCatalogIcon name="chevronLeft" />
-                            내 작품으로
+                            프로젝트로
                         </Link>
 
                         <section className="tp-episode-hero">
@@ -589,6 +617,14 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                         <StudioCatalogIcon name="users" />
                                         캐릭터 관리
                                     </button>
+                                    <Link className="tp-btn ghost" href={`/studio/products/${product.id}/media`}>
+                                        <StudioCatalogIcon name="image" />
+                                        미디어 등록
+                                    </Link>
+                                    <Link className="tp-btn ghost" href={`/studio/products/${product.id}/artists`}>
+                                        <StudioCatalogIcon name="mic" />
+                                        성우 등록
+                                    </Link>
                                     <button className="tp-btn ghost" onClick={openSettingsModal} type="button">
                                         <StudioCatalogIcon name="settings" />
                                         작품 설정
@@ -1063,6 +1099,24 @@ function toCoverBackground(url: string) {
     return `center / cover no-repeat url(${JSON.stringify(url)})`;
 }
 
+function getInitialStudioProduct(productId?: string): StudioProduct {
+    const id = productId || '0';
+
+    return {
+        id,
+        legacyId: id,
+        title: '프로젝트',
+        status: 'draft',
+        genres: [],
+        episodeCount: 0,
+        rating: '15+',
+        updatedAtLabel: '방금 전',
+        progress: 0,
+        cover: 'linear-gradient(135deg,#1e293b,#475569)',
+        logline: '',
+    };
+}
+
 async function retrieveProduct(productId: string) {
     const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}`, {
         cache: 'no-store',
@@ -1158,7 +1212,7 @@ async function uploadFileToPresignedUrl(presignedUrl: string, file: File) {
     }
 }
 
-function toStudioProduct(product: ProductListItem, fallbackProduct: ReturnType<typeof resolveStudioProduct>) {
+function toStudioProduct(product: ProductListItem, fallbackProduct: StudioProduct) {
     const id = String(product.id);
 
     return {

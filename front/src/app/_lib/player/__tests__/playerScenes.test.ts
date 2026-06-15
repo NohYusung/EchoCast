@@ -173,6 +173,130 @@ test('buildPlayerScenes carries video playback controls from manifest items', ()
     assert.equal(scene.hasTimelineControls, true);
 });
 
+test('buildPlayerScenes uses preview canvas visual clips before legacy visual items', () => {
+    const manifest = {
+        episodeId: '1',
+        durationMs: 12000,
+        tracks: [
+            {
+                id: 'visual-1',
+                name: 'Visual',
+                kind: 'visual',
+                layerId: 0,
+                isMuted: false,
+            },
+        ],
+        items: [
+            {
+                id: 'legacy-visual',
+                trackId: 'visual-1',
+                kind: 'visual',
+                startTime: 7000,
+                endTime: 8000,
+                mediaId: 'legacy-media',
+                layerId: 0,
+                volume: 1,
+            },
+        ],
+        canvases: [
+            {
+                id: 11,
+                episodeId: 1,
+                medias: [
+                    {
+                        canvasMediaId: 501,
+                        mediaId: 101,
+                        mediaName: 'one.png',
+                        mediaType: 'image',
+                        mediaUrl: '/media/one.png',
+                        index: 0,
+                    },
+                    {
+                        canvasMediaId: 502,
+                        mediaId: 102,
+                        mediaName: 'clip.mp4',
+                        mediaType: 'video',
+                        mediaUrl: '/media/clip.mp4',
+                        duration: 12000,
+                        index: 1,
+                        startTime: 2000,
+                        endTime: 9000,
+                        sourceStartTime: 1000,
+                        sourceEndTime: 8000,
+                        volume: 0.4,
+                        isMuted: true,
+                    },
+                ],
+            },
+        ],
+        cues: [],
+        media: [
+            {
+                id: 'legacy-media',
+                kind: 'image',
+                url: '/media/legacy.png',
+            },
+        ],
+        records: [],
+        tts: [],
+    } as PlayerManifest;
+
+    const scenes = buildPlayerScenes(manifest);
+
+    assert.deepEqual(
+        scenes.map((scene) => ({
+            id: scene.id,
+            canvasId: scene.canvasId,
+            index: scene.index,
+            kind: scene.kind,
+            mediaId: scene.mediaId,
+            mediaUrl: scene.mediaUrl,
+            startTime: scene.startTime,
+            endTime: scene.endTime,
+            trimStartTime: scene.trimStartTime,
+            trimEndTime: scene.trimEndTime,
+            mediaDuration: scene.mediaDuration,
+            hasTimelineControls: scene.hasTimelineControls,
+            isMuted: scene.isMuted,
+            volume: scene.volume,
+        })),
+        [
+            {
+                id: 'canvas-11-media-101',
+                canvasId: 11,
+                index: 0,
+                kind: 'image',
+                mediaId: '101',
+                mediaUrl: '/media/one.png',
+                startTime: 0,
+                endTime: 1000,
+                trimStartTime: undefined,
+                trimEndTime: undefined,
+                mediaDuration: undefined,
+                hasTimelineControls: false,
+                isMuted: undefined,
+                volume: undefined,
+            },
+            {
+                id: 'canvas-11-media-102',
+                canvasId: 11,
+                index: 1,
+                kind: 'video',
+                mediaId: '102',
+                mediaUrl: '/media/clip.mp4',
+                startTime: 2000,
+                endTime: 9000,
+                trimStartTime: 1000,
+                trimEndTime: 8000,
+                mediaDuration: 12000,
+                hasTimelineControls: true,
+                isMuted: true,
+                volume: 0.4,
+            },
+        ],
+    );
+});
+
 test('shouldDriveStripScrollFromScenes enables playback scroll only when visual timing is distinct', () => {
     assert.equal(
         shouldDriveStripScrollFromScenes([

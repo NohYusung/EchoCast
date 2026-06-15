@@ -79,12 +79,15 @@ export class Scroll extends DddAggregate {
         startAnchorId?: number;
         endAnchorId?: number;
     }) {
-        Object.assign(
-            this,
-            this.stripUnchanged({
-                startAnchorId,
-                endAnchorId,
-            })
-        );
+        const changedArgs = this.stripUnchanged({
+            startAnchorId,
+            endAnchorId,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
     }
 }

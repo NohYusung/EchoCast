@@ -48,7 +48,7 @@ export class EpisodeService extends DddService {
         const [episode] = await this.episodeRepository.find({ id: episodeId, productId });
 
         if (!episode) {
-            throw new NotFoundException('Episode not found.');
+            throw new NotFoundException('에피소드를 찾을 수 없습니다.');
         }
 
         return episode.toInstance(EpisodeResponseDto);
@@ -72,7 +72,7 @@ export class EpisodeService extends DddService {
         const [episode] = await this.episodeRepository.find({ id: episodeId, productId });
 
         if (!episode) {
-            throw new NotFoundException('Episode not found.');
+            throw new NotFoundException('에피소드를 찾을 수 없습니다.');
         }
 
         episode.update({ episodeNumber, title, subTitle, thumbnailImageUrl });

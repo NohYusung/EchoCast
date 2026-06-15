@@ -85,7 +85,7 @@ export class ScrollsService extends DddService {
         );
 
         if (!scroll) {
-            throw new NotFoundException('Scroll not found.');
+            throw new NotFoundException('스크롤을 찾을 수 없습니다.');
         }
 
         const nextStartAnchorId = startAnchorId ?? scroll.startAnchorId;
@@ -107,7 +107,7 @@ export class ScrollsService extends DddService {
         const [scroll] = await this.scrollRepository.find({ id: scrollId, trackId });
 
         if (!scroll) {
-            throw new NotFoundException('Scroll not found.');
+            throw new NotFoundException('스크롤을 찾을 수 없습니다.');
         }
 
         await this.scrollRepository.softRemove([scroll]);
@@ -123,10 +123,10 @@ export class ScrollsService extends DddService {
         endAnchorId: number;
     }) {
         if (!Number.isInteger(startAnchorId) || !Number.isInteger(endAnchorId)) {
-            throw new BadRequestException('Scroll startAnchorId and endAnchorId are required.');
+            throw new BadRequestException('스크롤 startAnchorId와 endAnchorId가 필요합니다.');
         }
         if (startAnchorId === endAnchorId) {
-            throw new BadRequestException('Scroll startAnchorId and endAnchorId must be different.');
+            throw new BadRequestException('스크롤 startAnchorId와 endAnchorId는 서로 달라야 합니다.');
         }
 
         const [[startAnchor], [endAnchor]] = await Promise.all([
@@ -135,16 +135,16 @@ export class ScrollsService extends DddService {
         ]);
 
         if (!startAnchor || !endAnchor) {
-            throw new NotFoundException('Scroll anchor not found.');
+            throw new NotFoundException('스크롤 앵커를 찾을 수 없습니다.');
         }
         if (startAnchor.trackId !== trackId || endAnchor.trackId !== trackId) {
-            throw new BadRequestException('Scroll anchors must belong to the target track.');
+            throw new BadRequestException('스크롤 앵커는 대상 트랙에 속해야 합니다.');
         }
         if (startAnchor.canvasId !== endAnchor.canvasId) {
-            throw new BadRequestException('Scroll anchors must belong to the same canvas.');
+            throw new BadRequestException('스크롤 앵커는 같은 캔버스에 속해야 합니다.');
         }
         if (!Number.isFinite(startAnchor.time) || !Number.isFinite(endAnchor.time) || endAnchor.time <= startAnchor.time) {
-            throw new BadRequestException('Scroll end anchor time must be greater than start anchor time.');
+            throw new BadRequestException('스크롤 종료 앵커 시간은 시작 앵커 시간보다 커야 합니다.');
         }
 
         return [startAnchor, endAnchor] as const;
@@ -162,7 +162,7 @@ export class ScrollsService extends DddService {
         const [existingScroll] = await this.scrollRepository.find({ trackId, startAnchorId });
 
         if (existingScroll && existingScroll.id !== scrollId) {
-            throw new BadRequestException('Anchor already owns a scroll event.');
+            throw new BadRequestException('앵커에 이미 스크롤 이벤트가 등록되어 있습니다.');
         }
         if (!this.pauseRepository) {
             return;
@@ -171,7 +171,7 @@ export class ScrollsService extends DddService {
         const [existingPause] = await this.pauseRepository.find({ trackId, anchorId: startAnchorId });
 
         if (existingPause) {
-            throw new BadRequestException('Anchor already owns a pause event.');
+            throw new BadRequestException('앵커에 이미 일시정지 이벤트가 등록되어 있습니다.');
         }
     }
 }

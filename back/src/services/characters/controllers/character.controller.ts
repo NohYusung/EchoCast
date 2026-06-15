@@ -1,4 +1,4 @@
-import { Body, Controller, Dependencies, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Dependencies, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { CharacterService } from '../applications/characater.service';
 import { CharacterCreateDto } from './dto';
 
@@ -40,8 +40,22 @@ export class CharacterController {
         return { data };
     }
 
-    /*
-    AGENT
-    - 캐릭터 삭제 api 추가. 
-    */
+    /**
+     * 캐릭터 삭제
+     */
+    @Delete('/products/:productId/characters/:characterId')
+    async delete(
+        @Param('productId', ParseIntPipe) productId: number,
+        @Param('characterId', ParseIntPipe) characterId: number
+    ) {
+        // 1. Destructure body, params, query
+
+        // 2. Get context
+
+        // 3. Get result
+        await this.characterService.delete({ productId, characterId });
+
+        // 4. Send response
+        return { data: {} };
+    }
 }
