@@ -53,19 +53,19 @@ export class TrackService extends DddService {
         const items = tracks.map((track) => {
             const item = track.toInstance(TrackResponseDto);
             item.scrolls = [...(track.scrolls ?? [])]
-                .sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0) || a.id - b.id)
+                .sort((a, b) => (a.startAnchor?.time ?? 0) - (b.startAnchor?.time ?? 0) || a.id - b.id)
                 .map((scroll) => ({
                     id: scroll.id,
                     trackId: scroll.trackId,
                     startAnchorId: scroll.startAnchorId,
                     endAnchorId: scroll.endAnchorId,
-                    canvasId: scroll.canvasId,
-                    startIndex: scroll.startIndex,
-                    endIndex: scroll.endIndex,
-                    startTime: scroll.startTime,
-                    endTime: scroll.endTime,
-                    startPosition: scroll.startPosition,
-                    endPosition: scroll.endPosition,
+                    canvasId: scroll.startAnchor?.canvasId ?? scroll.endAnchor?.canvasId,
+                    startIndex: scroll.startAnchor?.index,
+                    endIndex: scroll.endAnchor?.index,
+                    startTime: scroll.startAnchor?.time,
+                    endTime: scroll.endAnchor?.time,
+                    startPosition: scroll.startAnchor?.position,
+                    endPosition: scroll.endAnchor?.position,
                 }));
             return item;
         });

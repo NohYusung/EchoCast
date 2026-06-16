@@ -10,15 +10,15 @@ export interface PlaybackEvent {
     url: string;
     startTime: number;
     endTime: number;
+    sourceStartTime: number;
     volume: number;
 }
 
 export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
-    const recordByCueId = new Map<string, PlayerManifest['records'][number]>();
+    const acceptedRecordByCueId = new Map<string, PlayerManifest['records'][number]>();
     for (const record of manifest.records) {
-        const currentRecord = recordByCueId.get(record.cueId);
-        if (!currentRecord || (!currentRecord.isAccepted && record.isAccepted)) {
-            recordByCueId.set(record.cueId, record);
+        if (record.isAccepted) {
+            acceptedRecordByCueId.set(record.cueId, record);
         }
     }
     const ttsByCueId = new Map(manifest.tts.map((tts) => [tts.cueId, tts]));
@@ -26,7 +26,7 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
 
     const cuePlaybackEvents = manifest.cues
         .flatMap((cue): PlaybackEvent[] => {
-            const record = recordByCueId.get(cue.id);
+            const record = acceptedRecordByCueId.get(cue.id);
             if (record) {
                 return [
                     {
@@ -37,6 +37,7 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
                         url: record.recordUrl,
                         startTime: cue.startTime,
                         endTime: cue.startTime + (record.duration ?? Math.max(0, cue.endTime - cue.startTime)),
+                        sourceStartTime: 0,
                         volume: record.volume * cue.volume,
                     },
                 ];
@@ -54,6 +55,7 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
                     url: tts.audioUrl,
                     startTime: cue.startTime,
                     endTime: cue.endTime,
+                    sourceStartTime: 0,
                     volume: cue.volume,
                 },
             ];
@@ -73,6 +75,7 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
                 url: media.url,
                 startTime: item.startTime,
                 endTime: item.endTime,
+                sourceStartTime: item.trimStartTime ?? 0,
                 volume: item.volume,
             },
         ];

@@ -14,13 +14,13 @@ function toScrollEventResponse(scroll: Scroll) {
         scrollId: scroll.id,
         startAnchorId: scroll.startAnchorId,
         endAnchorId: scroll.endAnchorId,
-        canvasId: scroll.canvasId,
-        startIndex: scroll.startIndex,
-        endIndex: scroll.endIndex,
-        startTime: scroll.startTime,
-        endTime: scroll.endTime,
-        startPosition: scroll.startPosition,
-        endPosition: scroll.endPosition,
+        canvasId: scroll.startAnchor?.canvasId ?? scroll.endAnchor?.canvasId,
+        startIndex: scroll.startAnchor?.index,
+        endIndex: scroll.endAnchor?.index,
+        startTime: scroll.startAnchor?.time,
+        endTime: scroll.endAnchor?.time,
+        startPosition: scroll.startAnchor?.position,
+        endPosition: scroll.endAnchor?.position,
     };
 }
 

@@ -78,10 +78,15 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
                                     script: '실제 API 대사입니다.',
                                     characterId: 7,
                                     trackId: 2,
+                                    audioId: 88,
+                                    startCanvasMediaId: 302,
+                                    endCanvasMediaId: 302,
                                     startTime: 4000,
                                     endTime: 6100,
+                                    audioStartTime: 200,
+                                    audioEndTime: 2300,
                                     startPosition: 12,
-                                    endPosition: 12,
+                                    endPosition: 32,
                                     volume: 1,
                                 },
                             ],
@@ -164,6 +169,13 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
     assert.equal(draft.characters[0]?.name, '엘렌 예거');
     assert.equal(draft.scripts[0]?.text, '실제 API 대사입니다.');
     assert.equal(draft.cues[0]?.id, '31');
+    assert.equal(draft.cues[0]?.audioId, '88');
+    assert.equal(draft.cues[0]?.startCanvasMediaId, '302');
+    assert.equal(draft.cues[0]?.endCanvasMediaId, '302');
+    assert.equal(draft.cues[0]?.audioStartTime, 200);
+    assert.equal(draft.cues[0]?.audioEndTime, 2300);
+    assert.equal(draft.cues[0]?.startPosition, 12);
+    assert.equal(draft.cues[0]?.endPosition, 32);
     assert.equal(draft.records[0]?.recordUrl, 'https://assets.example.com/record.wav');
 });
 

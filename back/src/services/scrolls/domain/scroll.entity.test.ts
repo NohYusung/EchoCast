@@ -36,6 +36,13 @@ describe('Scroll', () => {
             assert.equal(columnNames.includes('endTime'), false);
             assert.equal(columnNames.includes('startPosition'), false);
             assert.equal(columnNames.includes('endPosition'), false);
+            assert.equal('canvasId' in Scroll.prototype, false);
+            assert.equal('startIndex' in Scroll.prototype, false);
+            assert.equal('endIndex' in Scroll.prototype, false);
+            assert.equal('startTime' in Scroll.prototype, false);
+            assert.equal('endTime' in Scroll.prototype, false);
+            assert.equal('startPosition' in Scroll.prototype, false);
+            assert.equal('endPosition' in Scroll.prototype, false);
         } finally {
             await dataSource.destroy();
         }

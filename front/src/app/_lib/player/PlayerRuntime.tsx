@@ -264,7 +264,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                 continue;
             }
 
-            const targetTime = Math.max(0, (playheadMs - event.startTime) / 1000);
+            const targetTime = Math.max(0, (event.sourceStartTime + playheadMs - event.startTime) / 1000);
             if (Math.abs(audio.currentTime - targetTime) > 0.25) {
                 audio.currentTime = targetTime;
             }

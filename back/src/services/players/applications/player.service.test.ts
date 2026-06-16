@@ -479,6 +479,92 @@ describe('PlayerService', () => {
         }
     });
 
+    it('keeps all visual items on the visual track layer', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Anchor,
+                Artist,
+                Audio,
+                CanvasMedia,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Visual layer product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Visual layer episode',
+                })
+            );
+            const visualTrack = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Scroll',
+                    type: 'scroll',
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const firstMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'layer-first.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/layer-first.png',
+                })
+            );
+            const secondMedia = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'layer-second.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/layer-second.png',
+                })
+            );
+            await dataSource.manager.save([
+                new CanvasMedia({ canvasId: canvas.id, mediaId: firstMedia.id, index: 0 }),
+                new CanvasMedia({ canvasId: canvas.id, mediaId: secondMedia.id, index: 1 }),
+            ]);
+
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+            const manifestVisualTrack = manifest.tracks.find((track) => track.id === String(visualTrack.id));
+            const visualLayerIds = manifest.items
+                .filter((item) => item.kind === 'visual')
+                .map((item) => item.layerId);
+
+            assert.equal(manifestVisualTrack?.layerId, 0);
+            assert.deepEqual(visualLayerIds, [0, 0]);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
     it('uses preview visual clip sequence timing without stretching media across cue duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
@@ -761,6 +847,234 @@ describe('PlayerService', () => {
             assert.equal(visualItem.hasTimelineControls, true);
             assert.equal(visualItem.isMuted, false);
             assert.equal(visualItem.volume, 0.55);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('maps cue source ranges and strip positions to manifest cues and audio items', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Anchor,
+                Artist,
+                Audio,
+                CanvasMedia,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Cue range product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Cue range episode',
+                })
+            );
+            const audioTrack = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'BGM',
+                    type: 'audio',
+                })
+            );
+            const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+            const media = await dataSource.manager.save(
+                new Media({
+                    episodeId: episode.id,
+                    mediaName: 'cue-position.png',
+                    mediaType: 'image',
+                    mediaUrl: 'https://assets.example.com/cue-position.png',
+                })
+            );
+            const canvasMedia = await dataSource.manager.save(
+                new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 })
+            );
+            const audio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'audio',
+                    name: 'cue-range.mp3',
+                    audioUrl: 'https://assets.example.com/cue-range.mp3',
+                    duration: 8000,
+                })
+            );
+            const cue = await dataSource.manager.save(
+                new Cue({
+                    script: '오디오 트림 테스트',
+                    trackId: audioTrack.id,
+                    audioId: audio.id,
+                    startCanvasMediaId: canvasMedia.id,
+                    endCanvasMediaId: canvasMedia.id,
+                    startTime: 1000,
+                    endTime: 5000,
+                    audioStartTime: 2000,
+                    audioEndTime: 6000,
+                    startPosition: 12,
+                    endPosition: 64,
+                    volume: 0.6,
+                })
+            );
+
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+            const manifestCue = manifest.cues.find((item) => item.id === String(cue.id)) as
+                | (typeof manifest.cues[number] & {
+                      startCanvasMediaId?: string;
+                      endCanvasMediaId?: string;
+                      audioStartTime?: number;
+                      audioEndTime?: number;
+                      startPosition?: number;
+                      endPosition?: number;
+                  })
+                | undefined;
+            const audioItem = manifest.items.find((item) => item.cueId === String(cue.id));
+
+            assert.deepEqual(
+                {
+                    startCanvasMediaId: manifestCue?.startCanvasMediaId,
+                    endCanvasMediaId: manifestCue?.endCanvasMediaId,
+                    audioStartTime: manifestCue?.audioStartTime,
+                    audioEndTime: manifestCue?.audioEndTime,
+                    startPosition: manifestCue?.startPosition,
+                    endPosition: manifestCue?.endPosition,
+                },
+                {
+                    startCanvasMediaId: String(canvasMedia.id),
+                    endCanvasMediaId: String(canvasMedia.id),
+                    audioStartTime: 2000,
+                    audioEndTime: 6000,
+                    startPosition: 12,
+                    endPosition: 64,
+                }
+            );
+            assert.deepEqual(
+                {
+                    kind: audioItem?.kind,
+                    mediaId: audioItem?.mediaId,
+                    trimStartTime: audioItem?.trimStartTime,
+                    trimEndTime: audioItem?.trimEndTime,
+                    volume: audioItem?.volume,
+                },
+                {
+                    kind: 'audio',
+                    mediaId: `audio-${audio.id}`,
+                    trimStartTime: 2000,
+                    trimEndTime: 6000,
+                    volume: 0.6,
+                }
+            );
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('does not expose unaccepted records as approved cue playback', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Anchor,
+                Artist,
+                Audio,
+                CanvasMedia,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Unaccepted record product' }));
+            const character = await dataSource.manager.save(
+                new Character({
+                    productId: product.id,
+                    name: '나리',
+                    role: 'starring',
+                })
+            );
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Unaccepted record episode',
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Dialogue',
+                    type: 'record',
+                    characterId: character.id,
+                })
+            );
+            const cue = await dataSource.manager.save(
+                new Cue({
+                    script: '미채택 녹음 테스트',
+                    characterId: character.id,
+                    trackId: track.id,
+                    startTime: 0,
+                    endTime: 2000,
+                })
+            );
+            await dataSource.manager.save(
+                new RecordEntity({
+                    cueId: cue.id,
+                    recordUrl: 'https://assets.example.com/unaccepted.wav',
+                    duration: 1800,
+                    isAccepted: false,
+                })
+            );
+
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new CharacterRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            const manifest = await playerService.getManifest({ episodeId: episode.id });
+
+            assert.equal(manifest.records.length, 1);
+            assert.equal(manifest.records[0].isAccepted, false);
+            assert.equal(manifest.cues[0].approvedRecordUrl, undefined);
         } finally {
             await dataSource.destroy();
         }

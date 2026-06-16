@@ -43,6 +43,28 @@ test('buildPlaybackEvents uses the accepted record when a cue has multiple recor
     assert.equal(recordEvent?.volume, 0.8);
 });
 
+test('buildPlaybackEvents ignores unaccepted records and falls back to tts', () => {
+    const events = buildPlaybackEvents({
+        ...sampleManifest,
+        records: [
+            {
+                id: 'record-5002-draft',
+                cueId: 'cue-5002',
+                artistId: 'artist-1',
+                recordUrl: '/audio/record-5002-draft.wav',
+                duration: 2100,
+                volume: 1,
+                isAccepted: false,
+            },
+        ],
+    });
+    const draftRecordEvent = events.find((event) => event.sourceId === 'record-5002-draft');
+    const fallbackEvent = events.find((event) => event.sourceId === 'tts-5002');
+
+    assert.equal(draftRecordEvent, undefined);
+    assert.equal(fallbackEvent?.kind, 'tts');
+});
+
 test('buildPlaybackEvents schedules tts fallback when a cue has no record', () => {
     const events = buildPlaybackEvents(sampleManifest);
     const fallbackEvent = events.find((event) => event.sourceId === 'tts-5002');
@@ -98,7 +120,41 @@ test('buildPlaybackEvents schedules audio timeline items from manifest media', (
             url: 'https://assets.example.com/opening.mp3',
             startTime: 1000,
             endTime: 5000,
+            sourceStartTime: 0,
             volume: 0.6,
         },
     ]);
+});
+
+test('buildPlaybackEvents carries audio trim start into playback events', () => {
+    const events = buildPlaybackEvents({
+        ...sampleManifest,
+        items: [
+            {
+                id: 'audio-item-trimmed',
+                trackId: 'track-audio',
+                kind: 'audio',
+                startTime: 1000,
+                endTime: 5000,
+                mediaId: 'audio-1',
+                trimStartTime: 2000,
+                trimEndTime: 6000,
+                layerId: 2,
+                volume: 0.6,
+            },
+        ],
+        media: [
+            {
+                id: 'audio-1',
+                kind: 'audio',
+                url: 'https://assets.example.com/opening.mp3',
+                durationMs: 8000,
+            },
+        ],
+        cues: [],
+        records: [],
+        tts: [],
+    });
+
+    assert.equal(events[0]?.sourceStartTime, 2000);
 });

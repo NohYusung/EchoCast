@@ -120,6 +120,8 @@ type PlayerDraft = {
         endCanvasMediaId?: string;
         startTime: number;
         endTime: number;
+        audioStartTime?: number;
+        audioEndTime?: number;
         startPosition: number;
         endPosition: number;
         ttsUrl?: string;
@@ -173,8 +175,14 @@ type PlayerManifest = {
         characterId?: string;
         trackId: string;
         audioId?: string;
+        startCanvasMediaId?: string;
+        endCanvasMediaId?: string;
         startTime: number;
         endTime: number;
+        audioStartTime?: number;
+        audioEndTime?: number;
+        startPosition: number;
+        endPosition: number;
         approvedRecordUrl?: string;
         ttsUrl?: string;
         volume: number;
@@ -370,7 +378,7 @@ export class PlayerService extends DddService {
                 (a.startTime ?? Number.MAX_SAFE_INTEGER) - (b.startTime ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
         );
         anchors.sort((a, b) => a.time - b.time || a.id - b.id);
-        scrolls.sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0) || a.id - b.id);
+        scrolls.sort((a, b) => (a.startAnchor?.time ?? 0) - (b.startAnchor?.time ?? 0) || a.id - b.id);
         const scheduledCues = cues.filter(hasAssignedCueTime);
         const cueIds = scheduledCues.map((cue) => cue.id);
         const records: RecordEntity[] =
@@ -419,6 +427,8 @@ export class PlayerService extends DddService {
         }));
         const layerIdByTrackId = new Map(tracksDraft.map((track) => [track.id, track.layerId]));
         const trackKindById = new Map(tracksDraft.map((track) => [track.id, track.kind]));
+        const visualTrackId = visualTrack?.id ?? `visual-${episode.id}`;
+        const visualLayerId = layerIdByTrackId.get(visualTrackId) ?? 0;
 
         return {
             products: [
@@ -459,14 +469,14 @@ export class PlayerService extends DddService {
                             canvas.canvasMedias.length === 1
                                 ? `visual-${canvas.id}`
                                 : `visual-${canvas.id}-${media.id}`,
-                        trackId: visualTrack?.id ?? `visual-${episode.id}`,
+                        trackId: visualTrackId,
                         kind: 'visual' as const,
                         startTime: timing.startTime,
                         endTime: timing.endTime,
                         canvasId: toId(canvas.id),
                         index: mediaIndex,
                         mediaId: toId(media.id),
-                        layerId: index,
+                        layerId: visualLayerId,
                         trimStartTime:
                             typeof canvasMedia.sourceStartTime === 'number' ? canvasMedia.sourceStartTime : undefined,
                         trimEndTime: typeof canvasMedia.sourceEndTime === 'number' ? canvasMedia.sourceEndTime : undefined,
@@ -489,6 +499,8 @@ export class PlayerService extends DddService {
                     cueId: toId(cue.id),
                     mediaId: cue.audioId ? `audio-${toId(cue.audioId)}` : undefined,
                     layerId: layerIdByTrackId.get(toId(cue.trackId)) ?? 1,
+                    trimStartTime: typeof cue.audioStartTime === 'number' ? cue.audioStartTime : undefined,
+                    trimEndTime: typeof cue.audioEndTime === 'number' ? cue.audioEndTime : undefined,
                     volume: cue.volume,
                 })),
             ].sort((a, b) => a.startTime - b.startTime || a.layerId - b.layerId || a.id.localeCompare(b.id)),
@@ -523,6 +535,8 @@ export class PlayerService extends DddService {
                 endCanvasMediaId: cue.endCanvasMediaId ? toId(cue.endCanvasMediaId) : undefined,
                 startTime: cue.startTime,
                 endTime: cue.endTime,
+                audioStartTime: cue.audioStartTime,
+                audioEndTime: cue.audioEndTime,
                 startPosition: cue.startPosition,
                 endPosition: cue.endPosition,
                 volume: cue.volume,
@@ -530,13 +544,18 @@ export class PlayerService extends DddService {
             scrolls: scrolls.map((scroll) => ({
                 id: toId(scroll.id),
                 trackId: toId(scroll.trackId),
-                canvasId: typeof scroll.canvasId === 'number' ? toId(scroll.canvasId) : undefined,
-                startIndex: scroll.startIndex ?? 0,
-                endIndex: scroll.endIndex ?? scroll.startIndex ?? 0,
-                startTime: scroll.startTime ?? 0,
-                endTime: scroll.endTime ?? scroll.startTime ?? 0,
-                startPosition: scroll.startPosition ?? 0,
-                endPosition: scroll.endPosition ?? scroll.startPosition ?? 0,
+                canvasId:
+                    typeof scroll.startAnchor?.canvasId === 'number'
+                        ? toId(scroll.startAnchor.canvasId)
+                        : typeof scroll.endAnchor?.canvasId === 'number'
+                          ? toId(scroll.endAnchor.canvasId)
+                          : undefined,
+                startIndex: scroll.startAnchor?.index ?? 0,
+                endIndex: scroll.endAnchor?.index ?? scroll.startAnchor?.index ?? 0,
+                startTime: scroll.startAnchor?.time ?? 0,
+                endTime: scroll.endAnchor?.time ?? scroll.startAnchor?.time ?? 0,
+                startPosition: scroll.startAnchor?.position ?? 0,
+                endPosition: scroll.endAnchor?.position ?? scroll.startAnchor?.position ?? 0,
             })),
             anchors: anchors.map((anchor) => ({
                 id: toId(anchor.id),
@@ -564,11 +583,10 @@ export class PlayerService extends DddService {
     }
 
     toManifest(draft: PlayerDraft): PlayerManifest {
-        const recordByCueId = new Map<string, PlayerDraft['records'][number]>();
+        const acceptedRecordByCueId = new Map<string, PlayerDraft['records'][number]>();
         for (const record of draft.records) {
-            const currentRecord = recordByCueId.get(record.cueId);
-            if (!currentRecord || (!currentRecord.isAccepted && record.isAccepted)) {
-                recordByCueId.set(record.cueId, record);
+            if (record.isAccepted) {
+                acceptedRecordByCueId.set(record.cueId, record);
             }
         }
         const cues = draft.cues.map((cue) => ({
@@ -577,9 +595,15 @@ export class PlayerService extends DddService {
             characterId: cue.characterId,
             trackId: cue.trackId,
             audioId: cue.audioId,
+            startCanvasMediaId: cue.startCanvasMediaId,
+            endCanvasMediaId: cue.endCanvasMediaId,
             startTime: cue.startTime,
             endTime: cue.endTime,
-            approvedRecordUrl: recordByCueId.get(cue.id)?.recordUrl,
+            audioStartTime: cue.audioStartTime,
+            audioEndTime: cue.audioEndTime,
+            startPosition: cue.startPosition,
+            endPosition: cue.endPosition,
+            approvedRecordUrl: acceptedRecordByCueId.get(cue.id)?.recordUrl,
             ttsUrl: cue.ttsUrl,
             volume: cue.volume,
         }));
@@ -590,7 +614,7 @@ export class PlayerService extends DddService {
             ...draft.scrolls.map((scroll) => scroll.endTime),
             ...draft.anchors.map((anchor) => anchor.time),
             ...draft.cues.map((cue) => {
-                const record = recordByCueId.get(cue.id);
+                const record = acceptedRecordByCueId.get(cue.id);
                 return record ? cue.startTime + (record.duration ?? cue.endTime - cue.startTime) : 0;
             })
         );

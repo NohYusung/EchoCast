@@ -10,13 +10,13 @@ function toScrollResponse(scroll: Scroll) {
         trackId: scroll.trackId,
         startAnchorId: scroll.startAnchorId,
         endAnchorId: scroll.endAnchorId,
-        canvasId: scroll.canvasId,
-        startIndex: scroll.startIndex,
-        endIndex: scroll.endIndex,
-        startTime: scroll.startTime,
-        endTime: scroll.endTime,
-        startPosition: scroll.startPosition,
-        endPosition: scroll.endPosition,
+        canvasId: scroll.startAnchor?.canvasId ?? scroll.endAnchor?.canvasId,
+        startIndex: scroll.startAnchor?.index,
+        endIndex: scroll.endAnchor?.index,
+        startTime: scroll.startAnchor?.time,
+        endTime: scroll.endAnchor?.time,
+        startPosition: scroll.startAnchor?.position,
+        endPosition: scroll.endAnchor?.position,
     };
 }
 
@@ -60,7 +60,7 @@ export class ScrollsService extends DddService {
             this.scrollRepository.count({ trackId }),
         ]);
         const items = scrolls
-            .sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0) || a.id - b.id)
+            .sort((a, b) => (a.startAnchor?.time ?? 0) - (b.startAnchor?.time ?? 0) || a.id - b.id)
             .map((scroll) => toScrollResponse(scroll));
 
         return { items, total };

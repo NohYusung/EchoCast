@@ -47,8 +47,14 @@ export interface CueManifest {
     characterId?: string;
     trackId: string;
     audioId?: string;
+    startCanvasMediaId?: string;
+    endCanvasMediaId?: string;
     startTime: number;
     endTime: number;
+    audioStartTime?: number;
+    audioEndTime?: number;
+    startPosition?: number;
+    endPosition?: number;
     approvedRecordUrl?: string;
     ttsUrl?: string;
     volume: number;

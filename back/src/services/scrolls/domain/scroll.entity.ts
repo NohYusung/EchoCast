@@ -35,34 +35,6 @@ export class Scroll extends DddAggregate {
     @JoinColumn({ name: 'endAnchorId' })
     endAnchor!: Anchor;
 
-    get canvasId() {
-        return this.startAnchor?.canvasId ?? this.endAnchor?.canvasId;
-    }
-
-    get startIndex() {
-        return this.startAnchor?.index;
-    }
-
-    get endIndex() {
-        return this.endAnchor?.index;
-    }
-
-    get startTime() {
-        return this.startAnchor?.time;
-    }
-
-    get endTime() {
-        return this.endAnchor?.time;
-    }
-
-    get startPosition() {
-        return this.startAnchor?.position;
-    }
-
-    get endPosition() {
-        return this.endAnchor?.position;
-    }
-
     constructor(args?: Ctor) {
         super();
         if (args) {

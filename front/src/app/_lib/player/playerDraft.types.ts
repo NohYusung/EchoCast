@@ -70,8 +70,15 @@ export interface PlayerDraft {
         scriptId: string;
         characterId: string;
         trackId: string;
+        audioId?: string;
+        startCanvasMediaId?: string;
+        endCanvasMediaId?: string;
         startTime: number;
         endTime: number;
+        audioStartTime?: number;
+        audioEndTime?: number;
+        startPosition?: number;
+        endPosition?: number;
         ttsVoiceId?: string;
         ttsUrl?: string;
         volume: number;

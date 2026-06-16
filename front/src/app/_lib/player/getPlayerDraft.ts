@@ -27,8 +27,15 @@ type TrackCueListItem = {
     script: string;
     characterId?: number | string | null;
     trackId: number | string;
+    audioId?: number | string | null;
+    startCanvasMediaId?: number | string | null;
+    endCanvasMediaId?: number | string | null;
     startTime: number;
     endTime: number;
+    audioStartTime?: number;
+    audioEndTime?: number;
+    startPosition?: number;
+    endPosition?: number;
     volume?: number;
 };
 
@@ -178,8 +185,15 @@ function toPlayerDraft({
                 scriptId: toScriptId(cue.id),
                 characterId: resolveCueCharacterId(track, cue),
                 trackId: toId(cue.trackId, toId(track.id)),
+                audioId: toOptionalId(cue.audioId ?? manifestCue?.audioId),
+                startCanvasMediaId: toOptionalId(cue.startCanvasMediaId ?? manifestCue?.startCanvasMediaId),
+                endCanvasMediaId: toOptionalId(cue.endCanvasMediaId ?? manifestCue?.endCanvasMediaId),
                 startTime: cue.startTime,
                 endTime: cue.endTime,
+                audioStartTime: cue.audioStartTime ?? manifestCue?.audioStartTime,
+                audioEndTime: cue.audioEndTime ?? manifestCue?.audioEndTime,
+                startPosition: cue.startPosition ?? manifestCue?.startPosition,
+                endPosition: cue.endPosition ?? manifestCue?.endPosition,
                 ttsUrl: manifestCue?.ttsUrl,
                 volume: cue.volume ?? manifestCue?.volume ?? 1,
             };
@@ -276,4 +290,9 @@ function getCharacterColor(characterId: string): string {
 function toId(value: number | string | null | undefined, fallback = ''): string {
     if (value === null || typeof value === 'undefined') return fallback;
     return String(value);
+}
+
+function toOptionalId(value: number | string | null | undefined): string | undefined {
+    const id = toId(value);
+    return id || undefined;
 }
