@@ -2,14 +2,14 @@ import type { PlayerDraft } from './playerDraft.types';
 import type { PlayerManifest } from './playerManifest.types';
 
 export interface TimelineItemTimingUpdate {
-    itemId: string;
+    itemId: number;
     startTime: number;
     endTime: number;
 }
 
 export function applyTimelineItemTimings(draft: PlayerDraft, updates: TimelineItemTimingUpdate[]): PlayerDraft {
     const updateById = new Map(updates.map((update) => [update.itemId, update]));
-    const cueTimingById = new Map<string, TimelineItemTimingUpdate>();
+    const cueTimingById = new Map<number, TimelineItemTimingUpdate>();
     for (const item of draft.items) {
         const update = updateById.get(item.id);
         if (update && item.kind === 'cue' && item.cueId) {

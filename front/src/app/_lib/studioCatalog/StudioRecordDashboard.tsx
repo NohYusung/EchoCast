@@ -60,11 +60,16 @@ const RECORDING_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4
 
 export function StudioRecordDashboard({ productId, episodeId, draft, manifest, episode }: StudioRecordDashboardProps) {
     const apiBaseUrl = useMemo(() => getClientApiBaseUrl(), []);
+    const productNumericId = useMemo(() => Number.parseInt(productId, 10) || 0, [productId]);
+    const episodeNumericId = useMemo(() => Number.parseInt(episodeId, 10) || 0, [episodeId]);
     const [draftState, setDraftState] = useState(draft);
     const [manifestState, setManifestState] = useState(manifest);
     const allQueue = useMemo(() => buildRecordingCueQueue({ draft: draftState, manifest: manifestState }), [draftState, manifestState]);
-    const product = draftState.products.find((item) => item.id === productId) ?? draftState.products[0] ?? { id: productId, title: `작품 ${productId}` };
-    const draftEpisode = draftState.episodes.find((item) => item.id === episodeId);
+    const product =
+        draftState.products.find((item) => item.id === productNumericId) ??
+        draftState.products[0] ??
+        { id: productNumericId, title: `작품 ${productId}` };
+    const draftEpisode = draftState.episodes.find((item) => item.id === episodeNumericId);
     const episodeTitle = episode.title || draftEpisode?.title || `에피소드 ${episodeId}`;
     const availableCharacters = useMemo(() => {
         const characterIds = new Set(allQueue.map((item) => item.characterId));
@@ -76,7 +81,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const [selectedArtistId, setSelectedArtistId] = useState('');
     const [artists, setArtists] = useState<StudioRecordArtist[]>([]);
     const [filter, setFilter] = useState<RecordingCueFilter>('all');
-    const [selectedCueId, setSelectedCueId] = useState<string | undefined>();
+    const [selectedCueId, setSelectedCueId] = useState<number | undefined>();
     const [isRecording, setIsRecording] = useState(false);
     const [isSavingRecord, setIsSavingRecord] = useState(false);
     const [recordingStartedAt, setRecordingStartedAt] = useState<number | undefined>();
@@ -155,7 +160,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const stripClips = useMemo(() => getRecordStripClips({ draft: draftState, manifest: manifestState }), [draftState, manifestState]);
     const stripCueMarkers = useMemo(() => buildRecordingCueStripMarkers({ queue: allQueue, selectedCueId: selectedCue?.cueId }), [allQueue, selectedCue?.cueId]);
     const cueCountByCharacterId = useMemo(() => {
-        const counts = new Map<string, number>();
+        const counts = new Map<number, number>();
 
         for (const item of allQueue) {
             counts.set(item.characterId, (counts.get(item.characterId) ?? 0) + 1);
@@ -407,7 +412,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         setSelectedCueId(queue[nextIndex].cueId);
     }
 
-    function toggleCharacterFilter(characterId: string) {
+    function toggleCharacterFilter(characterId: number) {
         setSelectedCharacterIds((current) =>
             current.includes(characterId) ? current.filter((item) => item !== characterId) : [...current, characterId],
         );
@@ -417,7 +422,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         setSelectedCharacterIds((current) => (current.length === availableCharacterIds.length ? [] : availableCharacterIds));
     }
 
-    function selectStripCue(cueId: string, characterId: string) {
+    function selectStripCue(cueId: number, characterId: number) {
         setSelectedCharacterIds((current) => (current.includes(characterId) ? current : [...current, characterId]));
         setSelectedCueId(cueId);
     }
@@ -744,8 +749,8 @@ function getRecordStripClips({ draft, manifest }: { draft: PlayerDraft; manifest
             const mediaType = media.kind === 'video' ? 'video' : 'image';
 
             return {
-                id: media.id,
-                mediaId: Number.parseInt(media.id, 10) || index,
+                id: String(media.id),
+                mediaId: media.id,
                 kind: mediaType === 'video' ? 'video' : 'cut',
                 start: index,
                 duration: 1,
@@ -804,7 +809,7 @@ function getSupportedRecordingMimeType(): string {
 }
 
 function getMutableRecordApiId(record: RecordingTakeSummary): number | undefined {
-    if (record.id.startsWith('approved-')) return undefined;
+    if (record.id < 0) return undefined;
     return getRecordApiId(record.id);
 }
 

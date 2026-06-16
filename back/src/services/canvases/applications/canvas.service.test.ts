@@ -363,6 +363,7 @@ describe('CanvasService', () => {
                 episodeId: episode.id,
                 medias: [{ mediaId: firstMedia.id, index: 0 }],
             });
+            const initialCanvasMediaId = created.medias[0].canvasMediaId;
 
             await canvasService.update({
                 episodeId: episode.id,
@@ -394,6 +395,7 @@ describe('CanvasService', () => {
                     index: 1,
                 },
             ]);
+            assert.equal(result.items[0].medias[1].canvasMediaId, initialCanvasMediaId);
         } finally {
             await dataSource.destroy();
         }

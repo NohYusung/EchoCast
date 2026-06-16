@@ -4,12 +4,12 @@ import { moveTimelineItemByPixels } from '../timelineDrag';
 import type { PlayerManifestItem } from '../playerManifest.types';
 
 const item: PlayerManifestItem = {
-    id: 'cue-item-5002',
-    trackId: 'track-dialogue',
+    id: 5002,
+    trackId: 2,
     kind: 'cue',
     startTime: 2600,
     endTime: 6200,
-    cueId: 'cue-5002',
+    cueId: 5002,
     layerId: 1,
     volume: 1,
 };

@@ -101,35 +101,35 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
         if (String(input) === 'http://localhost:4100/player/manifest/1') {
             return jsonResponse({
                 data: {
-                    episodeId: '1',
+                    episodeId: 1,
                     durationMs: 6100,
                     tracks: [
                         {
-                            id: '2',
+                            id: 2,
                             name: '엘렌 예거 보이스',
-                            kind: 'dialogue',
+                            kind: 'record',
                             layerId: 0,
                             isMuted: false,
                         },
                     ],
                     items: [
                         {
-                            id: 'cue-31',
-                            trackId: '2',
+                            id: 31,
+                            trackId: 2,
                             kind: 'cue',
                             startTime: 4000,
                             endTime: 6100,
-                            cueId: '31',
+                            cueId: 31,
                             layerId: 0,
                             volume: 1,
                         },
                     ],
                     cues: [
                         {
-                            id: '31',
-                            scriptId: 'cue-31',
-                            characterId: '7',
-                            trackId: '2',
+                            id: 31,
+                            scriptId: 31,
+                            characterId: 7,
+                            trackId: 2,
                             startTime: 4000,
                             endTime: 6100,
                             volume: 1,
@@ -138,9 +138,9 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
                     media: [],
                     records: [
                         {
-                            id: '44',
-                            cueId: '31',
-                            artistId: '9',
+                            id: 44,
+                            cueId: 31,
+                            artistId: 9,
                             recordUrl: 'https://assets.example.com/record.wav',
                             duration: 1900,
                             volume: 1,
@@ -160,7 +160,7 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
     assert.equal(requestedUrls.includes('http://localhost:4100/episodes/1/player-draft'), false);
     assert.deepEqual(draft.products, [
         {
-            id: '1',
+            id: 1,
             title: '진격의 거인',
             coverImageUrl: 'https://assets.example.com/cover.jpg',
         },
@@ -168,10 +168,10 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
     assert.equal(draft.episodes[0]?.title, '실제 에피소드');
     assert.equal(draft.characters[0]?.name, '엘렌 예거');
     assert.equal(draft.scripts[0]?.text, '실제 API 대사입니다.');
-    assert.equal(draft.cues[0]?.id, '31');
-    assert.equal(draft.cues[0]?.audioId, '88');
-    assert.equal(draft.cues[0]?.startCanvasMediaId, '302');
-    assert.equal(draft.cues[0]?.endCanvasMediaId, '302');
+    assert.equal(draft.cues[0]?.id, 31);
+    assert.equal(draft.cues[0]?.audioId, 88);
+    assert.equal(draft.cues[0]?.startCanvasMediaId, 302);
+    assert.equal(draft.cues[0]?.endCanvasMediaId, 302);
     assert.equal(draft.cues[0]?.audioStartTime, 200);
     assert.equal(draft.cues[0]?.audioEndTime, 2300);
     assert.equal(draft.cues[0]?.startPosition, 12);

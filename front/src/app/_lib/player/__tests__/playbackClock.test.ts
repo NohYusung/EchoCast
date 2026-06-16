@@ -12,9 +12,9 @@ test('getPlaybackSnapshot returns visual frame and active playback events for th
     const snapshot = getPlaybackSnapshot(sampleManifest, 2700);
 
     assert.equal(snapshot.currentTime, 2700);
-    assert.equal(snapshot.visualFrame.mediaId, 'media-strip-1');
+    assert.equal(snapshot.visualFrame.mediaId, 201);
     assert.equal(snapshot.activeEvents.length, 1);
-    assert.equal(snapshot.activeEvents[0].sourceId, 'tts-5002');
+    assert.equal(snapshot.activeEvents[0].sourceId, 7002);
 });
 
 test('getPlaybackSnapshot marks completion at or after duration', () => {

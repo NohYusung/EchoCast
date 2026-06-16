@@ -13,10 +13,10 @@ export type PlayerScene = {
     label: string;
     startTime: number;
     endTime: number;
-    canvasId?: string | number;
+    canvasId?: number;
     index?: number;
     mediaUrl?: string;
-    mediaId?: string;
+    mediaId?: number;
     mediaDuration?: number;
     trimStartTime?: number;
     trimEndTime?: number;
@@ -60,18 +60,17 @@ export function buildPlayerScenes(manifest: PlayerManifest): PlayerScene[] {
         return canvasScenes;
     }
 
-    const mediaById = new Map(manifest.media.map((media) => [media.id, media]));
     const visualItems = manifest.items
         .filter((item) => item.kind === 'visual')
-        .sort((a, b) => a.startTime - b.startTime || a.layerId - b.layerId || a.id.localeCompare(b.id));
+        .sort((a, b) => a.startTime - b.startTime || a.layerId - b.layerId || a.id - b.id);
     const sourceItems =
         visualItems.length > 0
             ? visualItems
             : manifest.cues
                   .slice()
-                  .sort((a, b) => a.startTime - b.startTime || a.id.localeCompare(b.id))
+                  .sort((a, b) => a.startTime - b.startTime || a.id - b.id)
                   .map<PlayerManifestItem>((cue) => ({
-                      id: `cue-scene-${cue.id}`,
+                      id: cue.id,
                       trackId: cue.trackId,
                       kind: 'visual',
                       startTime: cue.startTime,
@@ -97,11 +96,13 @@ export function buildPlayerScenes(manifest: PlayerManifest): PlayerScene[] {
     }
 
     return sourceItems.map((item, index) => {
-        const media = item.mediaId ? mediaById.get(item.mediaId) : undefined;
+        const media = item.mediaId
+            ? manifest.media.find((media) => media.id === item.mediaId && (media.kind === 'image' || media.kind === 'video'))
+            : undefined;
         const kind: PlayerSceneKind = media?.kind === 'image' || media?.kind === 'video' ? media.kind : 'placeholder';
 
         return {
-            id: item.id,
+            id: String(item.id),
             kind,
             label: kind === 'placeholder' ? `SCENE ${String(index + 1).padStart(2, '0')}` : `CUT ${String(index + 1).padStart(2, '0')}`,
             startTime: item.startTime,
@@ -151,7 +152,7 @@ function buildCanvasPreviewScenes(manifest: PlayerManifest): PlayerScene[] {
             canvasId: clip.canvasId,
             index: clip.index ?? index,
             mediaUrl: clip.mediaUrl,
-            mediaId: String(clip.mediaId),
+            mediaId: clip.mediaId,
             mediaDuration: clip.mediaDuration,
             trimStartTime: typeof clip.sourceStart === 'number' ? Math.round(clip.sourceStart * 1000) : undefined,
             trimEndTime: typeof clip.sourceEnd === 'number' ? Math.round(clip.sourceEnd * 1000) : undefined,

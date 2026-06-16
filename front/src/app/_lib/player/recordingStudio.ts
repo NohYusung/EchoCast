@@ -5,8 +5,8 @@ export type RecordingCueFilter = 'all' | 'pending' | 'done';
 export type RecordingCueStatus = 'pending' | 'done';
 
 export interface RecordingTakeSummary {
-    id: string;
-    cueId: string;
+    id: number;
+    cueId: number;
     audioUrl: string;
     durationMs?: number;
     volume: number;
@@ -15,13 +15,13 @@ export interface RecordingTakeSummary {
 }
 
 export interface RecordingCueQueueItem {
-    id: string;
-    cueId: string;
-    scriptId: string;
-    characterId: string;
+    id: number;
+    cueId: number;
+    scriptId: number;
+    characterId: number;
     characterName: string;
     characterColor: string;
-    trackId: string;
+    trackId: number;
     trackName: string;
     text: string;
     sortOrder: number;
@@ -43,8 +43,8 @@ export interface RecordingProgress {
 }
 
 export interface RecordingCueStripMarker {
-    cueId: string;
-    characterId: string;
+    cueId: number;
+    characterId: number;
     characterName: string;
     characterColor: string;
     text: string;
@@ -65,14 +65,14 @@ export function buildRecordingCueQueue({
 }: {
     draft: PlayerDraft;
     manifest?: PlayerManifest;
-    characterId?: string;
+    characterId?: number;
 }): RecordingCueQueueItem[] {
     const scriptsById = new Map(draft.scripts.map((script) => [script.id, script]));
     const charactersById = new Map(draft.characters.map((character) => [character.id, character]));
     const tracksById = new Map(draft.tracks.map((track) => [track.id, track]));
     const manifestCuesById = new Map((manifest?.cues ?? []).map((cue) => [cue.id, cue]));
-    const cuesById = new Map<string, RecordingCueSource>();
-    const recordsByCueId = new Map<string, RecordingTakeSummary[]>();
+    const cuesById = new Map<number, RecordingCueSource>();
+    const recordsByCueId = new Map<number, RecordingTakeSummary[]>();
 
     for (const cue of draft.cues) {
         cuesById.set(cue.id, cue);
@@ -95,7 +95,7 @@ export function buildRecordingCueQueue({
     for (const cue of manifest?.cues ?? []) {
         if (cue.approvedRecordUrl) {
             addRecord(recordsByCueId, {
-                id: `approved-${cue.id}`,
+                id: -cue.id,
                 cueId: cue.id,
                 audioUrl: cue.approvedRecordUrl,
                 volume: cue.volume,
@@ -109,7 +109,7 @@ export function buildRecordingCueQueue({
         .map((cue) => {
             const manifestCue = manifestCuesById.get(cue.id);
             const script = scriptsById.get(cue.scriptId);
-            const resolvedCharacterId = cue.characterId ?? script?.characterId ?? '';
+            const resolvedCharacterId = cue.characterId ?? script?.characterId ?? 0;
             const character = charactersById.get(resolvedCharacterId);
             const track = tracksById.get(cue.trackId);
             const records = recordsByCueId.get(cue.id) ?? [];
@@ -137,7 +137,7 @@ export function buildRecordingCueQueue({
             } satisfies RecordingCueQueueItem;
         })
         .filter((item) => !characterId || item.characterId === characterId)
-        .sort((left, right) => left.sortOrder - right.sortOrder || left.startTime - right.startTime || left.cueId.localeCompare(right.cueId));
+        .sort((left, right) => left.sortOrder - right.sortOrder || left.startTime - right.startTime || left.cueId - right.cueId);
 }
 
 export function getRecordingProgress(queue: RecordingCueQueueItem[]): RecordingProgress {
@@ -167,7 +167,7 @@ export function buildRecordingCueStripMarkers({
     selectedCueId,
 }: {
     queue: RecordingCueQueueItem[];
-    selectedCueId?: string;
+    selectedCueId?: number;
 }): RecordingCueStripMarker[] {
     const durationMs = Math.max(1, ...queue.map((item) => item.endTime));
 
@@ -183,7 +183,7 @@ export function buildRecordingCueStripMarkers({
             status: item.status,
             isSelected: item.cueId === selectedCueId,
         }))
-        .sort((left, right) => left.topPercent - right.topPercent || left.startTime - right.startTime || left.cueId.localeCompare(right.cueId));
+        .sort((left, right) => left.topPercent - right.topPercent || left.startTime - right.startTime || left.cueId - right.cueId);
 }
 
 export function getRecordingStorageKey(productId: string, episodeId: string): string {
@@ -202,7 +202,7 @@ function toRecordingTake(record: DraftRecord | RecordManifest, source: Recording
     };
 }
 
-function addRecord(recordsByCueId: Map<string, RecordingTakeSummary[]>, record: RecordingTakeSummary) {
+function addRecord(recordsByCueId: Map<number, RecordingTakeSummary[]>, record: RecordingTakeSummary) {
     const records = recordsByCueId.get(record.cueId) ?? [];
     if (!records.some((existing) => existing.id === record.id || existing.audioUrl === record.audioUrl)) {
         records.push(record);

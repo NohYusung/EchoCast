@@ -11,48 +11,48 @@ import type { PlayerDraft } from '../playerDraft.types';
 import type { PlayerManifest } from '../playerManifest.types';
 
 const draft: PlayerDraft = {
-    products: [{ id: '1', title: '학원의 비밀' }],
-    episodes: [{ id: '1', productId: '1', episodeNumber: 1, title: '전학생' }],
+    products: [{ id: 1, title: '학원의 비밀' }],
+    episodes: [{ id: 1, productId: 1, episodeNumber: 1, title: '전학생' }],
     characters: [
-        { id: 'hero', name: '지후', color: '#3b82f6' },
-        { id: 'rival', name: '서연', color: '#10b981' },
+        { id: 1, name: '지후', color: '#3b82f6' },
+        { id: 2, name: '서연', color: '#10b981' },
     ],
     scripts: [
-        { id: 'script-2', episodeId: '1', characterId: 'hero', text: '저 눈빛... 어디서 봤더라.', sortOrder: 2 },
-        { id: 'script-1', episodeId: '1', characterId: 'hero', text: '또 늦었네...', sortOrder: 1 },
-        { id: 'script-3', episodeId: '1', characterId: 'rival', text: '거기 서.', sortOrder: 3 },
+        { id: 2, episodeId: 1, characterId: 1, text: '저 눈빛... 어디서 봤더라.', sortOrder: 2 },
+        { id: 1, episodeId: 1, characterId: 1, text: '또 늦었네...', sortOrder: 1 },
+        { id: 3, episodeId: 1, characterId: 2, text: '거기 서.', sortOrder: 3 },
     ],
-    tracks: [{ id: 'dialogue', episodeId: '1', name: '지후 보이스', kind: 'dialogue', layerId: 1, isMuted: false }],
+    tracks: [{ id: 10, episodeId: 1, name: '지후 보이스', kind: 'record', layerId: 1, isMuted: false }],
     items: [],
     media: [],
     ttsVoices: [],
     cues: [
         {
-            id: 'cue-2',
-            episodeId: '1',
-            scriptId: 'script-2',
-            characterId: 'hero',
-            trackId: 'dialogue',
+            id: 2,
+            episodeId: 1,
+            scriptId: 2,
+            characterId: 1,
+            trackId: 10,
             startTime: 2500,
             endTime: 5200,
             volume: 1,
         },
         {
-            id: 'cue-1',
-            episodeId: '1',
-            scriptId: 'script-1',
-            characterId: 'hero',
-            trackId: 'dialogue',
+            id: 1,
+            episodeId: 1,
+            scriptId: 1,
+            characterId: 1,
+            trackId: 10,
             startTime: 0,
             endTime: 2100,
             volume: 1,
         },
         {
-            id: 'cue-3',
-            episodeId: '1',
-            scriptId: 'script-3',
-            characterId: 'rival',
-            trackId: 'dialogue',
+            id: 3,
+            episodeId: 1,
+            scriptId: 3,
+            characterId: 2,
+            trackId: 10,
             startTime: 6000,
             endTime: 7200,
             volume: 1,
@@ -60,9 +60,9 @@ const draft: PlayerDraft = {
     ],
     records: [
         {
-            id: 'record-1',
-            cueId: 'cue-1',
-            artistId: 'artist-1',
+            id: 101,
+            cueId: 1,
+            artistId: 1,
             recordUrl: '/record-1.wav',
             duration: 1900,
             volume: 1,
@@ -72,16 +72,16 @@ const draft: PlayerDraft = {
 };
 
 const manifest: PlayerManifest = {
-    episodeId: '1',
+    episodeId: 1,
     durationMs: 7200,
     tracks: [],
     items: [],
     cues: [
         {
-            id: 'cue-2',
-            scriptId: 'script-2',
-            characterId: 'hero',
-            trackId: 'dialogue',
+            id: 2,
+            scriptId: 2,
+            characterId: 1,
+            trackId: 10,
             startTime: 2500,
             endTime: 5200,
             approvedRecordUrl: '/record-2.wav',
@@ -94,7 +94,7 @@ const manifest: PlayerManifest = {
 };
 
 test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded cues done', () => {
-    const queue = buildRecordingCueQueue({ draft, manifest, characterId: 'hero' });
+    const queue = buildRecordingCueQueue({ draft, manifest, characterId: 1 });
 
     assert.deepEqual(
         queue.map((item) => ({
@@ -107,7 +107,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
         })),
         [
             {
-                cueId: 'cue-1',
+                cueId: 1,
                 text: '또 늦었네...',
                 status: 'done',
                 takeCount: 1,
@@ -115,7 +115,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
                 isAccepted: true,
             },
             {
-                cueId: 'cue-2',
+                cueId: 2,
                 text: '저 눈빛... 어디서 봤더라.',
                 status: 'done',
                 takeCount: 1,
@@ -127,7 +127,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
 });
 
 test('getRecordingProgress counts total, done, and pending cues', () => {
-    const queue = buildRecordingCueQueue({ draft, characterId: 'hero' });
+    const queue = buildRecordingCueQueue({ draft, characterId: 1 });
 
     assert.deepEqual(getRecordingProgress(queue), {
         total: 2,
@@ -138,15 +138,15 @@ test('getRecordingProgress counts total, done, and pending cues', () => {
 });
 
 test('selectInitialRecordingCue prefers the first pending cue and falls back to the first cue', () => {
-    const queue = buildRecordingCueQueue({ draft, characterId: 'hero' });
+    const queue = buildRecordingCueQueue({ draft, characterId: 1 });
 
-    assert.equal(selectInitialRecordingCue(queue)?.cueId, 'cue-2');
-    assert.equal(selectInitialRecordingCue(filterRecordingCueQueue(queue, 'done'))?.cueId, 'cue-1');
+    assert.equal(selectInitialRecordingCue(queue)?.cueId, 2);
+    assert.equal(selectInitialRecordingCue(filterRecordingCueQueue(queue, 'done'))?.cueId, 1);
 });
 
 test('buildRecordingCueStripMarkers maps cue start times to strip positions', () => {
     const queue = buildRecordingCueQueue({ draft });
-    const markers = buildRecordingCueStripMarkers({ queue, selectedCueId: 'cue-2' });
+    const markers = buildRecordingCueStripMarkers({ queue, selectedCueId: 2 });
 
     assert.deepEqual(
         markers.map((marker) => ({
@@ -157,19 +157,19 @@ test('buildRecordingCueStripMarkers maps cue start times to strip positions', ()
         })),
         [
             {
-                cueId: 'cue-1',
+                cueId: 1,
                 characterName: '지후',
                 topPercent: 4,
                 isSelected: false,
             },
             {
-                cueId: 'cue-2',
+                cueId: 2,
                 characterName: '지후',
                 topPercent: 34.72,
                 isSelected: true,
             },
             {
-                cueId: 'cue-3',
+                cueId: 3,
                 characterName: '서연',
                 topPercent: 83.33,
                 isSelected: false,

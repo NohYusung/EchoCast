@@ -69,4 +69,38 @@ export class CanvasMedia extends DddAggregate {
             this.isMuted = args.isMuted;
         }
     }
+
+    update({
+        index,
+        startTime,
+        endTime,
+        sourceStartTime,
+        sourceEndTime,
+        volume,
+        isMuted,
+    }: {
+        index?: number;
+        startTime?: number;
+        endTime?: number;
+        sourceStartTime?: number;
+        sourceEndTime?: number;
+        volume?: number;
+        isMuted?: boolean;
+    }) {
+        const changedArgs = this.stripUnchanged({
+            index,
+            startTime,
+            endTime,
+            sourceStartTime,
+            sourceEndTime,
+            volume,
+            isMuted,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
+    }
 }

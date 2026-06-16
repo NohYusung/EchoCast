@@ -1,7 +1,7 @@
 export interface RecordingUploadFileInput {
     productId: string;
     episodeId: string;
-    cueId: string;
+    cueId: number;
     recordedAtMs: number;
     contentType: string;
 }
@@ -12,7 +12,7 @@ export interface RecordingUploadFileRequest {
 }
 
 export interface RecordCreateInput {
-    cueId: string;
+    cueId: number;
     artistId: string;
     recordUrl: string;
     durationMs: number;
@@ -29,7 +29,8 @@ export interface RecordCreateRequest {
     isAccepted: boolean;
 }
 
-export function getRecordApiId(value?: string): number | undefined {
+export function getRecordApiId(value?: number | string): number | undefined {
+    if (typeof value === 'number') return Number.isInteger(value) && value > 0 ? value : undefined;
     if (!value) return undefined;
 
     const direct = Number(value);
@@ -65,7 +66,7 @@ export function buildRecordingUploadFileRequest({
 
     return {
         key: `products/${sanitizePathSegment(productId)}/episodes/${sanitizePathSegment(episodeId)}/records/${sanitizePathSegment(
-            cueId,
+            String(cueId),
         )}-${recordedAtMs}.${extension}`,
         contentType: resolvedContentType,
     };

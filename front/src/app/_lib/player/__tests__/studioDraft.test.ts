@@ -8,8 +8,8 @@ function createDraft(): PlayerDraft {
         products: [],
         episodes: [
             {
-                id: 'sample-player',
-                productId: 'product-100',
+                id: 1,
+                productId: 100,
                 episodeNumber: 1,
                 title: '1화',
             },
@@ -19,36 +19,36 @@ function createDraft(): PlayerDraft {
         tracks: [],
         items: [
             {
-                id: 'visual-strip-1',
-                trackId: 'track-visual',
+                id: 101,
+                trackId: 1,
                 kind: 'visual',
                 startTime: 0,
                 endTime: 12000,
                 layerId: 0,
-                mediaId: 'media-strip-1',
+                mediaId: 201,
             },
             {
-                id: 'cue-item-5001',
-                trackId: 'track-dialogue',
+                id: 5001,
+                trackId: 2,
                 kind: 'cue',
                 startTime: 0,
                 endTime: 2200,
                 layerId: 1,
-                cueId: 'cue-5001',
+                cueId: 5001,
             },
         ],
         media: [],
         ttsVoices: [],
         cues: [
             {
-                id: 'cue-5001',
-                episodeId: 'sample-player',
-                scriptId: 'script-5001',
-                characterId: 'character-hero',
-                trackId: 'track-dialogue',
+                id: 5001,
+                episodeId: 1,
+                scriptId: 5001,
+                characterId: 1,
+                trackId: 2,
                 startTime: 0,
                 endTime: 2200,
-                ttsVoiceId: 'voice-hero',
+                ttsVoiceId: 1,
                 ttsUrl: '/audio/tts-5001.wav',
                 volume: 1,
             },
@@ -61,7 +61,7 @@ test('applyTimelineItemTimings updates selected item timing without mutating the
     const draft = createDraft();
     const updated = applyTimelineItemTimings(draft, [
         {
-            itemId: 'cue-item-5001',
+            itemId: 5001,
             startTime: 500,
             endTime: 2700,
         },
@@ -76,7 +76,7 @@ test('applyTimelineItemTimings keeps cue timing in sync with cue timeline items'
     const draft = createDraft();
     const updated = applyTimelineItemTimings(draft, [
         {
-            itemId: 'cue-item-5001',
+            itemId: 5001,
             startTime: 700,
             endTime: 2900,
         },
@@ -103,7 +103,7 @@ test('saveTimelineItemTimings fetches the current draft, applies edits, and send
         return new Response(
             JSON.stringify({
                 manifest: {
-                    episodeId: 'sample-player',
+                    episodeId: 1,
                     durationMs: 13000,
                 },
             }),
@@ -116,7 +116,7 @@ test('saveTimelineItemTimings fetches the current draft, applies edits, and send
         episodeId: 'sample-player',
         updates: [
             {
-                itemId: 'visual-strip-1',
+                itemId: 101,
                 startTime: 1000,
                 endTime: 13000,
             },

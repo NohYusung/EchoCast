@@ -13,7 +13,7 @@ export function buildVogopangContent(draft: PlayerDraft): VogopangContent {
     const imageMedia = draft.media.filter((media) => media.kind === 'image');
     const scriptsById = new Map(draft.scripts.map((script) => [script.id, script]));
     const charactersById = new Map(draft.characters.map((character) => [character.id, character]));
-    const recordByCueId = new Map<string, PlayerDraft['records'][number]>();
+    const recordByCueId = new Map<number, PlayerDraft['records'][number]>();
     for (const record of draft.records) {
         if (!recordByCueId.has(record.cueId)) {
             recordByCueId.set(record.cueId, record);
@@ -42,7 +42,7 @@ export function buildVogopangContent(draft: PlayerDraft): VogopangContent {
         });
     }
 
-    const trackByCharacterId = new Map<string, VogopangContentTrack>();
+    const trackByCharacterId = new Map<number, VogopangContentTrack>();
     cues.forEach((cue, index) => {
         const character = charactersById.get(cue.characterId);
         const script = scriptsById.get(cue.scriptId);
@@ -51,17 +51,17 @@ export function buildVogopangContent(draft: PlayerDraft): VogopangContent {
         const track =
             trackByCharacterId.get(character.id) ??
             ({
-                character_uuid: character.id,
+                character_uuid: String(character.id),
                 character_name: character.name,
                 holes: [],
             } satisfies VogopangContentTrack);
         const record = recordByCueId.get(cue.id);
         track.holes.push({
-            uuid: cue.id,
-            script_uuid: script.id,
+            uuid: String(cue.id),
+            script_uuid: String(script.id),
             start_ms: cue.startTime,
             duration_ms: cue.endTime - cue.startTime,
-            tts_uuid: cue.ttsVoiceId,
+            tts_uuid: typeof cue.ttsVoiceId === 'number' ? String(cue.ttsVoiceId) : undefined,
             script: script.text,
             index,
             records: [resolveVogopangRecord({ cue, record })],
@@ -71,8 +71,8 @@ export function buildVogopangContent(draft: PlayerDraft): VogopangContent {
 
     return {
         images: imageMedia.map((media, index) => ({
-            uuid: media.id,
-            realname: media.id,
+            uuid: String(media.id),
+            realname: String(media.id),
             order: index,
             src: media.url,
             url: media.url,
@@ -101,7 +101,7 @@ function resolveVogopangRecord({
     if (record) {
         return {
             src: record.recordUrl,
-            artist_no: record.artistId ? Number(record.artistId.replace(/\D/g, '')) || 0 : 0,
+            artist_no: record.artistId ?? 0,
             margin: 0,
         };
     }
@@ -114,15 +114,16 @@ function resolveVogopangRecord({
 }
 
 function buildAudioTracks(draft: PlayerDraft): VogopangContentAudioTrack[] {
-    const mediaById = new Map(draft.media.map((media) => [media.id, media]));
-
     return draft.tracks
-        .filter((track) => track.kind === 'audio' || track.kind === 'effect')
+        .filter((track) => track.kind === 'audio' || track.kind === 'bgm' || track.kind === 'effect')
         .map((track) => {
             const clips = draft.items
                 .filter((item) => item.trackId === track.id && item.mediaId)
                 .map((item) => {
-                    const media = mediaById.get(item.mediaId ?? '');
+                    const media =
+                        typeof item.mediaId === 'number'
+                            ? draft.media.find((media) => media.id === item.mediaId && (media.kind === 'audio' || media.kind === 'effect'))
+                            : undefined;
                     const durationMs = media?.durationMs ?? Math.max(0, item.endTime - item.startTime);
 
                     return {
@@ -137,7 +138,7 @@ function buildAudioTracks(draft: PlayerDraft): VogopangContentAudioTrack[] {
                 });
 
             return {
-                uuid: track.id,
+                uuid: String(track.id),
                 name: track.name,
                 graph: [],
                 clips,

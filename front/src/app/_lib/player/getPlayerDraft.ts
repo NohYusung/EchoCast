@@ -1,5 +1,5 @@
 import type { PlayerDraft } from './playerDraft.types';
-import type { PlayerManifest } from './playerManifest.types';
+import type { PlayerManifest, PlayerTrackKind } from './playerManifest.types';
 
 type ProductRetrieveItem = {
     id: number | string;
@@ -20,7 +20,7 @@ type CharacterListItem = {
     name: string;
 };
 
-type TrackApiType = 'scroll' | 'scrolls' | 'record' | 'audio' | 'effect' | 'bgm';
+type TrackApiType = PlayerTrackKind;
 
 type TrackCueListItem = {
     id: number | string;
@@ -135,59 +135,64 @@ function toPlayerDraft({
 }): PlayerDraft {
     const recordingCueEntries = tracks
         .flatMap((track) => (track.cues ?? []).map((cue) => ({ track, cue })))
-        .filter(({ track, cue }) => resolveCueCharacterId(track, cue) !== '')
-        .sort((left, right) => left.cue.startTime - right.cue.startTime || toId(left.cue.id).localeCompare(toId(right.cue.id)));
+        .filter(({ track, cue }) => typeof resolveCueCharacterId(track, cue) === 'number')
+        .sort((left, right) => left.cue.startTime - right.cue.startTime || toNumericId(left.cue.id) - toNumericId(right.cue.id));
     const manifestCuesById = new Map(manifest.cues.map((cue) => [cue.id, cue]));
+    const productNumericId = toNumericId(product.id, toNumericId(productId));
+    const episodeNumericId = toNumericId(episode.id, toNumericId(episodeId));
 
     return {
         products: [
             {
-                id: toId(product.id, productId),
+                id: productNumericId,
                 title: product.title || `프로젝트 ${productId}`,
                 coverImageUrl: product.coverImageUrl,
             },
         ],
         episodes: [
             {
-                id: toId(episode.id, episodeId),
-                productId: toId(episode.productId, productId),
+                id: episodeNumericId,
+                productId: toNumericId(episode.productId, productNumericId),
                 episodeNumber: toEpisodeNumber(episode.episodeNumber, episodeId),
                 title: episode.title || `에피소드 ${episodeId}`,
                 subTitle: episode.subTitle,
             },
         ],
         characters: characters.map((character) => ({
-            id: toId(character.id),
+            id: toNumericId(character.id),
             name: character.name,
-            color: getCharacterColor(toId(character.id)),
+            color: getCharacterColor(toNumericId(character.id)),
         })),
         scripts: recordingCueEntries.map(({ track, cue }, index) => ({
-            id: toScriptId(cue.id),
-            episodeId,
-            characterId: resolveCueCharacterId(track, cue),
+            id: toNumericId(cue.id),
+            episodeId: episodeNumericId,
+            characterId: resolveCueCharacterId(track, cue) ?? 0,
             text: cue.script,
             sortOrder: index + 1,
         })),
-        tracks: tracks.length > 0 ? tracks.map((track, index) => toDraftTrack(track, index, episodeId)) : manifest.tracks.map((track) => ({ ...track, episodeId })),
+        tracks:
+            tracks.length > 0
+                ? tracks.map((track, index) => toDraftTrack(track, index, episodeNumericId))
+                : manifest.tracks.map((track) => ({ ...track, episodeId: episodeNumericId })),
         items: manifest.items,
         media: manifest.media.map((media) => ({
             ...media,
-            episodeId,
+            episodeId: episodeNumericId,
         })),
         ttsVoices: toTtsVoices(manifest),
         cues: recordingCueEntries.map(({ track, cue }) => {
-            const cueId = toId(cue.id);
+            const cueId = toNumericId(cue.id);
             const manifestCue = manifestCuesById.get(cueId);
 
             return {
                 id: cueId,
-                episodeId,
-                scriptId: toScriptId(cue.id),
-                characterId: resolveCueCharacterId(track, cue),
-                trackId: toId(cue.trackId, toId(track.id)),
-                audioId: toOptionalId(cue.audioId ?? manifestCue?.audioId),
-                startCanvasMediaId: toOptionalId(cue.startCanvasMediaId ?? manifestCue?.startCanvasMediaId),
-                endCanvasMediaId: toOptionalId(cue.endCanvasMediaId ?? manifestCue?.endCanvasMediaId),
+                episodeId: episodeNumericId,
+                scriptId: cueId,
+                characterId: resolveCueCharacterId(track, cue) ?? 0,
+                trackId: toNumericId(cue.trackId, toNumericId(track.id)),
+                audioId: toOptionalNumericId(cue.audioId ?? manifestCue?.audioId),
+                startCanvasMediaId: toOptionalNumericId(cue.startCanvasMediaId ?? manifestCue?.startCanvasMediaId),
+                endCanvasMediaId: toOptionalNumericId(cue.endCanvasMediaId ?? manifestCue?.endCanvasMediaId),
                 startTime: cue.startTime,
                 endTime: cue.endTime,
                 audioStartTime: cue.audioStartTime ?? manifestCue?.audioStartTime,
@@ -204,17 +209,20 @@ function toPlayerDraft({
 }
 
 function createEmptyPlayerDraft({ productId, episodeId }: PlayerDraftParams): PlayerDraft {
+    const productNumericId = toNumericId(productId);
+    const episodeNumericId = toNumericId(episodeId);
+
     return {
         products: [
             {
-                id: productId,
+                id: productNumericId,
                 title: `프로젝트 ${productId}`,
             },
         ],
         episodes: [
             {
-                id: episodeId,
-                productId,
+                id: episodeNumericId,
+                productId: productNumericId,
                 episodeNumber: toEpisodeNumber(undefined, episodeId),
                 title: `에피소드 ${episodeId}`,
             },
@@ -231,26 +239,19 @@ function createEmptyPlayerDraft({ productId, episodeId }: PlayerDraftParams): Pl
     };
 }
 
-function toDraftTrack(track: TrackListItem, index: number, episodeId: string): PlayerDraft['tracks'][number] {
+function toDraftTrack(track: TrackListItem, index: number, episodeId: number): PlayerDraft['tracks'][number] {
     return {
-        id: toId(track.id),
-        episodeId: toId(track.episodeId, episodeId),
+        id: toNumericId(track.id),
+        episodeId: toNumericId(track.episodeId, episodeId),
         name: track.name,
-        kind: toDraftTrackKind(track.type),
+        kind: track.type,
         layerId: index,
         isMuted: track.isMuted,
     };
 }
 
-function toDraftTrackKind(type: TrackApiType): PlayerDraft['tracks'][number]['kind'] {
-    if (type === 'record') return 'dialogue';
-    if (type === 'effect') return 'effect';
-    if (type === 'audio' || type === 'bgm') return 'audio';
-    return 'visual';
-}
-
 function toTtsVoices(manifest: PlayerManifest): PlayerDraft['ttsVoices'] {
-    const voiceById = new Map<string, PlayerDraft['ttsVoices'][number]>();
+    const voiceById = new Map<number, PlayerDraft['ttsVoices'][number]>();
 
     for (const tts of manifest.tts) {
         if (!voiceById.has(tts.voiceId)) {
@@ -266,12 +267,8 @@ function toTtsVoices(manifest: PlayerManifest): PlayerDraft['ttsVoices'] {
     return [...voiceById.values()];
 }
 
-function resolveCueCharacterId(track: TrackListItem, cue: TrackCueListItem): string {
-    return toId(cue.characterId ?? track.characterId ?? '');
-}
-
-function toScriptId(cueId: number | string): string {
-    return `cue-${toId(cueId)}`;
+function resolveCueCharacterId(track: TrackListItem, cue: TrackCueListItem): number | undefined {
+    return toOptionalNumericId(cue.characterId ?? track.characterId);
 }
 
 function toEpisodeNumber(value: number | undefined, episodeId: string): number {
@@ -281,18 +278,21 @@ function toEpisodeNumber(value: number | undefined, episodeId: string): number {
     return Number.isFinite(parsedEpisodeId) ? parsedEpisodeId : 0;
 }
 
-function getCharacterColor(characterId: string): string {
+function getCharacterColor(characterId: number): string {
     const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444', '#64748b'];
-    const seed = Array.from(characterId).reduce((sum, letter) => sum + letter.charCodeAt(0), 0);
-    return colors[seed % colors.length];
+    return colors[Math.abs(characterId) % colors.length];
 }
 
-function toId(value: number | string | null | undefined, fallback = ''): string {
-    if (value === null || typeof value === 'undefined') return fallback;
-    return String(value);
+function toNumericId(value: number | string | null | undefined, fallback = 0): number {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return fallback;
 }
 
-function toOptionalId(value: number | string | null | undefined): string | undefined {
-    const id = toId(value);
-    return id || undefined;
+function toOptionalNumericId(value: number | string | null | undefined): number | undefined {
+    const id = toNumericId(value, Number.NaN);
+    return Number.isFinite(id) ? id : undefined;
 }

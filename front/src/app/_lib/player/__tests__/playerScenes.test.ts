@@ -5,39 +5,39 @@ import type { PlayerManifest } from '../playerManifest.types';
 
 test('buildPlayerScenes preserves canvas visuals that share the same timeline window', () => {
     const manifest: PlayerManifest = {
-        episodeId: '1',
+        episodeId: 1,
         durationMs: 4000,
         tracks: [
             {
-                id: 'visual-1',
+                id: 1,
                 name: 'Visual',
-                kind: 'visual',
+                kind: 'scroll',
                 layerId: 0,
                 isMuted: false,
             },
         ],
         items: [
             {
-                id: 'visual-20',
-                trackId: 'visual-1',
+                id: 20,
+                trackId: 1,
                 kind: 'visual',
                 startTime: 0,
                 endTime: 4000,
-                canvasId: 'canvas-1',
+                canvasId: 1,
                 index: 1,
-                mediaId: 'media-2',
+                mediaId: 2,
                 layerId: 0,
                 volume: 1,
             },
             {
-                id: 'visual-10',
-                trackId: 'visual-1',
+                id: 10,
+                trackId: 1,
                 kind: 'visual',
                 startTime: 0,
                 endTime: 4000,
-                canvasId: 'canvas-1',
+                canvasId: 1,
                 index: 0,
-                mediaId: 'media-1',
+                mediaId: 1,
                 layerId: 1,
                 volume: 1,
             },
@@ -45,12 +45,12 @@ test('buildPlayerScenes preserves canvas visuals that share the same timeline wi
         cues: [],
         media: [
             {
-                id: 'media-1',
+                id: 1,
                 kind: 'image',
                 url: '/media/one.png',
             },
             {
-                id: 'media-2',
+                id: 2,
                 kind: 'image',
                 url: '/media/two.png',
             },
@@ -70,8 +70,8 @@ test('buildPlayerScenes preserves canvas visuals that share the same timeline wi
             endTime: scene.endTime,
         })),
         [
-            { canvasId: 'canvas-1', index: 1, mediaId: 'media-2', startTime: 0, endTime: 4000 },
-            { canvasId: 'canvas-1', index: 0, mediaId: 'media-1', startTime: 0, endTime: 4000 },
+            { canvasId: 1, index: 1, mediaId: 2, startTime: 0, endTime: 4000 },
+            { canvasId: 1, index: 0, mediaId: 1, startTime: 0, endTime: 4000 },
         ],
     );
     assert.equal(shouldDriveStripScrollFromScenes(scenes), false);
@@ -79,25 +79,25 @@ test('buildPlayerScenes preserves canvas visuals that share the same timeline wi
 
 test('buildPlayerScenes does not reserve duration-based height for image media', () => {
     const manifest: PlayerManifest = {
-        episodeId: '1',
+        episodeId: 1,
         durationMs: 33000,
         tracks: [
             {
-                id: 'visual-1',
+                id: 1,
                 name: 'Visual',
-                kind: 'visual',
+                kind: 'scroll',
                 layerId: 0,
                 isMuted: false,
             },
         ],
         items: [
             {
-                id: 'visual-long',
-                trackId: 'visual-1',
+                id: 30,
+                trackId: 1,
                 kind: 'visual',
                 startTime: 0,
                 endTime: 33000,
-                mediaId: 'media-long',
+                mediaId: 3,
                 layerId: 0,
                 volume: 1,
             },
@@ -105,7 +105,7 @@ test('buildPlayerScenes does not reserve duration-based height for image media',
         cues: [],
         media: [
             {
-                id: 'media-long',
+                id: 3,
                 kind: 'image',
                 url: '/media/long.png',
             },
@@ -122,25 +122,25 @@ test('buildPlayerScenes does not reserve duration-based height for image media',
 
 test('buildPlayerScenes carries video playback controls from manifest items', () => {
     const manifest: PlayerManifest = {
-        episodeId: '1',
+        episodeId: 1,
         durationMs: 12000,
         tracks: [
             {
-                id: 'visual-1',
+                id: 1,
                 name: 'Visual',
-                kind: 'visual',
+                kind: 'scroll',
                 layerId: 0,
                 isMuted: false,
             },
         ],
         items: [
             {
-                id: 'visual-video',
-                trackId: 'visual-1',
+                id: 40,
+                trackId: 1,
                 kind: 'visual',
                 startTime: 2000,
                 endTime: 9000,
-                mediaId: 'video-1',
+                mediaId: 4,
                 layerId: 0,
                 trimStartTime: 1000,
                 trimEndTime: 8000,
@@ -152,7 +152,7 @@ test('buildPlayerScenes carries video playback controls from manifest items', ()
         cues: [],
         media: [
             {
-                id: 'video-1',
+                id: 4,
                 kind: 'video',
                 url: '/media/video.mp4',
                 durationMs: 12000,
@@ -173,27 +173,75 @@ test('buildPlayerScenes carries video playback controls from manifest items', ()
     assert.equal(scene.hasTimelineControls, true);
 });
 
-test('buildPlayerScenes uses preview canvas visual clips before legacy visual items', () => {
-    const manifest = {
-        episodeId: '1',
-        durationMs: 12000,
+test('buildPlayerScenes resolves visual media by id and kind when audio ids overlap', () => {
+    const manifest: PlayerManifest = {
+        episodeId: 1,
+        durationMs: 4000,
         tracks: [
             {
-                id: 'visual-1',
+                id: 1,
                 name: 'Visual',
-                kind: 'visual',
+                kind: 'scroll',
                 layerId: 0,
                 isMuted: false,
             },
         ],
         items: [
             {
-                id: 'legacy-visual',
-                trackId: 'visual-1',
+                id: 60,
+                trackId: 1,
+                kind: 'visual',
+                startTime: 0,
+                endTime: 4000,
+                mediaId: 7,
+                layerId: 0,
+                volume: 1,
+            },
+        ],
+        cues: [],
+        media: [
+            {
+                id: 7,
+                kind: 'image',
+                url: '/media/visual.png',
+            },
+            {
+                id: 7,
+                kind: 'audio',
+                url: '/audio/colliding.mp3',
+            },
+        ],
+        records: [],
+        tts: [],
+    };
+
+    const [scene] = buildPlayerScenes(manifest);
+
+    assert.equal(scene.kind, 'image');
+    assert.equal(scene.mediaUrl, '/media/visual.png');
+});
+
+test('buildPlayerScenes uses preview canvas visual clips before legacy visual items', () => {
+    const manifest = {
+        episodeId: 1,
+        durationMs: 12000,
+        tracks: [
+            {
+                id: 1,
+                name: 'Visual',
+                kind: 'scroll',
+                layerId: 0,
+                isMuted: false,
+            },
+        ],
+        items: [
+            {
+                id: 50,
+                trackId: 1,
                 kind: 'visual',
                 startTime: 7000,
                 endTime: 8000,
-                mediaId: 'legacy-media',
+                mediaId: 201,
                 layerId: 0,
                 volume: 1,
             },
@@ -232,7 +280,7 @@ test('buildPlayerScenes uses preview canvas visual clips before legacy visual it
         cues: [],
         media: [
             {
-                id: 'legacy-media',
+                id: 201,
                 kind: 'image',
                 url: '/media/legacy.png',
             },
@@ -266,7 +314,7 @@ test('buildPlayerScenes uses preview canvas visual clips before legacy visual it
                 canvasId: 11,
                 index: 0,
                 kind: 'image',
-                mediaId: '101',
+                mediaId: 101,
                 mediaUrl: '/media/one.png',
                 startTime: 0,
                 endTime: 1000,
@@ -282,7 +330,7 @@ test('buildPlayerScenes uses preview canvas visual clips before legacy visual it
                 canvasId: 11,
                 index: 1,
                 kind: 'video',
-                mediaId: '102',
+                mediaId: 102,
                 mediaUrl: '/media/clip.mp4',
                 startTime: 2000,
                 endTime: 9000,
@@ -306,7 +354,7 @@ test('shouldDriveStripScrollFromScenes enables playback scroll only when visual 
                 label: 'CUT 01',
                 startTime: 0,
                 endTime: 2000,
-                mediaId: 'media-1',
+                mediaId: 1,
                 mediaUrl: '/media/one.png',
                 volume: 1,
                 height: 420,
@@ -318,7 +366,7 @@ test('shouldDriveStripScrollFromScenes enables playback scroll only when visual 
                 label: 'CUT 02',
                 startTime: 2000,
                 endTime: 4000,
-                mediaId: 'media-2',
+                mediaId: 2,
                 mediaUrl: '/media/two.png',
                 volume: 1,
                 height: 420,

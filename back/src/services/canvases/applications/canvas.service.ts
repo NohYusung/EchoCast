@@ -125,26 +125,46 @@ export class CanvasService extends DddService {
 
         const mediaItems = await this.resolveMediaItems({ episodeId, medias });
         const existingCanvasMedias = await this.canvasMediaRepository.find({ canvasId: canvas.id });
-        if (existingCanvasMedias.length > 0) {
-            await this.canvasMediaRepository.softRemove(existingCanvasMedias);
-        }
+        const usedCanvasMediaIds = new Set<number>();
         const canvasMedias = mediaItems.map((mediaItem, index) => {
-            const canvasMedia = new CanvasMedia({
-                canvasId: canvas.id,
-                mediaId: mediaItem.id,
-                index: medias[index]?.index,
-                startTime: medias[index]?.startTime,
-                endTime: medias[index]?.endTime,
-                sourceStartTime: medias[index]?.sourceStartTime,
-                sourceEndTime: medias[index]?.sourceEndTime,
-                volume: medias[index]?.volume,
-                isMuted: medias[index]?.isMuted,
+            const media = medias[index];
+            const canvasMedia =
+                existingCanvasMedias.find(
+                    (item) =>
+                        !usedCanvasMediaIds.has(item.id) &&
+                        item.mediaId === mediaItem.id &&
+                        item.index === media?.index
+                ) ??
+                existingCanvasMedias.find(
+                    (item) => !usedCanvasMediaIds.has(item.id) && item.mediaId === mediaItem.id
+                ) ??
+                new CanvasMedia({
+                    canvasId: canvas.id,
+                    mediaId: mediaItem.id,
+                });
+
+            if (typeof canvasMedia.id === 'number') {
+                usedCanvasMediaIds.add(canvasMedia.id);
+            }
+            canvasMedia.update({
+                index: media?.index,
+                startTime: media?.startTime,
+                endTime: media?.endTime,
+                sourceStartTime: media?.sourceStartTime,
+                sourceEndTime: media?.sourceEndTime,
+                volume: media?.volume,
+                isMuted: media?.isMuted,
             });
             canvasMedia.canvas = canvas;
             canvasMedia.media = mediaItem;
 
             return canvasMedia;
         });
+        const removedCanvasMedias = existingCanvasMedias.filter((item) => !usedCanvasMediaIds.has(item.id));
+
+        if (removedCanvasMedias.length > 0) {
+            await this.canvasMediaRepository.softRemove(removedCanvasMedias);
+        }
 
         if (canvasMedias.length > 0) {
             await this.canvasMediaRepository.save(canvasMedias);

@@ -19,21 +19,21 @@ test('buildRecordingUploadFileRequest builds an upload key and forwards content 
         buildRecordingUploadFileRequest({
             productId: '1',
             episodeId: '2',
-            cueId: 'cue-33',
+            cueId: 33,
             recordedAtMs: 12345,
             contentType: 'audio/webm;codecs=opus',
         }),
         {
-            key: 'products/1/episodes/2/records/cue-33-12345.webm',
+            key: 'products/1/episodes/2/records/33-12345.webm',
             contentType: 'audio/webm;codecs=opus',
         },
     );
 });
 
-test('buildRecordCreateRequest maps string ids to the records API contract', () => {
+test('buildRecordCreateRequest maps ids to the records API contract', () => {
     assert.deepEqual(
         buildRecordCreateRequest({
-            cueId: 'cue-33',
+            cueId: 33,
             artistId: 'artist-7',
             recordUrl: 'https://assets.example.com/record.webm',
             durationMs: 1340,

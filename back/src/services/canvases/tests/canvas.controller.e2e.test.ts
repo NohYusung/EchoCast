@@ -267,6 +267,7 @@ test('PUT /episodes/:episodeId/canvases/:canvasId replaces attached media items'
         const beforeListResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/canvases`).expect(200);
         const canvas = beforeListResponse.body.data.items[0];
         assert.ok(canvas);
+        const initialCanvasMediaId = canvas.medias[0].canvasMediaId;
 
         await request(app.getHttpServer())
             .put(`/episodes/${episode.id}/canvases/${canvas.id}`)
@@ -305,6 +306,7 @@ test('PUT /episodes/:episodeId/canvases/:canvasId replaces attached media items'
                 index: 1,
             },
         ]);
+        assert.equal(items[0].medias[1].canvasMediaId, initialCanvasMediaId);
     } finally {
         await app.close();
     }

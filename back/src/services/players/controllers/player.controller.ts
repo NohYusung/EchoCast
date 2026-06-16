@@ -15,11 +15,11 @@ export class PlayerController {
      *     episodeId: '1',
      *     durationMs: 3000,
      *     tracks: [
-     *       { id: 'visual-1', name: 'Visual', kind: 'visual', layerId: 0, isMuted: false },
-     *       { id: '1', name: 'Dialogue', kind: 'dialogue', layerId: 1, isMuted: false }
+     *       { id: '1', name: 'Dialogue', kind: 'record', layerId: 0, isMuted: false },
+     *       { id: '2', name: 'Scroll', kind: 'scroll', layerId: 1, isMuted: false }
      *     ],
      *     items: [
-     *       { id: 'visual-1', trackId: 'visual-1', kind: 'visual', startTime: 0, endTime: 3000, mediaId: '1', layerId: 0, volume: 1 },
+     *       { id: 'visual-1', trackId: '2', kind: 'visual', startTime: 0, endTime: 3000, mediaId: '1', layerId: 1, volume: 1 },
      *       { id: 'cue-1', trackId: '1', kind: 'cue', startTime: 500, endTime: 2500, cueId: '1', layerId: 1, volume: 1 }
      *     ],
      *     cues: [

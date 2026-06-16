@@ -187,32 +187,32 @@ describe('PlayerService', () => {
 
             assert.deepEqual(draft.products, [
                 {
-                    id: String(product.id),
+                    id: product.id,
                     title: 'Player test product',
                     coverImageUrl: 'https://assets.example.com/cover.png',
                 },
             ]);
-            assert.equal(draft.media[0].id, String(media.id));
+            assert.equal(draft.media[0].id, media.id);
             assert.equal(draft.media[0].kind, 'image');
-            assert.equal(draft.media.some((item) => item.id === String(secondMedia.id)), true);
+            assert.equal(draft.media.some((item) => item.id === secondMedia.id), true);
             assert.equal(Object.hasOwn(draft, 'items'), true);
-            assert.equal(draft.items.some((item) => item.kind === 'visual' && item.mediaId === String(media.id)), true);
+            assert.equal(draft.items.some((item) => item.kind === 'visual' && item.mediaId === media.id), true);
             assert.equal(
-                draft.items.some((item) => item.kind === 'visual' && item.mediaId === String(secondMedia.id)),
+                draft.items.some((item) => item.kind === 'visual' && item.mediaId === secondMedia.id),
                 true
             );
             assert.equal(draft.scripts[0].text, '플레이어 테스트 대사');
             assert.equal(draft.scripts[0].id, draft.cues[0].scriptId);
-            assert.equal(draft.cues[0].id, String(cue.id));
+            assert.equal(draft.cues[0].id, cue.id);
             assert.equal(draft.records[0].recordUrl, 'https://assets.example.com/record-draft.wav');
             assert.equal(draft.records[0].isAccepted, false);
             assert.equal(draft.records[1].recordUrl, 'https://assets.example.com/record.wav');
             assert.equal(draft.records[1].isAccepted, true);
             assert.deepEqual(draft.scrolls, [
                 {
-                    id: '1',
-                    trackId: String(visualTrack.id),
-                    canvasId: String(canvas.id),
+                    id: 1,
+                    trackId: visualTrack.id,
+                    canvasId: canvas.id,
                     startIndex: 0,
                     endIndex: 1,
                     startTime: 0,
@@ -222,11 +222,11 @@ describe('PlayerService', () => {
                 },
             ]);
 
-            assert.equal(manifest.episodeId, String(episode.id));
+            assert.equal(manifest.episodeId, episode.id);
             assert.equal(manifest.durationMs, 3000);
             assert.equal(manifest.cues[0].approvedRecordUrl, 'https://assets.example.com/record.wav');
-            assert.equal(manifest.items.find((item) => item.mediaId === String(media.id))?.canvasId, String(canvas.id));
-            assert.equal(manifest.items.find((item) => item.mediaId === String(secondMedia.id))?.index, 1);
+            assert.equal(manifest.items.find((item) => item.mediaId === media.id)?.canvasId, canvas.id);
+            assert.equal(manifest.items.find((item) => item.mediaId === secondMedia.id)?.index, 1);
             const playerCanvasManifest = manifest as typeof manifest & {
                 previewCanvasId?: number;
                 canvases?: Array<{
@@ -282,9 +282,9 @@ describe('PlayerService', () => {
             );
             assert.deepEqual(manifest.scrolls, [
                 {
-                    id: '1',
-                    trackId: String(visualTrack.id),
-                    canvasId: String(canvas.id),
+                    id: 1,
+                    trackId: visualTrack.id,
+                    canvasId: canvas.id,
                     startIndex: 0,
                     endIndex: 1,
                     startTime: 0,
@@ -299,7 +299,7 @@ describe('PlayerService', () => {
         }
     });
 
-    it('assigns unique layer ids when a visual track is synthesized from canvases', async () => {
+    it('does not synthesize a normalized visual track from canvases', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [
@@ -379,16 +379,15 @@ describe('PlayerService', () => {
             );
 
             const manifest = await playerService.getManifest({ episodeId: episode.id });
-            const visualTrack = manifest.tracks.find((track) => track.kind === 'visual');
-            const manifestDialogueTrack = manifest.tracks.find((track) => track.id === String(dialogueTrack.id));
-            const cueItem = manifest.items.find((item) => item.cueId === String(cue.id));
+            const manifestDialogueTrack = manifest.tracks.find((track) => track.id === dialogueTrack.id);
+            const cueItem = manifest.items.find((item) => item.cueId === cue.id);
 
-            assert.ok(visualTrack);
+            assert.equal(manifest.tracks.some((track) => (track.kind as string) === 'visual'), false);
             assert.ok(manifestDialogueTrack);
             assert.ok(cueItem);
-            assert.equal(visualTrack.layerId, 0);
-            assert.equal(manifestDialogueTrack.layerId, 1);
-            assert.equal(cueItem.layerId, 1);
+            assert.equal(manifestDialogueTrack.kind, 'record');
+            assert.equal(manifestDialogueTrack.layerId, 0);
+            assert.equal(cueItem.layerId, 0);
         } finally {
             await dataSource.destroy();
         }
@@ -473,13 +472,13 @@ describe('PlayerService', () => {
             const manifest = await playerService.getManifest({ episodeId: episode.id });
             const visualMediaIds = manifest.items.filter((item) => item.kind === 'visual').map((item) => item.mediaId);
 
-            assert.deepEqual(visualMediaIds, [String(firstMedia.id), String(secondMedia.id), String(thirdMedia.id)]);
+            assert.deepEqual(visualMediaIds, [firstMedia.id, secondMedia.id, thirdMedia.id]);
         } finally {
             await dataSource.destroy();
         }
     });
 
-    it('keeps all visual items on the visual track layer', async () => {
+    it('keeps all visual items on the scroll track layer when a scroll track exists', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [
@@ -553,11 +552,12 @@ describe('PlayerService', () => {
             );
 
             const manifest = await playerService.getManifest({ episodeId: episode.id });
-            const manifestVisualTrack = manifest.tracks.find((track) => track.id === String(visualTrack.id));
+            const manifestVisualTrack = manifest.tracks.find((track) => track.id === visualTrack.id);
             const visualLayerIds = manifest.items
                 .filter((item) => item.kind === 'visual')
                 .map((item) => item.layerId);
 
+            assert.equal(manifestVisualTrack?.kind, 'scroll');
             assert.equal(manifestVisualTrack?.layerId, 0);
             assert.deepEqual(visualLayerIds, [0, 0]);
         } finally {
@@ -641,8 +641,8 @@ describe('PlayerService', () => {
                 }));
 
             assert.deepEqual(visualWindows, [
-                { mediaId: String(firstMedia.id), startTime: 0, endTime: 1000 },
-                { mediaId: String(secondMedia.id), startTime: 1000, endTime: 2000 },
+                { mediaId: firstMedia.id, startTime: 0, endTime: 1000 },
+                { mediaId: secondMedia.id, startTime: 1000, endTime: 2000 },
             ]);
         } finally {
             await dataSource.destroy();
@@ -733,8 +733,8 @@ describe('PlayerService', () => {
             assert.deepEqual(
                 (manifest as typeof manifest & {
                     anchors?: Array<{
-                        trackId: string;
-                        canvasId: string;
+                        trackId: number;
+                        canvasId: number;
                         time: number;
                         index: number;
                         position: number;
@@ -748,15 +748,15 @@ describe('PlayerService', () => {
                 })),
                 [
                     {
-                        trackId: String(scrollTrack.id),
-                        canvasId: String(canvas.id),
+                        trackId: scrollTrack.id,
+                        canvasId: canvas.id,
                         time: 1000,
                         index: 0,
                         position: 25,
                     },
                     {
-                        trackId: String(scrollTrack.id),
-                        canvasId: String(canvas.id),
+                        trackId: scrollTrack.id,
+                        canvasId: canvas.id,
                         time: 3000,
                         index: 0,
                         position: 75,
@@ -837,7 +837,7 @@ describe('PlayerService', () => {
             );
 
             const manifest = await playerService.getManifest({ episodeId: episode.id });
-            const visualItem = manifest.items.find((item) => item.mediaId === String(media.id));
+            const visualItem = manifest.items.find((item) => item.mediaId === media.id);
 
             assert.ok(visualItem);
             assert.equal(visualItem.startTime, 2000);
@@ -942,17 +942,17 @@ describe('PlayerService', () => {
             );
 
             const manifest = await playerService.getManifest({ episodeId: episode.id });
-            const manifestCue = manifest.cues.find((item) => item.id === String(cue.id)) as
+            const manifestCue = manifest.cues.find((item) => item.id === cue.id) as
                 | (typeof manifest.cues[number] & {
-                      startCanvasMediaId?: string;
-                      endCanvasMediaId?: string;
+                      startCanvasMediaId?: number;
+                      endCanvasMediaId?: number;
                       audioStartTime?: number;
                       audioEndTime?: number;
                       startPosition?: number;
                       endPosition?: number;
                   })
                 | undefined;
-            const audioItem = manifest.items.find((item) => item.cueId === String(cue.id));
+            const audioItem = manifest.items.find((item) => item.cueId === cue.id);
 
             assert.deepEqual(
                 {
@@ -964,8 +964,8 @@ describe('PlayerService', () => {
                     endPosition: manifestCue?.endPosition,
                 },
                 {
-                    startCanvasMediaId: String(canvasMedia.id),
-                    endCanvasMediaId: String(canvasMedia.id),
+                    startCanvasMediaId: canvasMedia.id,
+                    endCanvasMediaId: canvasMedia.id,
                     audioStartTime: 2000,
                     audioEndTime: 6000,
                     startPosition: 12,
@@ -982,7 +982,7 @@ describe('PlayerService', () => {
                 },
                 {
                     kind: 'audio',
-                    mediaId: `audio-${audio.id}`,
+                    mediaId: audio.id,
                     trimStartTime: 2000,
                     trimEndTime: 6000,
                     volume: 0.6,
@@ -1211,10 +1211,10 @@ describe('PlayerService', () => {
                     .map((item) => [item.mediaId, item])
             );
 
-            assert.equal(visualByMediaId.get(String(firstMedia.id))?.startTime, 0);
-            assert.equal(visualByMediaId.get(String(firstMedia.id))?.endTime, 1000);
-            assert.equal(visualByMediaId.get(String(secondMedia.id))?.startTime, 1000);
-            assert.equal(visualByMediaId.get(String(secondMedia.id))?.endTime, 2000);
+            assert.equal(visualByMediaId.get(firstMedia.id)?.startTime, 0);
+            assert.equal(visualByMediaId.get(firstMedia.id)?.endTime, 1000);
+            assert.equal(visualByMediaId.get(secondMedia.id)?.startTime, 1000);
+            assert.equal(visualByMediaId.get(secondMedia.id)?.endTime, 2000);
             assert.deepEqual(
                 manifest.scrolls.map((scroll) => ({
                     canvasId: scroll.canvasId,
@@ -1227,7 +1227,7 @@ describe('PlayerService', () => {
                 })),
                 [
                     {
-                        canvasId: String(canvas.id),
+                        canvasId: canvas.id,
                         startIndex: 1,
                         endIndex: 1,
                         startTime: 1000,
@@ -1236,7 +1236,7 @@ describe('PlayerService', () => {
                         endPosition: 20,
                     },
                     {
-                        canvasId: String(canvas.id),
+                        canvasId: canvas.id,
                         startIndex: 0,
                         endIndex: 0,
                         startTime: 7000,

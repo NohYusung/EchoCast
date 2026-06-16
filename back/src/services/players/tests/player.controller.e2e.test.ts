@@ -81,8 +81,8 @@ test('GET player manifest endpoint exposes episode playback content without draf
             .get(`/player/manifest/${episode.id}`)
             .expect(200);
 
-        assert.equal(manifestResponse.body.data.episodeId, String(episode.id));
-        assert.equal(manifestResponse.body.data.records[0].cueId, String(cue.id));
+        assert.equal(manifestResponse.body.data.episodeId, episode.id);
+        assert.equal(manifestResponse.body.data.records[0].cueId, cue.id);
         assert.equal(manifestResponse.body.data.records[0].recordUrl, 'https://assets.example.com/api-record.wav');
         assert.equal(manifestResponse.body.data.records[0].isAccepted, true);
         assert.equal(manifestResponse.body.data.cues[0].approvedRecordUrl, 'https://assets.example.com/api-record.wav');

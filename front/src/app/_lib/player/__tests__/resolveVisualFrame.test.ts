@@ -5,7 +5,7 @@ import { resolveVisualFrame } from '../resolveVisualFrame';
 
 test('resolveVisualFrame derives visual scroll progress from active visual timeline item', () => {
     assert.deepEqual(resolveVisualFrame(sampleManifest.items, 6000), {
-        mediaId: 'media-strip-1',
+        mediaId: 201,
         progress: 0.5,
     });
 });

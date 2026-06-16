@@ -12,9 +12,9 @@ test('toPlayerRuntimeScrollAnchors keeps manifest anchor time in milliseconds fo
     assert.deepEqual(
         toPlayerRuntimeScrollAnchors([
             {
-                id: '1',
-                trackId: 'scroll-1',
-                canvasId: '11',
+                id: 1,
+                trackId: 1,
+                canvasId: 11,
                 time: 3000,
                 index: 1,
                 position: 75,
@@ -22,7 +22,7 @@ test('toPlayerRuntimeScrollAnchors keeps manifest anchor time in milliseconds fo
         ]),
         [
             {
-                canvasId: '11',
+                canvasId: 11,
                 time: 3000,
                 index: 1,
                 position: 75,
@@ -33,7 +33,7 @@ test('toPlayerRuntimeScrollAnchors keeps manifest anchor time in milliseconds fo
 
 test('shouldSyncPlayerRuntimeScroll allows anchor-only playback scroll updates', () => {
     assert.equal(shouldSyncPlayerRuntimeScroll([], []), false);
-    assert.equal(shouldSyncPlayerRuntimeScroll([], [{ time: 3000, canvasId: '11', index: 1, position: 75 }]), true);
+    assert.equal(shouldSyncPlayerRuntimeScroll([], [{ time: 3000, canvasId: 11, index: 1, position: 75 }]), true);
 });
 
 test('advancePlayerRuntimePlayhead advances time from the scroll-selected position', () => {

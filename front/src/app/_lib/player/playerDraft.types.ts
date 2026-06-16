@@ -1,47 +1,47 @@
-import type { PlayerItemKind } from './playerManifest.types';
+import type { PlayerItemKind, PlayerTrackKind } from './playerManifest.types';
 
 export interface PlayerDraft {
     products: Array<{
-        id: string;
+        id: number;
         title: string;
         coverImageUrl?: string;
     }>;
     episodes: Array<{
-        id: string;
-        productId: string;
+        id: number;
+        productId: number;
         episodeNumber: number;
         title: string;
         subTitle?: string;
     }>;
     characters: Array<{
-        id: string;
+        id: number;
         name: string;
         color: string;
-        defaultTtsVoiceId?: string;
+        defaultTtsVoiceId?: number;
     }>;
     scripts: Array<{
-        id: string;
-        episodeId: string;
-        characterId: string;
+        id: number;
+        episodeId: number;
+        characterId: number;
         text: string;
         sortOrder: number;
     }>;
     tracks: Array<{
-        id: string;
-        episodeId: string;
+        id: number;
+        episodeId: number;
         name: string;
-        kind: 'visual' | 'dialogue' | 'audio' | 'effect';
+        kind: PlayerTrackKind;
         layerId: number;
         isMuted: boolean;
     }>;
     items: Array<{
-        id: string;
-        trackId: string;
+        id: number;
+        trackId: number;
         kind: PlayerItemKind;
         startTime: number;
         endTime: number;
-        mediaId?: string;
-        cueId?: string;
+        mediaId?: number;
+        cueId?: number;
         layerId: number;
         trimStartTime?: number;
         trimEndTime?: number;
@@ -50,8 +50,8 @@ export interface PlayerDraft {
         volume?: number;
     }>;
     media: Array<{
-        id: string;
-        episodeId: string;
+        id: number;
+        episodeId: number;
         kind: 'image' | 'video' | 'audio' | 'effect';
         url: string;
         naturalWidth?: number;
@@ -59,34 +59,34 @@ export interface PlayerDraft {
         durationMs?: number;
     }>;
     ttsVoices: Array<{
-        id: string;
+        id: number;
         provider: string;
         voiceName: string;
         languageCode: string;
     }>;
     cues: Array<{
-        id: string;
-        episodeId: string;
-        scriptId: string;
-        characterId: string;
-        trackId: string;
-        audioId?: string;
-        startCanvasMediaId?: string;
-        endCanvasMediaId?: string;
+        id: number;
+        episodeId: number;
+        scriptId: number;
+        characterId: number;
+        trackId: number;
+        audioId?: number;
+        startCanvasMediaId?: number;
+        endCanvasMediaId?: number;
         startTime: number;
         endTime: number;
         audioStartTime?: number;
         audioEndTime?: number;
         startPosition?: number;
         endPosition?: number;
-        ttsVoiceId?: string;
+        ttsVoiceId?: number;
         ttsUrl?: string;
         volume: number;
     }>;
     records: Array<{
-        id: string;
-        cueId: string;
-        artistId: string | null;
+        id: number;
+        cueId: number;
+        artistId: number | null;
         recordUrl: string;
         duration?: number;
         volume: number;

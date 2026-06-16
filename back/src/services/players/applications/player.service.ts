@@ -13,202 +13,10 @@ import { EpisodeRepository } from '../../episodes/repository/episode.repository'
 import { Record as RecordEntity } from '../../records/domain/record.entity';
 import { RecordRepository } from '../../records/repository/record.repository';
 import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
-import type { TrackType } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
-type PlayerTrackKind = 'visual' | 'dialogue' | 'audio' | 'effect';
 const MIN_TIMELINE_ITEM_DURATION_MS = 500;
 const CANVAS_MEDIA_SEQUENCE_UNIT_MS = 1000;
-
-/*
-AGENT
-- 타입을 따로 빼서 관리하지 않음. 
-- 호출부에서 객체 형태로 바로 사용해. 
-*/
-type PlayerItem = {
-    id: string;
-    trackId: string;
-    kind: 'visual' | 'audio' | 'effect' | 'cue';
-    startTime: number;
-    endTime: number;
-    canvasId?: string;
-    index?: number;
-    mediaId?: string;
-    cueId?: string;
-    layerId: number;
-    trimStartTime?: number;
-    trimEndTime?: number;
-    hasTimelineControls?: boolean;
-    isMuted?: boolean;
-    volume?: number;
-};
-
-/*
-AGENT
-- 타입을 따로 빼서 관리하지 않음.
-- 호출부에서 객체 형태로 바로 사용해.
-*/
-type PlayerCanvas = {
-    id: number;
-    episodeId: number;
-    mediaId?: number;
-    mediaName?: string;
-    mediaType?: 'image' | 'video' | 'audio';
-    mediaUrl?: string;
-    duration?: number;
-    canvasMediaId?: number;
-    index?: number;
-    startTime?: number;
-    endTime?: number;
-    sourceStartTime?: number;
-    sourceEndTime?: number;
-    volume?: number;
-    isMuted?: boolean;
-    medias: Array<{
-        canvasMediaId: number;
-        mediaId: number;
-        mediaName: string;
-        mediaType: 'image' | 'video' | 'audio';
-        mediaUrl: string;
-        duration?: number;
-        index?: number;
-        startTime?: number;
-        endTime?: number;
-        sourceStartTime?: number;
-        sourceEndTime?: number;
-        volume?: number;
-        isMuted?: boolean;
-    }>;
-};
-
-/*
-AGENT
-- 타입을 따로 빼서 관리하지 않음. 
-- 호출부에서 객체 형태로 바로 사용해. 
-*/
-type PlayerDraft = {
-    products: Array<{ id: string; title: string; coverImageUrl?: string }>;
-    episodes: Array<{ id: string; productId: string; episodeNumber: number; title: string; subTitle?: string }>;
-    characters: Array<{ id: string; name: string; color: string }>;
-    scripts: Array<{ id: string; episodeId: string; characterId: string; text: string; sortOrder: number }>;
-    tracks: Array<{
-        id: string;
-        episodeId: string;
-        name: string;
-        kind: PlayerTrackKind;
-        layerId: number;
-        isMuted: boolean;
-    }>;
-    items: PlayerItem[];
-    canvases: PlayerCanvas[];
-    media: Array<{
-        id: string;
-        episodeId: string;
-        kind: 'image' | 'video' | 'audio' | 'effect';
-        url: string;
-        naturalWidth?: number;
-        naturalHeight?: number;
-        durationMs?: number;
-    }>;
-    cues: Array<{
-        id: string;
-        episodeId: string;
-        scriptId: string;
-        characterId?: string;
-        trackId: string;
-        audioId?: string;
-        startCanvasMediaId?: string;
-        endCanvasMediaId?: string;
-        startTime: number;
-        endTime: number;
-        audioStartTime?: number;
-        audioEndTime?: number;
-        startPosition: number;
-        endPosition: number;
-        ttsUrl?: string;
-        volume: number;
-    }>;
-    scrolls: Array<{
-        id: string;
-        trackId: string;
-        canvasId?: string;
-        startIndex: number;
-        endIndex: number;
-        startTime: number;
-        endTime: number;
-        startPosition: number;
-        endPosition: number;
-    }>;
-    anchors: Array<{
-        id: string;
-        trackId: string;
-        canvasId: string;
-        time: number;
-        position: number;
-        index: number;
-    }>;
-    records: Array<{
-        id: string;
-        cueId: string;
-        artistId: string | null;
-        recordUrl: string;
-        duration?: number;
-        volume: number;
-        isAccepted: boolean;
-    }>;
-    screenEffects: Array<{ type: 'effect'; uuid: string; time_ms: number; params: Record<string, unknown> }>;
-};
-
-/*
-AGENT
-- 타입을 따로 빼서 관리하지 않음. 
-- 호출부에서 객체 형태로 바로 사용해. 
-*/
-type PlayerManifest = {
-    episodeId: string;
-    durationMs: number;
-    previewCanvasId?: number;
-    tracks: Array<{ id: string; name: string; kind: PlayerTrackKind; layerId: number; isMuted: boolean }>;
-    items: Array<PlayerItem & { volume: number }>;
-    cues: Array<{
-        id: string;
-        scriptId: string;
-        characterId?: string;
-        trackId: string;
-        audioId?: string;
-        startCanvasMediaId?: string;
-        endCanvasMediaId?: string;
-        startTime: number;
-        endTime: number;
-        audioStartTime?: number;
-        audioEndTime?: number;
-        startPosition: number;
-        endPosition: number;
-        approvedRecordUrl?: string;
-        ttsUrl?: string;
-        volume: number;
-    }>;
-    canvases: PlayerCanvas[];
-    media: Array<Omit<PlayerDraft['media'][number], 'episodeId'>>;
-    records: PlayerDraft['records'];
-    scrolls: PlayerDraft['scrolls'];
-    anchors: PlayerDraft['anchors'];
-    tts: Array<{ id: string; cueId: string; voiceId: string; provider: string; voiceName: string; audioUrl: string }>;
-};
-
-function toId(value: number | string) {
-    return String(value);
-}
-
-function toCueScriptId(cueId: number | string) {
-    return `cue-${toId(cueId)}`;
-}
-
-function toTrackKind(type: TrackType): PlayerTrackKind {
-    if (type === 'record') return 'dialogue';
-    if (type === 'audio' || type === 'bgm') return 'audio';
-    if (type === 'effect') return 'effect';
-    return 'visual';
-}
+const VIRTUAL_VISUAL_TRACK_ID = 0;
 
 function hasAssignedCueTime(cue: Cue): cue is Cue & { startTime: number; endTime: number } {
     return typeof cue.startTime === 'number' && typeof cue.endTime === 'number';
@@ -229,12 +37,11 @@ function toPlayerCanvasMediaTimelineControls(canvasMedia: CanvasMedia | undefine
     };
 }
 
-function toPlayerCanvases(canvases: Canvas[]): PlayerCanvas[] {
+function toPlayerCanvases(canvases: Canvas[]) {
     return canvases.map((canvas) => {
         const canvasMedias = [...canvas.canvasMedias].sort(
             (a, b) =>
-                (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER) ||
-                a.media.id - b.media.id
+                (a.index ?? Number.MAX_SAFE_INTEGER) - (b.index ?? Number.MAX_SAFE_INTEGER) || a.media.id - b.media.id
         );
         const [canvasMedia] = canvasMedias;
         const media = canvasMedia?.media;
@@ -266,7 +73,9 @@ function toPlayerCanvases(canvases: Canvas[]): PlayerCanvas[] {
     });
 }
 
-function getPreviewVisualTimingItems(visualMediaItems: Array<{ canvasMedia: CanvasMedia; media: CanvasMedia['media'] }>) {
+function getPreviewVisualTimingItems(
+    visualMediaItems: Array<{ canvasMedia: CanvasMedia; media: CanvasMedia['media'] }>
+) {
     let nextStartTime = 0;
 
     return visualMediaItems.map(({ canvasMedia, media }) => {
@@ -277,7 +86,10 @@ function getPreviewVisualTimingItems(visualMediaItems: Array<{ canvasMedia: Canv
             canvasMedia.endTime > canvasMedia.startTime;
         const duration = hasTimelineControls
             ? Math.max(MIN_TIMELINE_ITEM_DURATION_MS, canvasMedia.endTime! - canvasMedia.startTime!)
-            : media.mediaType === 'video' && typeof media.duration === 'number' && Number.isFinite(media.duration) && media.duration > 0
+            : media.mediaType === 'video' &&
+                typeof media.duration === 'number' &&
+                Number.isFinite(media.duration) &&
+                media.duration > 0
               ? media.duration
               : CANVAS_MEDIA_SEQUENCE_UNIT_MS;
         const startTime = hasTimelineControls ? canvasMedia.startTime! : nextStartTime;
@@ -309,7 +121,7 @@ export class PlayerService extends DddService {
         super();
     }
 
-    async getDraft({ episodeId }: { episodeId: number }): Promise<PlayerDraft> {
+    async getDraft({ episodeId }: { episodeId: number }) {
         const [episode] = await this.episodeRepository.find({ id: episodeId }, { relations: { product: true } });
         if (!episode) {
             throw new NotFoundException('에피소드를 찾을 수 없습니다.');
@@ -333,8 +145,7 @@ export class PlayerService extends DddService {
             const [bCanvasMedia] = b.canvasMedias;
 
             return (
-                (aCanvasMedia?.index ?? Number.MAX_SAFE_INTEGER) -
-                    (bCanvasMedia?.index ?? Number.MAX_SAFE_INTEGER) ||
+                (aCanvasMedia?.index ?? Number.MAX_SAFE_INTEGER) - (bCanvasMedia?.index ?? Number.MAX_SAFE_INTEGER) ||
                 a.id - b.id
             );
         });
@@ -374,8 +185,7 @@ export class PlayerService extends DddService {
                   ])
                 : [[], [], []];
         cues.sort(
-            (a, b) =>
-                (a.startTime ?? Number.MAX_SAFE_INTEGER) - (b.startTime ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
+            (a, b) => (a.startTime ?? Number.MAX_SAFE_INTEGER) - (b.startTime ?? Number.MAX_SAFE_INTEGER) || a.id - b.id
         );
         anchors.sort((a, b) => a.time - b.time || a.id - b.id);
         scrolls.sort((a, b) => (a.startAnchor?.time ?? 0) - (b.startAnchor?.time ?? 0) || a.id - b.id);
@@ -390,33 +200,22 @@ export class PlayerService extends DddService {
                 : [];
         records.sort((a, b) => a.cueId - b.cueId || a.id - b.id);
         const scripts = scheduledCues.map((cue, index) => ({
-            id: toCueScriptId(cue.id),
-            episodeId: toId(episode.id),
-            characterId: cue.characterId ? toId(cue.characterId) : '',
+            id: cue.id,
+            episodeId: episode.id,
+            characterId: cue.characterId ?? 0,
             text: cue.script,
             sortOrder: index + 1,
         }));
 
         const initialTracksDraft = tracks.map((track) => ({
-            id: toId(track.id),
-            episodeId: toId(episode.id),
+            id: track.id,
+            episodeId: episode.id,
             name: track.name,
-            kind: toTrackKind(track.type),
+            kind: track.type,
             layerId: 0,
             isMuted: track.isMuted,
         }));
-        const visualTrack =
-            initialTracksDraft.find((track) => track.kind === 'visual') ??
-            (visualMediaItems.length > 0
-                ? {
-                      id: `visual-${episode.id}`,
-                      episodeId: toId(episode.id),
-                      name: 'Visual',
-                      kind: 'visual' as const,
-                      layerId: 0,
-                      isMuted: false,
-                  }
-                : undefined);
+        const visualTrack = initialTracksDraft.find((track) => track.kind === 'scroll' || track.kind === 'scrolls');
         const tracksDraft = (
             visualTrack
                 ? [visualTrack, ...initialTracksDraft.filter((track) => track.id !== visualTrack.id)]
@@ -427,28 +226,28 @@ export class PlayerService extends DddService {
         }));
         const layerIdByTrackId = new Map(tracksDraft.map((track) => [track.id, track.layerId]));
         const trackKindById = new Map(tracksDraft.map((track) => [track.id, track.kind]));
-        const visualTrackId = visualTrack?.id ?? `visual-${episode.id}`;
+        const visualTrackId = visualTrack?.id ?? VIRTUAL_VISUAL_TRACK_ID;
         const visualLayerId = layerIdByTrackId.get(visualTrackId) ?? 0;
 
         return {
             products: [
                 {
-                    id: toId(episode.product.id),
+                    id: episode.product.id,
                     title: episode.product.title,
                     coverImageUrl: episode.product.coverImageUrl ?? undefined,
                 },
             ],
             episodes: [
                 {
-                    id: toId(episode.id),
-                    productId: toId(episode.productId),
+                    id: episode.id,
+                    productId: episode.productId,
                     episodeNumber: episode.episodeNumber,
                     title: episode.title,
                     subTitle: episode.subTitle,
                 },
             ],
             characters: characters.map((character) => ({
-                id: toId(character.id),
+                id: character.id,
                 name: character.name,
                 color: '#64748b',
             })),
@@ -465,50 +264,53 @@ export class PlayerService extends DddService {
                     };
 
                     return {
-                        id:
-                            canvas.canvasMedias.length === 1
-                                ? `visual-${canvas.id}`
-                                : `visual-${canvas.id}-${media.id}`,
+                        id: canvasMedia.id,
                         trackId: visualTrackId,
                         kind: 'visual' as const,
                         startTime: timing.startTime,
                         endTime: timing.endTime,
-                        canvasId: toId(canvas.id),
+                        canvasId: canvas.id,
                         index: mediaIndex,
-                        mediaId: toId(media.id),
+                        mediaId: media.id,
+                        cueId: undefined as number | undefined,
                         layerId: visualLayerId,
                         trimStartTime:
                             typeof canvasMedia.sourceStartTime === 'number' ? canvasMedia.sourceStartTime : undefined,
-                        trimEndTime: typeof canvasMedia.sourceEndTime === 'number' ? canvasMedia.sourceEndTime : undefined,
+                        trimEndTime:
+                            typeof canvasMedia.sourceEndTime === 'number' ? canvasMedia.sourceEndTime : undefined,
                         hasTimelineControls: timing.hasTimelineControls,
                         isMuted: canvasMedia.isMuted === true,
                         volume: canvasMedia.isMuted ? 0 : canvasMedia.volume,
                     };
                 }),
                 ...scheduledCues.map((cue) => ({
-                    id: `cue-${cue.id}`,
-                    trackId: toId(cue.trackId),
+                    id: cue.id,
+                    trackId: cue.trackId,
                     kind:
-                        cue.audioId && trackKindById.get(toId(cue.trackId)) === 'effect'
+                        cue.audioId && trackKindById.get(cue.trackId) === 'effect'
                             ? ('effect' as const)
                             : cue.audioId
                               ? ('audio' as const)
                               : ('cue' as const),
                     startTime: cue.startTime,
                     endTime: cue.endTime,
-                    cueId: toId(cue.id),
-                    mediaId: cue.audioId ? `audio-${toId(cue.audioId)}` : undefined,
-                    layerId: layerIdByTrackId.get(toId(cue.trackId)) ?? 1,
+                    canvasId: undefined as number | undefined,
+                    index: undefined as number | undefined,
+                    cueId: cue.id,
+                    mediaId: cue.audioId ?? undefined,
+                    layerId: layerIdByTrackId.get(cue.trackId) ?? 1,
                     trimStartTime: typeof cue.audioStartTime === 'number' ? cue.audioStartTime : undefined,
                     trimEndTime: typeof cue.audioEndTime === 'number' ? cue.audioEndTime : undefined,
+                    hasTimelineControls: undefined as boolean | undefined,
+                    isMuted: undefined as boolean | undefined,
                     volume: cue.volume,
                 })),
-            ].sort((a, b) => a.startTime - b.startTime || a.layerId - b.layerId || a.id.localeCompare(b.id)),
+            ].sort((a, b) => a.startTime - b.startTime || a.layerId - b.layerId || a.id - b.id),
             media: [
                 ...canvases.flatMap((canvas) =>
                     canvas.canvasMedias.map((canvasMedia) => ({
-                        id: toId(canvasMedia.media.id),
-                        episodeId: toId(episode.id),
+                        id: canvasMedia.media.id,
+                        episodeId: episode.id,
                         kind: canvasMedia.media.mediaType,
                         url: canvasMedia.media.mediaUrl,
                         ...(typeof canvasMedia.media.duration === 'number'
@@ -517,38 +319,39 @@ export class PlayerService extends DddService {
                     }))
                 ),
                 ...audios.map((audio) => ({
-                    id: `audio-${toId(audio.id)}`,
-                    episodeId: toId(episode.id),
+                    id: audio.id,
+                    episodeId: episode.id,
                     kind: audio.audioType === 'effect' ? ('effect' as const) : ('audio' as const),
                     url: audio.audioUrl,
                     durationMs: audio.duration,
                 })),
             ],
             cues: scheduledCues.map((cue) => ({
-                id: toId(cue.id),
-                episodeId: toId(episode.id),
-                scriptId: toCueScriptId(cue.id),
-                characterId: cue.characterId ? toId(cue.characterId) : undefined,
-                trackId: toId(cue.trackId),
-                audioId: cue.audioId ? toId(cue.audioId) : undefined,
-                startCanvasMediaId: cue.startCanvasMediaId ? toId(cue.startCanvasMediaId) : undefined,
-                endCanvasMediaId: cue.endCanvasMediaId ? toId(cue.endCanvasMediaId) : undefined,
+                id: cue.id,
+                episodeId: episode.id,
+                scriptId: cue.id,
+                characterId: cue.characterId ?? undefined,
+                trackId: cue.trackId,
+                audioId: cue.audioId ?? undefined,
+                startCanvasMediaId: cue.startCanvasMediaId ?? undefined,
+                endCanvasMediaId: cue.endCanvasMediaId ?? undefined,
                 startTime: cue.startTime,
                 endTime: cue.endTime,
                 audioStartTime: cue.audioStartTime,
                 audioEndTime: cue.audioEndTime,
                 startPosition: cue.startPosition,
                 endPosition: cue.endPosition,
+                ttsUrl: undefined as string | undefined,
                 volume: cue.volume,
             })),
             scrolls: scrolls.map((scroll) => ({
-                id: toId(scroll.id),
-                trackId: toId(scroll.trackId),
+                id: scroll.id,
+                trackId: scroll.trackId,
                 canvasId:
                     typeof scroll.startAnchor?.canvasId === 'number'
-                        ? toId(scroll.startAnchor.canvasId)
+                        ? scroll.startAnchor.canvasId
                         : typeof scroll.endAnchor?.canvasId === 'number'
-                          ? toId(scroll.endAnchor.canvasId)
+                          ? scroll.endAnchor.canvasId
                           : undefined,
                 startIndex: scroll.startAnchor?.index ?? 0,
                 endIndex: scroll.endAnchor?.index ?? scroll.startAnchor?.index ?? 0,
@@ -558,17 +361,17 @@ export class PlayerService extends DddService {
                 endPosition: scroll.endAnchor?.position ?? scroll.startAnchor?.position ?? 0,
             })),
             anchors: anchors.map((anchor) => ({
-                id: toId(anchor.id),
-                trackId: toId(anchor.trackId),
-                canvasId: toId(anchor.canvasId),
+                id: anchor.id,
+                trackId: anchor.trackId,
+                canvasId: anchor.canvasId,
                 time: anchor.time,
                 position: anchor.position,
                 index: anchor.index,
             })),
             records: records.map((record) => ({
-                id: toId(record.id),
-                cueId: toId(record.cueId),
-                artistId: record.artistId === null ? null : toId(record.artistId),
+                id: record.id,
+                cueId: record.cueId,
+                artistId: record.artistId,
                 recordUrl: record.recordUrl,
                 duration: record.duration ?? undefined,
                 volume: record.volume,
@@ -578,12 +381,12 @@ export class PlayerService extends DddService {
         };
     }
 
-    async getManifest({ episodeId }: { episodeId: number }): Promise<PlayerManifest> {
+    async getManifest({ episodeId }: { episodeId: number }) {
         return this.toManifest(await this.getDraft({ episodeId }));
     }
 
-    toManifest(draft: PlayerDraft): PlayerManifest {
-        const acceptedRecordByCueId = new Map<string, PlayerDraft['records'][number]>();
+    toManifest(draft: Awaited<ReturnType<PlayerService['getDraft']>>) {
+        const acceptedRecordByCueId = new Map<number, (typeof draft.records)[number]>();
         for (const record of draft.records) {
             if (record.isAccepted) {
                 acceptedRecordByCueId.set(record.cueId, record);
@@ -620,7 +423,7 @@ export class PlayerService extends DddService {
         );
 
         return {
-            episodeId: draft.episodes[0]?.id ?? '',
+            episodeId: draft.episodes[0]?.id ?? 0,
             durationMs,
             previewCanvasId: draft.canvases[0]?.id,
             tracks: draft.tracks.map(({ episodeId: _episodeId, ...track }) => track),

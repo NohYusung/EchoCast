@@ -4,9 +4,9 @@ export type PlaybackEventKind = 'audio' | 'record' | 'tts';
 
 export interface PlaybackEvent {
     id: string;
-    cueId: string;
+    cueId: number;
     kind: PlaybackEventKind;
-    sourceId: string;
+    sourceId: number;
     url: string;
     startTime: number;
     endTime: number;
@@ -15,14 +15,13 @@ export interface PlaybackEvent {
 }
 
 export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
-    const acceptedRecordByCueId = new Map<string, PlayerManifest['records'][number]>();
+    const acceptedRecordByCueId = new Map<number, PlayerManifest['records'][number]>();
     for (const record of manifest.records) {
         if (record.isAccepted) {
             acceptedRecordByCueId.set(record.cueId, record);
         }
     }
     const ttsByCueId = new Map(manifest.tts.map((tts) => [tts.cueId, tts]));
-    const mediaById = new Map(manifest.media.map((media) => [media.id, media]));
 
     const cuePlaybackEvents = manifest.cues
         .flatMap((cue): PlaybackEvent[] => {
@@ -63,7 +62,7 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
     const audioPlaybackEvents = manifest.items.flatMap((item): PlaybackEvent[] => {
         if ((item.kind !== 'audio' && item.kind !== 'effect') || !item.mediaId) return [];
 
-        const media = mediaById.get(item.mediaId);
+        const media = manifest.media.find((media) => media.id === item.mediaId && (media.kind === 'audio' || media.kind === 'effect'));
         if (!media || (media.kind !== 'audio' && media.kind !== 'effect')) return [];
 
         return [

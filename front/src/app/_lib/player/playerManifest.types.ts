@@ -1,17 +1,18 @@
 import type { CanvasVisualClipItem } from './visualClips';
 
 export type PlayerItemKind = 'visual' | 'audio' | 'effect' | 'cue';
+export type PlayerTrackKind = 'scroll' | 'scrolls' | 'record' | 'audio' | 'effect' | 'bgm';
 
 export interface PlayerManifestItem {
-    id: string;
-    trackId: string;
+    id: number;
+    trackId: number;
     kind: PlayerItemKind;
     startTime: number;
     endTime: number;
-    canvasId?: string | number;
+    canvasId?: number;
     index?: number;
-    mediaId?: string;
-    cueId?: string;
+    mediaId?: number;
+    cueId?: number;
     layerId: number;
     trimStartTime?: number;
     trimEndTime?: number;
@@ -21,9 +22,9 @@ export interface PlayerManifestItem {
 }
 
 export interface PlayerManifestScroll {
-    id: string;
-    trackId: string;
-    canvasId?: string | number;
+    id: number;
+    trackId: number;
+    canvasId?: number;
     startIndex: number;
     endIndex: number;
     startTime: number;
@@ -33,22 +34,22 @@ export interface PlayerManifestScroll {
 }
 
 export interface PlayerManifestAnchor {
-    id: string;
-    trackId: string;
-    canvasId: string | number;
+    id: number;
+    trackId: number;
+    canvasId: number;
     time: number;
     position: number;
     index: number;
 }
 
 export interface CueManifest {
-    id: string;
-    scriptId: string;
-    characterId?: string;
-    trackId: string;
-    audioId?: string;
-    startCanvasMediaId?: string;
-    endCanvasMediaId?: string;
+    id: number;
+    scriptId: number;
+    characterId?: number;
+    trackId: number;
+    audioId?: number;
+    startCanvasMediaId?: number;
+    endCanvasMediaId?: number;
     startTime: number;
     endTime: number;
     audioStartTime?: number;
@@ -61,9 +62,9 @@ export interface CueManifest {
 }
 
 export interface RecordManifest {
-    id: string;
-    cueId: string;
-    artistId: string | null;
+    id: number;
+    cueId: number;
+    artistId: number | null;
     recordUrl: string;
     duration?: number;
     volume: number;
@@ -71,22 +72,22 @@ export interface RecordManifest {
 }
 
 export interface TtsManifest {
-    id: string;
-    cueId: string;
-    voiceId: string;
+    id: number;
+    cueId: number;
+    voiceId: number;
     provider: string;
     voiceName: string;
     audioUrl: string;
 }
 
 export interface PlayerManifest {
-    episodeId: string;
+    episodeId: number;
     durationMs: number;
     previewCanvasId?: number;
     tracks: Array<{
-        id: string;
+        id: number;
         name: string;
-        kind: 'visual' | 'dialogue' | 'audio' | 'effect';
+        kind: PlayerTrackKind;
         layerId: number;
         isMuted: boolean;
     }>;
@@ -96,7 +97,7 @@ export interface PlayerManifest {
     cues: CueManifest[];
     canvases?: Array<CanvasVisualClipItem & { episodeId: number }>;
     media: Array<{
-        id: string;
+        id: number;
         kind: 'image' | 'video' | 'audio' | 'effect';
         url: string;
         naturalWidth?: number;
