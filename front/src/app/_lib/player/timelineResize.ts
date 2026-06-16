@@ -6,6 +6,13 @@ type TimelineSidebarResizeArgs = {
     maxWidth: number;
 };
 
+type TimelinePanelResizeHeightArgs = {
+    originalHeight: number;
+    pointerStartY: number;
+    pointerCurrentY: number;
+    minHeight: number;
+};
+
 type TimelineAudioDurationSource = {
     audioStart?: number;
     audioEnd?: number;
@@ -35,6 +42,17 @@ export function getTimelineSidebarResizeWidth({
     const nextWidth = originalWidth + (pointerCurrentX - pointerStartX);
 
     return Math.round(Math.min(Math.max(nextWidth, minWidth), maxWidth));
+}
+
+export function getTimelinePanelResizeHeight({
+    originalHeight,
+    pointerStartY,
+    pointerCurrentY,
+    minHeight,
+}: TimelinePanelResizeHeightArgs) {
+    const nextHeight = originalHeight - (pointerCurrentY - pointerStartY);
+
+    return Math.round(Math.max(nextHeight, minHeight));
 }
 
 export function getTimelineAudioClipMaxDurationSeconds({

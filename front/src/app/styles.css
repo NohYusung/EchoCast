@@ -1690,7 +1690,7 @@ p {
     content-visibility: auto;
     position: relative;
     display: grid;
-    grid-template-columns: 54px 132px minmax(0, 1fr) 118px auto;
+    grid-template-columns: 54px 132px minmax(0, 1fr) 118px 190px;
     align-items: center;
     gap: 16px;
     border: 1px solid var(--tp-line);
@@ -1883,6 +1883,38 @@ p {
     height: 13px;
 }
 
+.tp-episode-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.tp-episode-record-link {
+    display: inline-flex;
+    min-height: 34px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid rgba(91, 155, 255, 0.42);
+    border-radius: 8px;
+    background: rgba(91, 155, 255, 0.12);
+    color: #d8e7ff;
+    font-size: 11px;
+    font-weight: 900;
+    padding: 0 11px;
+    white-space: nowrap;
+}
+
+.tp-episode-record-link:hover {
+    border-color: rgba(91, 155, 255, 0.72);
+    background: rgba(91, 155, 255, 0.2);
+}
+
+.tp-episode-record-link svg {
+    width: 13px;
+    height: 13px;
+}
+
 .tp-episode-add {
     display: flex;
     align-items: center;
@@ -1953,9 +1985,13 @@ p {
     }
 
     .tp-episode-thumb,
-    .tp-episode-progress,
-    .tp-open-hint {
+    .tp-episode-progress {
         display: none;
+    }
+
+    .tp-episode-actions {
+        grid-column: 2;
+        justify-content: flex-start;
     }
 }
 
@@ -13846,7 +13882,7 @@ p {
     display: grid;
     min-width: 0;
     min-height: 0;
-    grid-template-columns: 300px 122px minmax(380px, 1fr) 290px;
+    grid-template-columns: 306px minmax(260px, 340px) minmax(380px, 1fr) 280px;
     overflow: hidden;
     background:
         linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
@@ -13915,6 +13951,54 @@ p {
     color: var(--tr-muted);
     font-size: 11px;
     font-weight: 800;
+}
+
+.tr-character-filter {
+    display: flex;
+    max-width: 100%;
+    gap: 7px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+}
+
+.tr-character-filter label {
+    display: inline-flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--tr-line);
+    border-radius: 999px;
+    background: #0c1018;
+    color: var(--tr-muted);
+    padding: 6px 8px;
+}
+
+.tr-character-filter label.active {
+    background: rgba(77, 141, 255, 0.14);
+    color: var(--tr-text);
+}
+
+.tr-character-filter input {
+    width: 13px;
+    height: 13px;
+    accent-color: var(--tr-blue);
+}
+
+.tr-character-filter span {
+    max-width: 96px;
+    overflow: hidden;
+    font-size: 10.5px;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tr-character-filter em {
+    color: var(--tr-faint);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 850;
 }
 
 .tr-filter-tabs {
@@ -14017,7 +14101,7 @@ p {
 .tr-strip-panel {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    padding: 16px 12px;
+    padding: 18px 14px;
 }
 
 .tr-strip-head {
@@ -14031,18 +14115,24 @@ p {
 
 .tr-strip {
     position: relative;
-    display: grid;
     min-height: 0;
-    gap: 4px;
-    overflow: hidden;
+    overflow-y: auto;
     border-left: 1px solid var(--tr-line);
-    padding-left: 10px;
+    padding-left: 12px;
 }
 
-.tr-strip button {
+.tr-strip-map {
+    position: relative;
+    display: grid;
+    min-height: 640px;
+    gap: 8px;
+    padding-right: 10px;
+}
+
+.tr-strip-clip {
     position: relative;
     display: flex;
-    min-height: 74px;
+    min-height: 164px;
     align-items: flex-start;
     justify-content: space-between;
     flex-direction: column;
@@ -14056,13 +14146,13 @@ p {
     text-align: left;
 }
 
-.tr-strip button.active {
+.tr-strip-clip.active {
     border-color: var(--tr-blue);
     box-shadow: inset 0 0 0 1px rgba(77, 141, 255, 0.65);
 }
 
-.tr-strip button b,
-.tr-strip button span {
+.tr-strip-clip b,
+.tr-strip-clip span {
     position: relative;
     z-index: 1;
     border-radius: 5px;
@@ -14072,26 +14162,80 @@ p {
     font-weight: 900;
 }
 
-.tr-strip-marker {
+.tr-strip-cue-layer {
     position: absolute;
+    inset: 0 0 0 0;
     z-index: 4;
-    right: 0;
-    left: 0;
-    height: 2px;
-    background: var(--tr-yellow);
-    box-shadow: 0 0 16px rgba(250, 204, 21, 0.9);
+    pointer-events: none;
 }
 
-.tr-strip-marker::before {
+.tr-strip-cue-marker {
+    position: absolute;
+    right: 0;
+    left: 10px;
+    display: grid;
+    grid-template-columns: 8px minmax(44px, auto) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--tr-line);
+    border-radius: 8px;
+    background: rgba(8, 11, 17, 0.9) !important;
+    color: var(--tr-text);
+    padding: 7px 8px;
+    pointer-events: auto;
+    text-align: left;
+    transform: translateY(-50%);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
+}
+
+.tr-strip-cue-marker::before {
     position: absolute;
     top: 50%;
-    left: -5px;
+    left: -11px;
+    width: 10px;
+    height: 1px;
+    background: currentColor;
+    content: '';
+    opacity: 0.7;
+}
+
+.tr-strip-cue-marker i {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--tr-yellow);
-    content: '';
-    transform: translateY(-50%);
+}
+
+.tr-strip-cue-marker span,
+.tr-strip-cue-marker strong,
+.tr-strip-cue-marker em {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tr-strip-cue-marker span,
+.tr-strip-cue-marker em {
+    color: var(--tr-muted);
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 800;
+}
+
+.tr-strip-cue-marker strong {
+    color: var(--tr-text);
+    font-size: 10.5px;
+    font-weight: 850;
+}
+
+.tr-strip-cue-marker.active {
+    background: rgba(31, 45, 77, 0.96) !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(77, 141, 255, 0.72),
+        0 0 24px rgba(77, 141, 255, 0.34);
+}
+
+.tr-strip-cue-marker.done i {
+    box-shadow: 0 0 0 4px rgba(32, 211, 155, 0.14);
 }
 
 .tr-read-panel {
@@ -14372,11 +14516,7 @@ p {
 
 @media (max-width: 1280px) {
     .tr-record-workspace {
-        grid-template-columns: 280px 108px minmax(320px, 1fr) 260px;
-    }
-
-    .tr-character-select {
-        display: none;
+        grid-template-columns: 286px minmax(220px, 300px) minmax(320px, 1fr) 248px;
     }
 
     .tr-artist-select {
@@ -14424,6 +14564,10 @@ p {
     }
 
     .tr-strip {
-        max-height: 360px;
+        max-height: 560px;
+    }
+
+    .tr-strip-map {
+        min-height: 560px;
     }
 }

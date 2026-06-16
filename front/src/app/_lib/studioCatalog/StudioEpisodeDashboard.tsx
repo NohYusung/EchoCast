@@ -680,12 +680,6 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                         <StudioCatalogIcon name="mic" />
                                         성우 등록
                                     </Link>
-                                    {latestEpisode ? (
-                                        <Link className="tp-btn ghost" href={`/studio/products/${product.id}/episodes/${latestEpisode.id}/record`}>
-                                            <StudioCatalogIcon name="mic" />
-                                            녹음실
-                                        </Link>
-                                    ) : null}
                                     <button className="tp-btn ghost" onClick={openSettingsModal} type="button">
                                         <StudioCatalogIcon name="settings" />
                                         작품 설정
@@ -728,10 +722,9 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                         ) : (
                             <div className="tp-episode-list">
                                 {visibleEpisodes.map((episode) => (
-                                    <Link
+                                    <article
                                         className="tp-episode-row"
                                         data-testid={`episode-row-${episode.id}`}
-                                        href={`/studio/products/${product.id}/episodes/${episode.id}`}
                                         key={episode.id}
                                     >
                                         <span className="tp-episode-num">
@@ -764,10 +757,24 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                                 <b style={{ width: `${episode.progress}%` }} />
                                             </i>
                                         </span>
-                                        <span className="tp-open-hint">
-                                            편집기 열기 <StudioCatalogIcon name="chevronRight" />
+                                        <span className="tp-episode-actions">
+                                            <Link
+                                                aria-label={`${episode.title} 편집기 열기`}
+                                                className="tp-open-hint"
+                                                href={`/studio/products/${product.id}/episodes/${episode.id}`}
+                                            >
+                                                편집기 열기 <StudioCatalogIcon name="chevronRight" />
+                                            </Link>
+                                            <Link
+                                                aria-label={`${episode.title} 녹음실 입장`}
+                                                className="tp-episode-record-link"
+                                                href={`/studio/products/${product.id}/episodes/${episode.id}/record`}
+                                            >
+                                                <StudioCatalogIcon name="mic" />
+                                                녹음실 입장
+                                            </Link>
                                         </span>
-                                    </Link>
+                                    </article>
                                 ))}
                                 <button className="tp-episode-add" onClick={openCreateModal} type="button">
                                     <span>

@@ -101,7 +101,7 @@ function resolveVogopangRecord({
     if (record) {
         return {
             src: record.recordUrl,
-            artist_no: Number(record.artistId.replace(/\D/g, '')) || 0,
+            artist_no: record.artistId ? Number(record.artistId.replace(/\D/g, '')) || 0 : 0,
             margin: 0,
         };
     }

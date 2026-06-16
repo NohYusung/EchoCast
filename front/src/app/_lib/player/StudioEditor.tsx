@@ -99,6 +99,7 @@ import {
 import {
     clampTimelineAudioResizeTiming,
     getTimelineAudioClipMaxDurationSeconds,
+    getTimelinePanelResizeHeight,
     getTimelineResizeMinDurationSeconds,
     getTimelineSidebarResizeWidth,
 } from './timelineResize';
@@ -138,7 +139,6 @@ const MIN_PREVIEW_CANVAS_WIDTH = 260;
 const MIN_PREVIEW_CANVAS_HEIGHT = 360;
 const DEFAULT_TIMELINE_PANEL_HEIGHT = 336;
 const MIN_TIMELINE_PANEL_HEIGHT = 220;
-const MAX_TIMELINE_PANEL_HEIGHT = 620;
 const DEFAULT_TIMELINE_SIDEBAR_WIDTH = 184;
 const MIN_TIMELINE_SIDEBAR_WIDTH = 150;
 const MAX_TIMELINE_SIDEBAR_WIDTH = 340;
@@ -6041,7 +6041,6 @@ function Timeline({
             <div
                 aria-label="타임라인 높이 조절"
                 aria-orientation="horizontal"
-                aria-valuemax={MAX_TIMELINE_PANEL_HEIGHT}
                 aria-valuemin={MIN_TIMELINE_PANEL_HEIGHT}
                 aria-valuenow={timelineHeight}
                 className="odx-timeline-resize-boundary"
@@ -7025,11 +7024,12 @@ export function StudioEditor({
         const handlePointerMove = (event: PointerEvent) => {
             event.preventDefault();
             setTimelineHeight(
-                clamp(
-                    timelinePanelResize.originalHeight - (event.clientY - timelinePanelResize.pointerStartY),
-                    MIN_TIMELINE_PANEL_HEIGHT,
-                    MAX_TIMELINE_PANEL_HEIGHT
-                )
+                getTimelinePanelResizeHeight({
+                    originalHeight: timelinePanelResize.originalHeight,
+                    pointerStartY: timelinePanelResize.pointerStartY,
+                    pointerCurrentY: event.clientY,
+                    minHeight: MIN_TIMELINE_PANEL_HEIGHT,
+                })
             );
         };
 

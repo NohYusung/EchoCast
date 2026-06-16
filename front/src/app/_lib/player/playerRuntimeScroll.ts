@@ -1,5 +1,6 @@
 import type { PlayerManifestAnchor, PlayerManifestScroll } from './playerManifest.types';
 import {
+    getPreviewScrollOffset,
     getPreviewScrollOffsetForPixel,
     getPreviewScrollPixel,
     type PreviewScrollPositionEvent,
@@ -105,6 +106,31 @@ export function advancePlayerRuntimePlayhead({
         playheadMs,
         isEnded: playheadMs >= safeDurationMs,
     };
+}
+
+export function getPlayerRuntimeScrollTop({
+    playheadMs,
+    scrollEvents,
+    anchors,
+    stripHeightPx,
+    viewportHeightPx,
+    visualSegments,
+}: {
+    playheadMs: number;
+    scrollEvents: readonly PreviewScrollPositionEvent[];
+    anchors: readonly PreviewScrollTimedAnchor[];
+    stripHeightPx: number;
+    viewportHeightPx: number;
+    visualSegments: readonly PreviewScrollVisualSegment[];
+}) {
+    return getPreviewScrollOffset({
+        playhead: playheadMs,
+        scrollEvents,
+        anchors,
+        stripHeightPx,
+        viewportHeightPx,
+        visualSegments,
+    });
 }
 
 export function getPlayerRuntimePlayheadFromScroll({

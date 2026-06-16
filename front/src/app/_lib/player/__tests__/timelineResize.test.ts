@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
     clampTimelineAudioResizeTiming,
     getTimelineAudioClipMaxDurationSeconds,
+    getTimelinePanelResizeHeight,
     getTimelineResizeMinDurationSeconds,
     getTimelineSidebarResizeWidth,
 } from '../timelineResize';
@@ -40,6 +41,30 @@ test('getTimelineSidebarResizeWidth clamps to the allowed width range', () => {
             maxWidth: 320,
         }),
         320,
+    );
+});
+
+test('getTimelinePanelResizeHeight does not clamp expanded height to an upper bound', () => {
+    assert.equal(
+        getTimelinePanelResizeHeight({
+            originalHeight: 336,
+            pointerStartY: 500,
+            pointerCurrentY: -500,
+            minHeight: 220,
+        }),
+        1336,
+    );
+});
+
+test('getTimelinePanelResizeHeight keeps a minimum height while shrinking', () => {
+    assert.equal(
+        getTimelinePanelResizeHeight({
+            originalHeight: 336,
+            pointerStartY: 500,
+            pointerCurrentY: 1000,
+            minHeight: 220,
+        }),
+        220,
     );
 });
 

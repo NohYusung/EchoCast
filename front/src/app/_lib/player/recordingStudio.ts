@@ -42,6 +42,18 @@ export interface RecordingProgress {
     percent: number;
 }
 
+export interface RecordingCueStripMarker {
+    cueId: string;
+    characterId: string;
+    characterName: string;
+    characterColor: string;
+    text: string;
+    startTime: number;
+    topPercent: number;
+    status: RecordingCueStatus;
+    isSelected: boolean;
+}
+
 type DraftCue = PlayerDraft['cues'][number];
 type DraftRecord = PlayerDraft['records'][number];
 type RecordingCueSource = DraftCue | CueManifest;
@@ -150,6 +162,30 @@ export function selectInitialRecordingCue(queue: RecordingCueQueueItem[]): Recor
     return queue.find((item) => item.status === 'pending') ?? queue[0];
 }
 
+export function buildRecordingCueStripMarkers({
+    queue,
+    selectedCueId,
+}: {
+    queue: RecordingCueQueueItem[];
+    selectedCueId?: string;
+}): RecordingCueStripMarker[] {
+    const durationMs = Math.max(1, ...queue.map((item) => item.endTime));
+
+    return queue
+        .map((item) => ({
+            cueId: item.cueId,
+            characterId: item.characterId,
+            characterName: item.characterName,
+            characterColor: item.characterColor,
+            text: item.text,
+            startTime: item.startTime,
+            topPercent: roundPercent(clampPercent((item.startTime / durationMs) * 100)),
+            status: item.status,
+            isSelected: item.cueId === selectedCueId,
+        }))
+        .sort((left, right) => left.topPercent - right.topPercent || left.startTime - right.startTime || left.cueId.localeCompare(right.cueId));
+}
+
 export function getRecordingStorageKey(productId: string, episodeId: string): string {
     return `test-player:recording-studio:${productId}:${episodeId}:takes`;
 }
@@ -172,4 +208,12 @@ function addRecord(recordsByCueId: Map<string, RecordingTakeSummary[]>, record: 
         records.push(record);
     }
     recordsByCueId.set(record.cueId, records);
+}
+
+function clampPercent(value: number): number {
+    return Math.min(96, Math.max(4, value));
+}
+
+function roundPercent(value: number): number {
+    return Math.round(value * 100) / 100;
 }

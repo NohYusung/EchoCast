@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     advancePlayerRuntimePlayhead,
+    getPlayerRuntimeScrollTop,
     getPlayerRuntimePlayheadFromScroll,
     shouldSyncPlayerRuntimeScroll,
     toPlayerRuntimeScrollAnchors,
@@ -60,6 +61,53 @@ test('advancePlayerRuntimePlayhead clamps at duration and reports playback compl
             playheadMs: 10000,
             isEnded: true,
         },
+    );
+});
+
+test('getPlayerRuntimeScrollTop drives player scroll from the active scroll event', () => {
+    assert.equal(
+        getPlayerRuntimeScrollTop({
+            playheadMs: 5000,
+            scrollEvents: [
+                {
+                    start: 0,
+                    duration: 10000,
+                    canvasId: 11,
+                    startIndex: 0,
+                    endIndex: 1,
+                    startPosition: 0,
+                    endPosition: 100,
+                },
+            ],
+            anchors: [],
+            stripHeightPx: 1000,
+            viewportHeightPx: 200,
+            visualSegments: [
+                { id: 'video-1', canvasId: 11, index: 0, top: 0, height: 600 },
+                { id: 'image-1', canvasId: 11, index: 1, top: 600, height: 400 },
+            ],
+        }),
+        400,
+    );
+});
+
+test('getPlayerRuntimeScrollTop follows the latest anchor when there is no active scroll event', () => {
+    assert.equal(
+        getPlayerRuntimeScrollTop({
+            playheadMs: 5000,
+            scrollEvents: [],
+            anchors: [
+                { time: 1000, canvasId: 11, index: 0, position: 50 },
+                { time: 5000, canvasId: 11, index: 1, position: 50 },
+            ],
+            stripHeightPx: 1000,
+            viewportHeightPx: 200,
+            visualSegments: [
+                { id: 'video-1', canvasId: 11, index: 0, top: 0, height: 600 },
+                { id: 'image-1', canvasId: 11, index: 1, top: 600, height: 400 },
+            ],
+        }),
+        700,
     );
 });
 

@@ -78,6 +78,7 @@ describe('Record', () => {
             assert.equal(storedRecord.cueId, cue.id);
             assert.equal(storedRecord.artistId, artist.id);
             assert.equal(storedRecord.cue.id, cue.id);
+            assert.ok(storedRecord.artist);
             assert.equal(storedRecord.artist.id, artist.id);
             assert.equal(storedRecord.artist.name, 'Record artist');
             assert.equal(storedRecord.recordUrl, 'https://assets.example.com/record.wav');
@@ -89,7 +90,7 @@ describe('Record', () => {
         }
     });
 
-    it('stores a record without duration', async () => {
+    it('stores a record without artist and duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
             entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Scroll, Track],
@@ -129,18 +130,17 @@ describe('Record', () => {
                     endTime: 3000,
                 })
             );
-            const artist = await dataSource.manager.save(new Artist({ name: 'Record nullable duration artist' }));
 
             const record = await dataSource.manager.save(
                 new Record({
                     cueId: cue.id,
-                    artistId: artist.id,
                     recordUrl: 'https://assets.example.com/record-without-duration.wav',
                 })
             );
 
             const storedRecord = await dataSource.manager.findOneByOrFail(Record, { id: record.id });
 
+            assert.equal(storedRecord.artistId, null);
             assert.equal(storedRecord.duration, null);
             assert.equal(storedRecord.isAccepted, false);
         } finally {

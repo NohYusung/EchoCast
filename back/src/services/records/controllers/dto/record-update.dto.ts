@@ -1,6 +1,6 @@
 export class RecordUpdateDto {
     cueId?: number;
-    artistId?: number;
+    artistId?: number | null;
     recordUrl?: string;
     duration?: number;
     volume?: number;

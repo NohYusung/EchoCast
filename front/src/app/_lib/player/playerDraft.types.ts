@@ -79,7 +79,7 @@ export interface PlayerDraft {
     records: Array<{
         id: string;
         cueId: string;
-        artistId: string;
+        artistId: string | null;
         recordUrl: string;
         duration?: number;
         volume: number;

@@ -6,10 +6,13 @@ import type { CSSProperties } from 'react';
 import { ToonedBrand } from '../brand/ToonedBrand';
 import { uploadFileToPresignedUrl } from '../player/mediaUploadBatch';
 import type { StudioEpisodeDetails } from '../player/getEpisodeDetails';
+import { getPlayerDraft } from '../player/getPlayerDraft';
+import { getPlayerManifest } from '../player/getPlayerManifest';
 import type { PlayerDraft } from '../player/playerDraft.types';
 import type { PlayerManifest } from '../player/playerManifest.types';
 import { buildRecordCreateRequest, buildRecordingUploadFileRequest, getRecordApiId } from '../player/recordingStudioApi';
 import {
+    buildRecordingCueStripMarkers,
     buildRecordingCueQueue,
     filterRecordingCueQueue,
     getRecordingProgress,
@@ -37,10 +40,6 @@ type ArtistListResponse = {
     data?: {
         items?: StudioRecordArtist[];
     };
-};
-
-type PlayerManifestResponse = {
-    data?: PlayerManifest;
 };
 
 type UploadUrlsResponse = {
@@ -72,7 +71,8 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         const characters = draftState.characters.filter((character) => characterIds.has(character.id));
         return characters.length > 0 ? characters : draftState.characters;
     }, [allQueue, draftState.characters]);
-    const [selectedCharacterId, setSelectedCharacterId] = useState(() => availableCharacters[0]?.id ?? draft.characters[0]?.id ?? '');
+    const availableCharacterIds = useMemo(() => availableCharacters.map((character) => character.id), [availableCharacters]);
+    const [selectedCharacterIds, setSelectedCharacterIds] = useState(() => draft.characters.map((character) => character.id));
     const [selectedArtistId, setSelectedArtistId] = useState('');
     const [artists, setArtists] = useState<StudioRecordArtist[]>([]);
     const [filter, setFilter] = useState<RecordingCueFilter>('all');
@@ -131,27 +131,39 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }, [apiBaseUrl]);
 
     useEffect(() => {
-        if (!selectedCharacterId && availableCharacters[0]) {
-            setSelectedCharacterId(availableCharacters[0].id);
-            return;
-        }
+        setSelectedCharacterIds((current) => {
+            if (availableCharacterIds.length === 0) return [];
 
-        if (selectedCharacterId && availableCharacters.length > 0 && !availableCharacters.some((character) => character.id === selectedCharacterId)) {
-            setSelectedCharacterId(availableCharacters[0].id);
-        }
-    }, [availableCharacters, selectedCharacterId]);
+            const validSelectedIds = current.filter((characterId) => availableCharacterIds.includes(characterId));
+            const nextSelectedIds = validSelectedIds.length > 0 ? validSelectedIds : availableCharacterIds;
 
-    const queue = useMemo(
-        () => buildRecordingCueQueue({ draft: draftState, manifest: manifestState, characterId: selectedCharacterId }),
-        [draftState, manifestState, selectedCharacterId],
-    );
+            if (nextSelectedIds.length === current.length && nextSelectedIds.every((characterId, index) => characterId === current[index])) {
+                return current;
+            }
+
+            return nextSelectedIds;
+        });
+    }, [availableCharacterIds]);
+
+    const selectedCharacterIdSet = useMemo(() => new Set(selectedCharacterIds), [selectedCharacterIds]);
+    const queue = useMemo(() => allQueue.filter((item) => selectedCharacterIdSet.has(item.characterId)), [allQueue, selectedCharacterIdSet]);
     const visibleQueue = useMemo(() => filterRecordingCueQueue(queue, filter), [filter, queue]);
     const progress = useMemo(() => getRecordingProgress(queue), [queue]);
     const selectedCue = queue.find((item) => item.cueId === selectedCueId) ?? selectInitialRecordingCue(queue);
     const selectedCueIndex = selectedCue ? Math.max(0, queue.findIndex((item) => item.cueId === selectedCue.cueId)) : 0;
     const selectedRecords = selectedCue?.records ?? [];
     const stripClips = useMemo(() => getRecordStripClips({ draft: draftState, manifest: manifestState }), [draftState, manifestState]);
-    const markerTop = queue.length > 1 ? Math.min(92, Math.max(8, (selectedCueIndex / (queue.length - 1)) * 84 + 8)) : 14;
+    const stripCueMarkers = useMemo(() => buildRecordingCueStripMarkers({ queue: allQueue, selectedCueId: selectedCue?.cueId }), [allQueue, selectedCue?.cueId]);
+    const cueCountByCharacterId = useMemo(() => {
+        const counts = new Map<string, number>();
+
+        for (const item of allQueue) {
+            counts.set(item.characterId, (counts.get(item.characterId) ?? 0) + 1);
+        }
+
+        return counts;
+    }, [allQueue]);
+    const isAllCharactersSelected = availableCharacters.length > 0 && selectedCharacterIds.length === availableCharacters.length;
     const currentWave = isRecording ? liveWave : createWave(selectedCue?.latestRecordUrl ?? selectedCue?.cueId ?? 'empty', 42);
     const totalApiDuration = allQueue
         .flatMap((item) => item.records)
@@ -189,28 +201,13 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }, []);
 
     async function refreshRecordingData() {
-        const [draftResponse, manifestResponse] = await Promise.all([
-            fetch(`${apiBaseUrl}/episodes/${episodeId}/player-draft`, { cache: 'no-store' }),
-            fetch(`${apiBaseUrl}/player/manifest/${episodeId}`, { cache: 'no-store' }),
+        const [nextDraft, nextManifest] = await Promise.all([
+            getPlayerDraft({ productId, episodeId }),
+            getPlayerManifest(episodeId),
         ]);
 
-        if (!draftResponse.ok) {
-            throw new Error(`Player draft request failed: ${draftResponse.status}`);
-        }
-
-        if (!manifestResponse.ok) {
-            throw new Error(`Player manifest request failed: ${manifestResponse.status}`);
-        }
-
-        const nextDraft = (await draftResponse.json()) as PlayerDraft;
-        const manifestPayload = (await manifestResponse.json()) as PlayerManifestResponse;
-
-        if (!manifestPayload.data) {
-            throw new Error('Player manifest response is empty');
-        }
-
         setDraftState(nextDraft);
-        setManifestState(manifestPayload.data);
+        setManifestState(nextManifest);
     }
 
     async function toggleRecording() {
@@ -410,6 +407,21 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         setSelectedCueId(queue[nextIndex].cueId);
     }
 
+    function toggleCharacterFilter(characterId: string) {
+        setSelectedCharacterIds((current) =>
+            current.includes(characterId) ? current.filter((item) => item !== characterId) : [...current, characterId],
+        );
+    }
+
+    function toggleAllCharacterFilters() {
+        setSelectedCharacterIds((current) => (current.length === availableCharacterIds.length ? [] : availableCharacterIds));
+    }
+
+    function selectStripCue(cueId: string, characterId: string) {
+        setSelectedCharacterIds((current) => (current.includes(characterId) ? current : [...current, characterId]));
+        setSelectedCueId(cueId);
+    }
+
     return (
         <div className="tp-catalog tr-record">
             <header className="tp-topbar tr-record-topbar">
@@ -426,19 +438,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                     </strong>
                 </nav>
                 <div className="tp-spacer" />
-                <div className="tr-character-select" aria-label="캐릭터 선택">
-                    {availableCharacters.map((character) => (
-                        <button
-                            className={character.id === selectedCharacterId ? 'active' : ''}
-                            key={character.id}
-                            onClick={() => setSelectedCharacterId(character.id)}
-                            style={{ borderColor: character.color }}
-                            type="button"
-                        >
-                            {character.name}
-                        </button>
-                    ))}
-                </div>
                 <label className="tr-artist-select">
                     <span>성우</span>
                     <select onChange={(event) => setSelectedArtistId(event.target.value)} value={selectedArtistId}>
@@ -451,7 +450,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                     </select>
                 </label>
                 <div className="tr-progress-pill">
-                    <span>현재 캐릭터 녹음 진행률</span>
+                    <span>선택 대사 녹음 진행률</span>
                     <i>
                         <b style={{ width: `${progress.percent}%` }} />
                     </i>
@@ -498,9 +497,37 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                         <div className="tr-panel-head">
                             <div>
                                 <h2>대사 큐</h2>
-                                <p>{selectedCue?.characterName ?? '캐릭터'}의 대사</p>
+                                <p>
+                                    {selectedCharacterIds.length} / {availableCharacters.length} 캐릭터 선택
+                                </p>
                             </div>
                             <span>{queue.length}</span>
+                        </div>
+                        <div className="tr-character-filter" aria-label="캐릭터 필터">
+                            <label className={isAllCharactersSelected ? 'active' : ''}>
+                                <input
+                                    checked={isAllCharactersSelected}
+                                    onChange={toggleAllCharacterFilters}
+                                    type="checkbox"
+                                />
+                                <span>전체</span>
+                                <em>{allQueue.length}</em>
+                            </label>
+                            {availableCharacters.map((character) => (
+                                <label
+                                    className={selectedCharacterIds.includes(character.id) ? 'active' : ''}
+                                    key={character.id}
+                                    style={{ borderColor: character.color }}
+                                >
+                                    <input
+                                        checked={selectedCharacterIds.includes(character.id)}
+                                        onChange={() => toggleCharacterFilter(character.id)}
+                                        type="checkbox"
+                                    />
+                                    <span>{character.name}</span>
+                                    <em>{cueCountByCharacterId.get(character.id) ?? 0}</em>
+                                </label>
+                            ))}
                         </div>
                         <div className="tr-filter-tabs" role="tablist" aria-label="대사 상태 필터">
                             {(['all', 'pending', 'done'] as RecordingCueFilter[]).map((status) => (
@@ -519,7 +546,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                         </div>
                         <div className="tr-cue-list">
                             {visibleQueue.length === 0 ? (
-                                <div className="tr-empty">대사가 없습니다.</div>
+                                <div className="tr-empty">{selectedCharacterIds.length === 0 ? '캐릭터 필터를 선택하세요.' : '대사가 없습니다.'}</div>
                             ) : (
                                 visibleQueue.map((item) => (
                                     <button
@@ -549,22 +576,39 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                         <div className="tr-strip-head">
                             <span>스트립</span>
                             <strong>
-                                {queue.length > 0 ? selectedCueIndex + 1 : 0} / {queue.length}
+                                대사 위치 {stripCueMarkers.length}
                             </strong>
                         </div>
                         <div className="tr-strip">
-                            <span className="tr-strip-marker" style={{ top: `${markerTop}%` }} />
-                            {stripClips.map((clip, index) => (
-                                <button
-                                    className={index === selectedCueIndex % Math.max(1, stripClips.length) ? 'active' : ''}
-                                    key={clip.id}
-                                    style={getStripClipStyle(clip)}
-                                    type="button"
-                                >
-                                    <b>{index + 1}</b>
-                                    <span>{clip.label}</span>
-                                </button>
-                            ))}
+                            <div className="tr-strip-map">
+                                {stripClips.map((clip, index) => (
+                                    <button
+                                        className={`tr-strip-clip ${index === selectedCueIndex % Math.max(1, stripClips.length) ? 'active' : ''}`}
+                                        key={clip.id}
+                                        style={getStripClipStyle(clip)}
+                                        type="button"
+                                    >
+                                        <b>{index + 1}</b>
+                                        <span>{clip.label}</span>
+                                    </button>
+                                ))}
+                                <div className="tr-strip-cue-layer" aria-label="대사 등록 위치">
+                                    {stripCueMarkers.map((marker) => (
+                                        <button
+                                            className={`tr-strip-cue-marker ${marker.isSelected ? 'active' : ''} ${marker.status}`}
+                                            key={marker.cueId}
+                                            onClick={() => selectStripCue(marker.cueId, marker.characterId)}
+                                            style={{ borderColor: marker.characterColor, top: `${marker.topPercent}%` }}
+                                            type="button"
+                                        >
+                                            <i style={{ background: marker.characterColor }} />
+                                            <span>{marker.characterName}</span>
+                                            <strong>{marker.text}</strong>
+                                            <em>{formatMs(marker.startTime)}</em>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     </section>
 

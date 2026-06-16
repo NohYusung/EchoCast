@@ -147,7 +147,7 @@ type PlayerDraft = {
     records: Array<{
         id: string;
         cueId: string;
-        artistId: string;
+        artistId: string | null;
         recordUrl: string;
         duration?: number;
         volume: number;
@@ -549,7 +549,7 @@ export class PlayerService extends DddService {
             records: records.map((record) => ({
                 id: toId(record.id),
                 cueId: toId(record.cueId),
-                artistId: toId(record.artistId),
+                artistId: record.artistId === null ? null : toId(record.artistId),
                 recordUrl: record.recordUrl,
                 duration: record.duration ?? undefined,
                 volume: record.volume,

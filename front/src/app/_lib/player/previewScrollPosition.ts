@@ -142,30 +142,18 @@ export function getPreviewScrollPosition({
     const activeScrollEvent = orderedEvents.find((event) => playhead >= event.start && playhead < event.start + event.duration);
 
     if (!activeScrollEvent) {
-        const lastCompletedEvent = [...orderedEvents].reverse().find((event) => playhead >= event.start + event.duration);
+        const latestAnchor = [...anchors]
+            .filter((anchor) => Number.isFinite(anchor.time) && playhead >= anchor.time)
+            .sort((a, b) => b.time - a.time)[0];
 
-        if (!lastCompletedEvent) {
-            const latestAnchor = [...anchors]
-                .filter((anchor) => Number.isFinite(anchor.time) && playhead >= anchor.time)
-                .sort((a, b) => b.time - a.time)[0];
-
-            if (!latestAnchor) {
-                return undefined;
-            }
-
-            return getPreviewScrollPixel({
-                canvasId: latestAnchor.canvasId,
-                index: latestAnchor.index,
-                position: latestAnchor.position,
-                stripHeightPx: coordinateHeightPx,
-                visualSegments,
-            });
+        if (!latestAnchor) {
+            return undefined;
         }
 
         return getPreviewScrollPixel({
-            canvasId: lastCompletedEvent.canvasId,
-            index: lastCompletedEvent.endIndex,
-            position: lastCompletedEvent.endPosition,
+            canvasId: latestAnchor.canvasId,
+            index: latestAnchor.index,
+            position: latestAnchor.position,
             stripHeightPx: coordinateHeightPx,
             visualSegments,
         });

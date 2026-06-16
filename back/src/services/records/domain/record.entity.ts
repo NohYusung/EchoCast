@@ -5,7 +5,7 @@ import { Cue } from '../../cues/domain/cue.entity';
 
 type Ctor = {
     cueId: number;
-    artistId: number;
+    artistId?: number | null;
     recordUrl: string;
     duration?: number;
     volume?: number;
@@ -20,8 +20,8 @@ export class Record extends DddAggregate {
     @Column({ comment: '큐 id' })
     cueId!: number;
 
-    @Column({ comment: '아티스트 id' })
-    artistId!: number;
+    @Column({ comment: '아티스트 id', nullable: true })
+    artistId!: number | null;
 
     @Column({ comment: '녹음 파일 URL' })
     recordUrl!: string;
@@ -39,15 +39,15 @@ export class Record extends DddAggregate {
     @JoinColumn({ name: 'cueId' })
     cue!: Cue;
 
-    @ManyToOne(() => Artist, (artist) => artist.records, { nullable: false })
+    @ManyToOne(() => Artist, (artist) => artist.records, { nullable: true })
     @JoinColumn({ name: 'artistId' })
-    artist!: Artist;
+    artist!: Artist | null;
 
     constructor(args?: Ctor) {
         super();
         if (args) {
             this.cueId = args.cueId;
-            this.artistId = args.artistId;
+            this.artistId = args.artistId ?? null;
             this.recordUrl = args.recordUrl;
             this.duration = args.duration;
             this.volume = args.volume ?? 1;
@@ -64,7 +64,7 @@ export class Record extends DddAggregate {
         isAccepted,
     }: {
         cueId?: number;
-        artistId?: number;
+        artistId?: number | null;
         recordUrl?: string;
         duration?: number;
         volume?: number;

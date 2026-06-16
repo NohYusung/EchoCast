@@ -170,3 +170,76 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
         await app.close();
     }
 });
+
+test('records API creates a record without an artist', async () => {
+    const moduleRef = await Test.createTestingModule({
+        imports: [AppModule],
+    }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+
+    await app.init();
+
+    try {
+        const dataSource = app.get(DataSource);
+        const product = await dataSource.manager.save(new Product({ title: 'Record API no artist product' }));
+        const character = await dataSource.manager.save(
+            new Character({
+                productId: product.id,
+                name: 'Record API no artist character',
+            })
+        );
+        const episode = await dataSource.manager.save(
+            new Episode({
+                productId: product.id,
+                episodeNumber: 1,
+                title: 'Record API no artist episode',
+            })
+        );
+        const track = await dataSource.manager.save(
+            new Track({
+                episodeId: episode.id,
+                name: 'Record API no artist track',
+                type: 'record',
+                characterId: character.id,
+            })
+        );
+        const cue = await dataSource.manager.save(
+            new Cue({
+                script: 'Record API no artist script',
+                characterId: character.id,
+                trackId: track.id,
+                startTime: 100,
+                endTime: 1300,
+            })
+        );
+
+        const response = await request(app.getHttpServer())
+            .post('/records')
+            .send({
+                cueId: cue.id,
+                recordUrl: 'https://assets.example.com/record-api-no-artist.wav',
+                duration: 1200,
+            })
+            .expect(201);
+
+        assert.deepEqual(response.body, { data: {} });
+
+        const [storedRecord] = await dataSource.manager.find(Record, {
+            where: {
+                cueId: cue.id,
+            },
+        });
+
+        assert.ok(storedRecord);
+        assert.equal(storedRecord.artistId, null);
+        assert.equal(storedRecord.recordUrl, 'https://assets.example.com/record-api-no-artist.wav');
+
+        const listResponse = await request(app.getHttpServer()).get('/records').expect(200);
+        const listedRecord = listResponse.body.data.items.find((item: { id: number }) => item.id === storedRecord.id);
+
+        assert.ok(listedRecord);
+        assert.equal(listedRecord.artistId, null);
+    } finally {
+        await app.close();
+    }
+});

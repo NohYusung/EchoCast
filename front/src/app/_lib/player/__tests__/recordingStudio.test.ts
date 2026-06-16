@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+    buildRecordingCueStripMarkers,
     buildRecordingCueQueue,
     filterRecordingCueQueue,
     getRecordingProgress,
@@ -141,4 +142,38 @@ test('selectInitialRecordingCue prefers the first pending cue and falls back to 
 
     assert.equal(selectInitialRecordingCue(queue)?.cueId, 'cue-2');
     assert.equal(selectInitialRecordingCue(filterRecordingCueQueue(queue, 'done'))?.cueId, 'cue-1');
+});
+
+test('buildRecordingCueStripMarkers maps cue start times to strip positions', () => {
+    const queue = buildRecordingCueQueue({ draft });
+    const markers = buildRecordingCueStripMarkers({ queue, selectedCueId: 'cue-2' });
+
+    assert.deepEqual(
+        markers.map((marker) => ({
+            cueId: marker.cueId,
+            characterName: marker.characterName,
+            topPercent: marker.topPercent,
+            isSelected: marker.isSelected,
+        })),
+        [
+            {
+                cueId: 'cue-1',
+                characterName: '지후',
+                topPercent: 4,
+                isSelected: false,
+            },
+            {
+                cueId: 'cue-2',
+                characterName: '지후',
+                topPercent: 34.72,
+                isSelected: true,
+            },
+            {
+                cueId: 'cue-3',
+                characterName: '서연',
+                topPercent: 83.33,
+                isSelected: false,
+            },
+        ],
+    );
 });

@@ -18,7 +18,7 @@ export class RecordService extends DddService {
         isAccepted,
     }: {
         cueId: number;
-        artistId: number;
+        artistId?: number | null;
         recordUrl: string;
         duration?: number;
         volume?: number;
@@ -67,7 +67,7 @@ export class RecordService extends DddService {
     }: {
         recordId: number;
         cueId?: number;
-        artistId?: number;
+        artistId?: number | null;
         recordUrl?: string;
         duration?: number;
         volume?: number;

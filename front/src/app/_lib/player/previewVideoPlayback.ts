@@ -16,10 +16,25 @@ export type PreviewVideoClip = {
 type PreviewVideoController = {
     currentTime: number;
     muted: boolean;
+    paused?: boolean;
     volume: number;
     play: () => Promise<unknown> | unknown;
     pause: () => void;
 };
+
+type PreviewVideoPlaybackSession = {
+    activeClipId: string | null;
+    isPlaying: boolean;
+    playhead: number | null;
+    targetTime: number | null;
+};
+
+const SMOOTH_PLAYHEAD_STEP_SECONDS = 0.75;
+
+const previewVideoPlaybackSessions = new WeakMap<
+    ReadonlyMap<string, PreviewVideoController>,
+    PreviewVideoPlaybackSession
+>();
 
 function isVideoClip(clip: PreviewVideoClip) {
     return clip.kind === 'video' || clip.mediaType === 'video';
@@ -82,6 +97,97 @@ function getPreviewVideoPlaybackTarget({ clips, playhead }: { clips: PreviewVide
     };
 }
 
+function getPreviewVideoPlaybackSession(videos: ReadonlyMap<string, PreviewVideoController>) {
+    const existingSession = previewVideoPlaybackSessions.get(videos);
+
+    if (existingSession) {
+        return existingSession;
+    }
+
+    const session = {
+        activeClipId: null,
+        isPlaying: false,
+        playhead: null,
+        targetTime: null,
+    };
+
+    previewVideoPlaybackSessions.set(videos, session);
+
+    return session;
+}
+
+function isSmoothPlaybackAdvance({
+    playhead,
+    session,
+    target,
+}: {
+    playhead: number;
+    session: PreviewVideoPlaybackSession;
+    target: { clipId: string; currentTime: number };
+}) {
+    if (session.activeClipId !== target.clipId || session.playhead === null || session.targetTime === null) {
+        return false;
+    }
+
+    const playheadDelta = playhead - session.playhead;
+    const targetDelta = target.currentTime - session.targetTime;
+
+    return (
+        playheadDelta >= 0 &&
+        playheadDelta <= SMOOTH_PLAYHEAD_STEP_SECONDS &&
+        targetDelta >= 0 &&
+        targetDelta <= SMOOTH_PLAYHEAD_STEP_SECONDS
+    );
+}
+
+function shouldSeekVideo({
+    isPlaying,
+    playhead,
+    seekToleranceSeconds,
+    session,
+    target,
+    video,
+}: {
+    isPlaying: boolean;
+    playhead: number;
+    seekToleranceSeconds: number;
+    session: PreviewVideoPlaybackSession;
+    target: { clipId: string; currentTime: number };
+    video: PreviewVideoController;
+}) {
+    const drift = Math.abs(video.currentTime - target.currentTime);
+
+    if (drift <= seekToleranceSeconds) {
+        return false;
+    }
+
+    if (!isPlaying || !session.isPlaying || session.activeClipId !== target.clipId) {
+        return true;
+    }
+
+    return !isSmoothPlaybackAdvance({ playhead, session, target });
+}
+
+function playVideo(video: PreviewVideoController) {
+    if (video.paused === false) {
+        return;
+    }
+
+    const playResult = video.play();
+
+    if (playResult && typeof (playResult as Promise<unknown>).catch === 'function') {
+        void (playResult as Promise<unknown>).catch(() => undefined);
+    }
+}
+
+function pauseVideo(video: PreviewVideoController) {
+    if (video.paused === true) {
+        return;
+    }
+
+    video.pause();
+}
+
 export function syncPreviewVideoPlayback({
     clips,
     isPlaying,
@@ -96,6 +202,7 @@ export function syncPreviewVideoPlayback({
     videos: ReadonlyMap<string, PreviewVideoController>;
 }) {
     const target = getPreviewVideoPlaybackTarget({ clips, playhead });
+    const session = getPreviewVideoPlaybackSession(videos);
 
     clips.forEach((clip) => {
         if (!isVideoClip(clip)) {
@@ -112,23 +219,24 @@ export function syncPreviewVideoPlayback({
         video.muted = clip.isMuted === true;
 
         if (!target || target.clipId !== clip.id) {
-            video.pause();
+            pauseVideo(video);
             return;
         }
 
-        if (Math.abs(video.currentTime - target.currentTime) > seekToleranceSeconds) {
+        if (shouldSeekVideo({ isPlaying, playhead, seekToleranceSeconds, session, target, video })) {
             video.currentTime = target.currentTime;
         }
 
         if (!isPlaying) {
-            video.pause();
+            pauseVideo(video);
             return;
         }
 
-        const playResult = video.play();
-
-        if (playResult && typeof (playResult as Promise<unknown>).catch === 'function') {
-            void (playResult as Promise<unknown>).catch(() => undefined);
-        }
+        playVideo(video);
     });
+
+    session.activeClipId = target?.clipId ?? null;
+    session.isPlaying = isPlaying && Boolean(target);
+    session.playhead = playhead;
+    session.targetTime = target?.currentTime ?? null;
 }

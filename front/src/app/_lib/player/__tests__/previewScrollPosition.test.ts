@@ -112,7 +112,7 @@ test('getPreviewScrollPosition interpolates between media-local anchors', () => 
     );
 });
 
-test('getPreviewScrollPosition holds the last event position between scroll events', () => {
+test('getPreviewScrollPosition holds the latest anchor position between scroll events', () => {
     assert.equal(
         getPreviewScrollPosition({
             playhead: 15,
@@ -136,13 +136,46 @@ test('getPreviewScrollPosition holds the last event position between scroll even
                     endPosition: 100,
                 },
             ],
+            anchors: [
+                { time: 12, canvasId: 11, index: 1, position: 70 },
+            ],
             stripHeightPx: 800,
             visualSegments: [
                 { id: 'clip-1', canvasId: 11, index: 0, top: 0, height: 300 },
                 { id: 'clip-2', canvasId: 11, index: 1, top: 300, height: 500 },
             ],
         }),
-        550,
+        650,
+    );
+});
+
+test('getPreviewScrollPosition uses the latest anchor after the last completed scroll event', () => {
+    assert.equal(
+        getPreviewScrollPosition({
+            playhead: 18,
+            scrollEvents: [
+                {
+                    start: 10,
+                    duration: 4,
+                    canvasId: 11,
+                    startIndex: 1,
+                    endIndex: 3,
+                    startPosition: 10,
+                    endPosition: 54,
+                },
+            ],
+            anchors: [
+                { time: 14, canvasId: 11, index: 3, position: 54 },
+                { time: 18, canvasId: 11, index: 5, position: 54 },
+            ],
+            stripHeightPx: 1600,
+            visualSegments: [
+                { id: 'clip-1', canvasId: 11, index: 1, top: 0, height: 200 },
+                { id: 'clip-3', canvasId: 11, index: 3, top: 400, height: 200 },
+                { id: 'clip-5', canvasId: 11, index: 5, top: 800, height: 200 },
+            ],
+        }),
+        908,
     );
 });
 

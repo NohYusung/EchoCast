@@ -10,6 +10,7 @@ import type { PreviewScrollVisualSegment } from './previewScrollPosition';
 import {
     advancePlayerRuntimePlayhead,
     getPlayerRuntimePlayheadFromScroll,
+    getPlayerRuntimeScrollTop,
     shouldSyncPlayerRuntimeScroll,
     toPlayerRuntimeScrollAnchors,
     toPlayerRuntimeScrollEvents,
@@ -98,6 +99,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
     const sceneRefs = useRef(new Map<string, HTMLElement>());
     const audioRefs = useRef(new Map<string, HTMLAudioElement>());
     const videoRefs = useRef(new Map<string, HTMLVideoElement>());
+    const isApplyingPlaybackScrollRef = useRef(false);
     const scenes = useMemo(() => buildPlayerScenes(manifest), [manifest]);
     const scrollEvents = useMemo(() => toPlayerRuntimeScrollEvents(manifest.scrolls), [manifest.scrolls]);
     const scrollAnchors = useMemo(() => toPlayerRuntimeScrollAnchors(manifest.anchors), [manifest.anchors]);
@@ -167,10 +169,10 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
         return () => cancelAnimationFrame(animationFrame);
     }, [durationMs, isPlaying]);
 
-    const syncPlayheadFromScroll = useCallback((scroller: HTMLDivElement | null = scrollerRef.current) => {
-        if (!scroller || !shouldSyncPlayerRuntimeScroll(scrollEvents, scrollAnchors)) return;
+    const getRuntimeVisualSegments = useCallback((scroller: HTMLDivElement): PreviewScrollVisualSegment[] => {
         const scrollerRect = scroller.getBoundingClientRect();
-        const visualSegments: PreviewScrollVisualSegment[] = scenes.flatMap((scene): PreviewScrollVisualSegment[] => {
+
+        return scenes.flatMap((scene): PreviewScrollVisualSegment[] => {
             const sceneElement = sceneRefs.current.get(scene.id);
 
             if (!sceneElement) {
@@ -189,6 +191,12 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                 },
             ];
         });
+    }, [scenes]);
+
+    const syncPlayheadFromScroll = useCallback((scroller: HTMLDivElement | null = scrollerRef.current) => {
+        if (!scroller || !shouldSyncPlayerRuntimeScroll(scrollEvents, scrollAnchors)) return;
+        if (isApplyingPlaybackScrollRef.current) return;
+        const visualSegments = getRuntimeVisualSegments(scroller);
         setPlayheadMs((current) => {
             const nextPlayheadMs = getPlayerRuntimePlayheadFromScroll({
                 scrollTopPx: scroller.scrollTop,
@@ -206,11 +214,38 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
 
             return Math.abs(current - next) < 16 ? current : next;
         });
-    }, [durationMs, scenes, scrollAnchors, scrollEvents]);
+    }, [durationMs, getRuntimeVisualSegments, scrollAnchors, scrollEvents]);
 
     useEffect(() => {
         syncPlayheadFromScroll();
     }, [syncPlayheadFromScroll]);
+
+    useEffect(() => {
+        const scroller = scrollerRef.current;
+
+        if (!isPlaying || !scroller || !shouldSyncPlayerRuntimeScroll(scrollEvents, scrollAnchors)) {
+            return;
+        }
+
+        const nextScrollTop = getPlayerRuntimeScrollTop({
+            playheadMs,
+            scrollEvents,
+            anchors: scrollAnchors,
+            stripHeightPx: scroller.scrollHeight,
+            viewportHeightPx: scroller.clientHeight,
+            visualSegments: getRuntimeVisualSegments(scroller),
+        });
+
+        if (nextScrollTop === undefined || Math.abs(scroller.scrollTop - nextScrollTop) < 1) {
+            return;
+        }
+
+        isApplyingPlaybackScrollRef.current = true;
+        scroller.scrollTop = nextScrollTop;
+        window.setTimeout(() => {
+            isApplyingPlaybackScrollRef.current = false;
+        }, 0);
+    }, [getRuntimeVisualSegments, isPlaying, playheadMs, scrollAnchors, scrollEvents]);
 
     useEffect(() => {
         const activeEventIds = new Set(activeEvents.map((event) => event.id));
