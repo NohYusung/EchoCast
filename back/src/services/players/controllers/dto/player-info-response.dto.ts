@@ -195,7 +195,7 @@ export class PlayerInfoResponseDto {
             })),
         ].sort((a, b) => a.startTime - b.startTime || a.layerId - b.layerId || a.id - b.id);
         const media = [
-            ...canvas.canvasMedias.map((canvasMedia) => ({
+            ...visualMediaItems.map(({ canvasMedia }) => ({
                 id: canvasMedia.media.id,
                 kind: canvasMedia.media.mediaType,
                 url: canvasMedia.media.mediaUrl,

@@ -278,6 +278,58 @@ describe('PlayerService', () => {
         }
     });
 
+    it('throws when an episode has no default canvas for player playback', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [
+                Anchor,
+                Artist,
+                Audio,
+                CanvasMedia,
+                Canvas,
+                Character,
+                Cue,
+                Episode,
+                Media,
+                Product,
+                RecordEntity,
+                Scroll,
+                Track,
+            ],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'New authoring product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'New authoring episode',
+                })
+            );
+            const playerService = new PlayerService(
+                new EpisodeRepository(dataSource),
+                new TrackRepository(dataSource),
+                new CanvasRepository(dataSource),
+                new CueRepository(dataSource),
+                new AudioRepository(dataSource),
+                new AnchorRepository(dataSource),
+                new ScrollRepository(dataSource),
+                new RecordRepository(dataSource)
+            );
+
+            await assert.rejects(
+                () => playerService.getPlayerInfo({ episodeId: episode.id }),
+                /대표 캔버스를 찾을 수 없습니다./
+            );
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
     it('does not synthesize a normalized visual track from canvases', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',

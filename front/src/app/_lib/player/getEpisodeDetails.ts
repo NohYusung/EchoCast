@@ -4,6 +4,7 @@ export type StudioEpisodeDetails = {
     episodeNumber: number;
     title: string;
     subTitle?: string;
+    defaultCanvasId?: number;
 };
 
 type EpisodeRetrieveResponse = {

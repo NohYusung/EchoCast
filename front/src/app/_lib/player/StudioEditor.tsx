@@ -43,6 +43,7 @@ import {
 } from './mediaUploadBatch';
 import { buildMediaDragPayload, getNextMediaSelection, parseMediaDragPayload } from './mediaDragSelection';
 import { resolveCreatedCanvasId } from './cutCanvasCreation';
+import { updateEpisodeDefaultCanvas } from './episodeDefaultCanvas';
 import {
     filterPreviewCanvasItems,
     getPreviewCanvasOptions,
@@ -368,7 +369,7 @@ type PreviewCanvasResize = {
     maxWidth: number;
     maxHeight: number;
 };
-type StudioEditorEpisode = Pick<StudioEpisodeDetails, 'episodeNumber' | 'title' | 'subTitle'>;
+type StudioEditorEpisode = Pick<StudioEpisodeDetails, 'episodeNumber' | 'title' | 'subTitle' | 'defaultCanvasId'>;
 type VisualCutPointerEdit = {
     clipId: string;
     mode: VisualCutEditMode;
@@ -6452,9 +6453,11 @@ export function StudioEditor({
     const [deletingMediaId, setDeletingMediaId] = useState<number | null>(null);
     const [trackContextMenu, setTrackContextMenu] = useState<TrackContextMenuState | null>(null);
     const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
+    const initialDefaultCanvasId = typeof episode?.defaultCanvasId === 'number' ? episode.defaultCanvasId : null;
     const [canvasItems, setCanvasItems] = useState<CanvasListItem[]>([]);
     const [activeCutCanvasId, setActiveCutCanvasId] = useState<number | null>(null);
-    const [selectedPreviewCanvasId, setSelectedPreviewCanvasId] = useState<number | null>(null);
+    const [selectedPreviewCanvasId, setSelectedPreviewCanvasId] = useState<number | null>(initialDefaultCanvasId);
+    const [persistedDefaultCanvasId, setPersistedDefaultCanvasId] = useState<number | null>(initialDefaultCanvasId);
     const [editableVisualClips, setEditableVisualClips] = useState<VisualClip[]>([]);
     const [dirtyImageCompositionCanvasIds, setDirtyImageCompositionCanvasIds] = useState<number[]>([]);
     const [imageCompositionDraft, setImageCompositionDraft] = useState<ImageCompositionDraft>(
@@ -6830,6 +6833,46 @@ export function StudioEditor({
     useEffect(() => {
         setSelectedPreviewCanvasId((current) => resolvePreviewCanvasId(canvasItems, current));
     }, [canvasItems]);
+
+    useEffect(() => {
+        const nextDefaultCanvasId = typeof episode?.defaultCanvasId === 'number' ? episode.defaultCanvasId : null;
+
+        setPersistedDefaultCanvasId(nextDefaultCanvasId);
+        setSelectedPreviewCanvasId((current) => current ?? nextDefaultCanvasId);
+    }, [episode?.defaultCanvasId]);
+
+    useEffect(() => {
+        if (typeof resolvedPreviewCanvasId !== 'number' || persistedDefaultCanvasId === resolvedPreviewCanvasId) {
+            return;
+        }
+
+        let ignore = false;
+
+        updateEpisodeDefaultCanvas(resolvedApiBaseUrl, {
+            productId,
+            episodeId,
+            defaultCanvasId: resolvedPreviewCanvasId,
+        })
+            .then(() => {
+                if (!ignore) {
+                    setPersistedDefaultCanvasId(resolvedPreviewCanvasId);
+                    setTrackLoadError(null);
+                }
+            })
+            .catch((error) => {
+                if (!ignore) {
+                    setTrackLoadError(
+                        error instanceof Error
+                            ? `대표 캔버스 저장에 실패했습니다: ${error.message}`
+                            : '대표 캔버스 저장에 실패했습니다.'
+                    );
+                }
+            });
+
+        return () => {
+            ignore = true;
+        };
+    }, [episodeId, persistedDefaultCanvasId, productId, resolvedApiBaseUrl, resolvedPreviewCanvasId]);
 
     useEffect(() => {
         setImageCompositionDraft((current) => syncImageCompositionDraft(imageCompositionSources, current));

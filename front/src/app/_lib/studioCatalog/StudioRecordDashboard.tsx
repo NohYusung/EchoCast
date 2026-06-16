@@ -855,11 +855,10 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
 function getRecordStripClips({ draft, manifest }: { draft: PlayerDraft; manifest: PlayerManifest }): VisualClip[] {
     const canvasClips = toVisualClips(manifest.canvases ?? []);
-    if (canvasClips.length > 0) return canvasClips.slice(0, 10);
+    if (canvasClips.length > 0) return canvasClips;
 
     return draft.media
         .filter((media) => media.kind === 'image' || media.kind === 'video')
-        .slice(0, 10)
         .map((media, index) => {
             const mediaType = media.kind === 'video' ? 'video' : 'image';
 

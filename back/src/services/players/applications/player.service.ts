@@ -49,8 +49,6 @@ export class PlayerService extends DddService {
             throw new NotFoundException('에피소드를 찾을 수 없습니다.');
         }
 
-        // canvasId 형식 검증은 DTO에서 처리하고, service는 재생 대상 canvas 결정만 담당한다.
-        // 요청 canvasId가 없으면 episode.defaultCanvasId를 대표 canvas로 사용한다.
         const selectedCanvasId = canvasId ?? episode.defaultCanvasId;
         if (typeof selectedCanvasId !== 'number') {
             throw new NotFoundException('대표 캔버스를 찾을 수 없습니다.');

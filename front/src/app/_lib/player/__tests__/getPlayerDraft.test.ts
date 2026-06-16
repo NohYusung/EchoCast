@@ -179,6 +179,65 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
     assert.equal(draft.records[0]?.recordUrl, 'https://assets.example.com/record.wav');
 });
 
+test('getPlayerDraft can reuse a provided manifest without requesting the player manifest endpoint', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'http://localhost:4100';
+    const requestedUrls: string[] = [];
+
+    globalThis.fetch = (async (input, init) => {
+        requestedUrls.push(String(input));
+        assert.equal(init?.cache, 'no-store');
+
+        if (String(input) === 'http://localhost:4100/products/1') {
+            return jsonResponse({
+                data: {
+                    id: 1,
+                    title: '진격의 거인',
+                },
+            });
+        }
+
+        if (String(input) === 'http://localhost:4100/products/1/episodes/2') {
+            return jsonResponse({
+                data: {
+                    id: 2,
+                    productId: 1,
+                    episodeNumber: 2,
+                    title: '새 에피소드',
+                },
+            });
+        }
+
+        if (String(input) === 'http://localhost:4100/products/1/characters') {
+            return jsonResponse({ data: { items: [] } });
+        }
+
+        if (String(input) === 'http://localhost:4100/episodes/2/tracks') {
+            return jsonResponse({ data: { items: [] } });
+        }
+
+        return new Response('not found', { status: 404 });
+    }) as typeof fetch;
+
+    const draft = await getPlayerDraft({
+        productId: '1',
+        episodeId: '2',
+        initialManifest: {
+            episodeId: 2,
+            totalDuration: 0,
+            tracks: [],
+            items: [],
+            cues: [],
+            media: [],
+            records: [],
+            tts: [],
+        },
+    });
+
+    assert.equal(requestedUrls.includes('http://localhost:4100/player/manifest/2'), false);
+    assert.equal(draft.products[0]?.title, '진격의 거인');
+    assert.equal(draft.episodes[0]?.title, '새 에피소드');
+});
+
 function jsonResponse(payload: unknown) {
     return new Response(JSON.stringify(payload), { status: 200 });
 }

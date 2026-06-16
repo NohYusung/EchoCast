@@ -96,3 +96,28 @@ test('GET player manifest endpoint exposes episode playback content without draf
         await app.close();
     }
 });
+
+test('GET player manifest endpoint rejects playback before a default canvas exists', async () => {
+    const moduleRef = await Test.createTestingModule({
+        imports: [AppModule],
+    }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+
+    await app.init();
+
+    try {
+        const dataSource = app.get(DataSource);
+        const product = await dataSource.manager.save(new Product({ title: 'Fresh API product' }));
+        const episode = await dataSource.manager.save(
+            new Episode({
+                productId: product.id,
+                episodeNumber: 1,
+                title: 'Fresh API episode',
+            })
+        );
+
+        await request(app.getHttpServer()).get(`/player/manifest/${episode.id}`).expect(404);
+    } finally {
+        await app.close();
+    }
+});

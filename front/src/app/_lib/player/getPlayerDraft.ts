@@ -64,9 +64,15 @@ type PlayerDraftParams = {
     productId: string;
     episodeId: string;
     canvasId?: string;
+    initialManifest?: PlayerManifest;
 };
 
-export async function getPlayerDraft({ productId, episodeId, canvasId }: PlayerDraftParams): Promise<PlayerDraft> {
+export async function getPlayerDraft({
+    productId,
+    episodeId,
+    canvasId,
+    initialManifest,
+}: PlayerDraftParams): Promise<PlayerDraft> {
     const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100').replace(/\/$/, '');
     const fallbackDraft = createEmptyPlayerDraft({ productId, episodeId });
     const manifestUrl = new URL(`${apiBaseUrl}/player/manifest/${episodeId}`);
@@ -80,7 +86,9 @@ export async function getPlayerDraft({ productId, episodeId, canvasId }: PlayerD
             retrieveApiData<EpisodeRetrieveItem>(`${apiBaseUrl}/products/${productId}/episodes/${episodeId}`),
             listApiItems<CharacterListItem>(`${apiBaseUrl}/products/${productId}/characters`),
             listApiItems<TrackListItem>(`${apiBaseUrl}/episodes/${episodeId}/tracks`),
-            retrieveApiData<PlayerManifest>(manifestUrl.toString()),
+            initialManifest
+                ? Promise.resolve(initialManifest)
+                : retrieveApiData<PlayerManifest>(manifestUrl.toString()),
         ]);
 
         return toPlayerDraft({

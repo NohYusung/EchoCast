@@ -22,6 +22,10 @@ test('recording strip renders cue markers inside their saved canvas media clip',
     assert.match(styles, /\.tr-strip-clip > img,[\s\S]*?\.tr-strip-clip > video/);
 });
 
+test('recording strip does not cap canvas media count', () => {
+    assert.doesNotMatch(source, /\.slice\(0,\s*10\)/);
+});
+
 test('recording character filters stay normalized and wrap inside the queue panel', () => {
     assert.match(source, /normalizeSelectedCharacterIds/);
     assert.match(source, /selectedAvailableCharacterIds\.length\} \/ \{availableCharacters\.length\} 캐릭터 선택/);
