@@ -62,6 +62,7 @@ export interface RecordingCueStripMarker {
 
 type DraftCue = PlayerDraft['cues'][number];
 type DraftRecord = PlayerDraft['records'][number];
+type RecordingTrackSource = PlayerDraft['tracks'][number] | PlayerManifest['tracks'][number];
 type RecordingCueSource = DraftCue | CueManifest;
 
 const defaultRecordingStripWidth = 320;
@@ -78,16 +79,26 @@ export function buildRecordingCueQueue({
 }): RecordingCueQueueItem[] {
     const scriptsById = new Map(draft.scripts.map((script) => [script.id, script]));
     const charactersById = new Map(draft.characters.map((character) => [character.id, character]));
-    const tracksById = new Map(draft.tracks.map((track) => [track.id, track]));
+    const tracksById = new Map<number, RecordingTrackSource>();
     const manifestCuesById = new Map((manifest?.cues ?? []).map((cue) => [cue.id, cue]));
     const cuesById = new Map<number, RecordingCueSource>();
     const recordsByCueId = new Map<number, RecordingTakeSummary[]>();
 
+    for (const track of manifest?.tracks ?? []) {
+        tracksById.set(track.id, track);
+    }
+
+    for (const track of draft.tracks) {
+        tracksById.set(track.id, track);
+    }
+
     for (const cue of draft.cues) {
+        if (tracksById.get(cue.trackId)?.kind !== 'record') continue;
         cuesById.set(cue.id, cue);
     }
 
     for (const cue of manifest?.cues ?? []) {
+        if (tracksById.get(cue.trackId)?.kind !== 'record') continue;
         if (!cuesById.has(cue.id)) {
             cuesById.set(cue.id, cue);
         }
@@ -228,6 +239,7 @@ export function toRecordingStripSize(scale: number) {
     return {
         scale: normalizedScale,
         width: Math.round(defaultRecordingStripWidth * ratio),
+        panelWidth: Math.max(384, Math.round(defaultRecordingStripWidth * ratio) + 64),
         fallbackHeight: Math.round(defaultRecordingStripFallbackHeight * ratio),
     };
 }

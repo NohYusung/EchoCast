@@ -141,8 +141,11 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         setSelectedCharacterIds((current) => {
             if (availableCharacterIds.length === 0) return [];
 
-            const validSelectedIds = current.filter((characterId) => availableCharacterIds.includes(characterId));
-            const nextSelectedIds = validSelectedIds.length > 0 ? validSelectedIds : availableCharacterIds;
+            const nextSelectedIds = normalizeSelectedCharacterIds({
+                selectedCharacterIds: current,
+                availableCharacterIds,
+                fallbackToAll: true,
+            });
 
             if (nextSelectedIds.length === current.length && nextSelectedIds.every((characterId, index) => characterId === current[index])) {
                 return current;
@@ -152,8 +155,17 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         });
     }, [availableCharacterIds]);
 
-    const selectedCharacterIdSet = useMemo(() => new Set(selectedCharacterIds), [selectedCharacterIds]);
-    const queue = useMemo(() => allQueue.filter((item) => selectedCharacterIdSet.has(item.characterId)), [allQueue, selectedCharacterIdSet]);
+    const selectedAvailableCharacterIds = useMemo(
+        () =>
+            normalizeSelectedCharacterIds({
+                selectedCharacterIds,
+                availableCharacterIds,
+                fallbackToAll: false,
+            }),
+        [availableCharacterIds, selectedCharacterIds],
+    );
+    const selectedAvailableCharacterIdSet = useMemo(() => new Set(selectedAvailableCharacterIds), [selectedAvailableCharacterIds]);
+    const queue = useMemo(() => allQueue.filter((item) => selectedAvailableCharacterIdSet.has(item.characterId)), [allQueue, selectedAvailableCharacterIdSet]);
     const visibleQueue = useMemo(() => filterRecordingCueQueue(queue, filter), [filter, queue]);
     const progress = useMemo(() => getRecordingProgress(queue), [queue]);
     const selectedCue = queue.find((item) => item.cueId === selectedCueId) ?? selectInitialRecordingCue(queue);
@@ -180,6 +192,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const selectedCueMarker = stripCueMarkers.find((marker) => marker.isSelected);
     const recordingStripSize = toRecordingStripSize(recordingStripScale);
     const recordWorkspaceStyle = {
+        '--tr-record-strip-panel-width': `${recordingStripSize.panelWidth}px`,
         '--tr-record-strip-width': `${recordingStripSize.width}px`,
         '--tr-record-strip-fallback-height': `${recordingStripSize.fallbackHeight}px`,
     } as CSSProperties;
@@ -192,7 +205,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
         return counts;
     }, [allQueue]);
-    const isAllCharactersSelected = availableCharacters.length > 0 && selectedCharacterIds.length === availableCharacters.length;
+    const isAllCharactersSelected = availableCharacters.length > 0 && selectedAvailableCharacterIds.length === availableCharacters.length;
     const currentWave = isRecording ? liveWave : createWave(selectedCue?.latestRecordUrl ?? selectedCue?.cueId ?? 'empty', 42);
     const totalApiDuration = allQueue
         .flatMap((item) => item.records)
@@ -437,13 +450,29 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }
 
     function toggleCharacterFilter(characterId: number) {
-        setSelectedCharacterIds((current) =>
-            current.includes(characterId) ? current.filter((item) => item !== characterId) : [...current, characterId],
-        );
+        setSelectedCharacterIds((current) => {
+            const nextSelectedIds = current.includes(characterId)
+                ? current.filter((item) => item !== characterId)
+                : [...current, characterId];
+
+            return normalizeSelectedCharacterIds({
+                selectedCharacterIds: nextSelectedIds,
+                availableCharacterIds,
+                fallbackToAll: false,
+            });
+        });
     }
 
     function toggleAllCharacterFilters() {
-        setSelectedCharacterIds((current) => (current.length === availableCharacterIds.length ? [] : availableCharacterIds));
+        setSelectedCharacterIds((current) => {
+            const normalizedCurrent = normalizeSelectedCharacterIds({
+                selectedCharacterIds: current,
+                availableCharacterIds,
+                fallbackToAll: false,
+            });
+
+            return normalizedCurrent.length === availableCharacterIds.length ? [] : availableCharacterIds;
+        });
     }
 
     function selectStripCue(cueId: number, characterId: number) {
@@ -534,7 +563,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                             <div>
                                 <h2>대사 큐</h2>
                                 <p>
-                                    {selectedCharacterIds.length} / {availableCharacters.length} 캐릭터 선택
+                                    {selectedAvailableCharacterIds.length} / {availableCharacters.length} 캐릭터 선택
                                 </p>
                             </div>
                             <span>{queue.length}</span>
@@ -551,12 +580,12 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                             </label>
                             {availableCharacters.map((character) => (
                                 <label
-                                    className={selectedCharacterIds.includes(character.id) ? 'active' : ''}
+                                    className={selectedAvailableCharacterIds.includes(character.id) ? 'active' : ''}
                                     key={character.id}
                                     style={{ borderColor: character.color }}
                                 >
                                     <input
-                                        checked={selectedCharacterIds.includes(character.id)}
+                                        checked={selectedAvailableCharacterIds.includes(character.id)}
                                         onChange={() => toggleCharacterFilter(character.id)}
                                         type="checkbox"
                                     />
@@ -582,7 +611,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                         </div>
                         <div className="tr-cue-list">
                             {visibleQueue.length === 0 ? (
-                                <div className="tr-empty">{selectedCharacterIds.length === 0 ? '캐릭터 필터를 선택하세요.' : '대사가 없습니다.'}</div>
+                                <div className="tr-empty">{selectedAvailableCharacterIds.length === 0 ? '캐릭터 필터를 선택하세요.' : '대사가 없습니다.'}</div>
                             ) : (
                                 visibleQueue.map((item) => (
                                     <button
@@ -637,7 +666,9 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                     value={recordingStripSize.scale}
                                 />
                             </label>
-                            <small>폭 {recordingStripSize.width}px · 원본 비율</small>
+                            <small>
+                                폭 {recordingStripSize.width}px · 패널 {recordingStripSize.panelWidth}px · 원본 비율
+                            </small>
                         </div>
                         <div className="tr-strip">
                             <div className="tr-strip-map">
@@ -882,6 +913,23 @@ function RecordStripPreview({ clip }: { clip: VisualClip }) {
     }
 
     return <img alt="" src={clip.mediaUrl} />;
+}
+
+function normalizeSelectedCharacterIds({
+    selectedCharacterIds,
+    availableCharacterIds,
+    fallbackToAll,
+}: {
+    selectedCharacterIds: number[];
+    availableCharacterIds: number[];
+    fallbackToAll: boolean;
+}) {
+    const availableCharacterIdSet = new Set(availableCharacterIds);
+    const normalizedIds = selectedCharacterIds.filter(
+        (characterId, index, ids) => availableCharacterIdSet.has(characterId) && ids.indexOf(characterId) === index,
+    );
+
+    return normalizedIds.length > 0 || !fallbackToAll ? normalizedIds : availableCharacterIds;
 }
 
 function getClientApiBaseUrl(): string {

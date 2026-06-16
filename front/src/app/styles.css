@@ -13870,8 +13870,8 @@ p {
     display: grid;
     min-width: 0;
     min-height: 0;
-    grid-template-columns: 306px minmax(260px, 340px) minmax(380px, 1fr) 280px;
-    overflow: hidden;
+    grid-template-columns: 306px var(--tr-record-strip-panel-width, 384px) minmax(320px, 1fr) 280px;
+    overflow: auto;
     background:
         linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px),
@@ -13945,14 +13945,16 @@ p {
     display: flex;
     max-width: 100%;
     gap: 7px;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    overflow: visible;
     padding-bottom: 10px;
 }
 
 .tr-character-filter label {
     display: inline-flex;
     min-width: 0;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    max-width: 100%;
     align-items: center;
     gap: 6px;
     border: 1px solid var(--tr-line);
@@ -14574,7 +14576,7 @@ p {
 
 @media (max-width: 1280px) {
     .tr-record-workspace {
-        grid-template-columns: 286px minmax(220px, 300px) minmax(320px, 1fr) 248px;
+        grid-template-columns: 286px var(--tr-record-strip-panel-width, 384px) minmax(300px, 1fr) 248px;
     }
 
     .tr-artist-select {

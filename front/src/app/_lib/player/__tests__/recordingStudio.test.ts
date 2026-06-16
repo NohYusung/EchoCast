@@ -168,6 +168,33 @@ test('buildRecordingCueQueue preserves saved strip placement fields for recordin
     );
 });
 
+test('buildRecordingCueQueue only includes cues that belong to record tracks', () => {
+    const queue = buildRecordingCueQueue({
+        draft: {
+            ...draft,
+            tracks: [
+                ...draft.tracks,
+                { id: 20, episodeId: 1, name: '효과음', kind: 'audio', layerId: 2, isMuted: false },
+            ],
+            cues: [
+                ...draft.cues,
+                {
+                    id: 4,
+                    episodeId: 1,
+                    scriptId: 3,
+                    characterId: 2,
+                    trackId: 20,
+                    startTime: 8000,
+                    endTime: 9000,
+                    volume: 1,
+                },
+            ],
+        },
+    });
+
+    assert.deepEqual(queue.map((item) => item.cueId), [1, 2, 3]);
+});
+
 test('buildRecordingCueStripMarkers maps saved canvas media positions to strip markers', () => {
     const queue = buildRecordingCueQueue({ draft });
     const markers = buildRecordingCueStripMarkers({ queue, selectedCueId: 2 });
@@ -214,12 +241,14 @@ test('toRecordingStripSize scales the strip while preserving media ratio', () =>
     assert.deepEqual(toRecordingStripSize(150), {
         scale: 150,
         width: 480,
+        panelWidth: 544,
         fallbackHeight: 246,
     });
 
     assert.deepEqual(toRecordingStripSize(1000), {
         scale: 200,
         width: 640,
+        panelWidth: 704,
         fallbackHeight: 328,
     });
 });
