@@ -111,7 +111,7 @@ test('getPlayerRuntimeScrollTop follows the latest anchor when there is no activ
     );
 });
 
-test('getPlayerRuntimePlayheadFromScroll uses the nearest anchor time from the current scroll offset', () => {
+test('getPlayerRuntimePlayheadFromScroll interpolates playhead between adjacent anchor offsets', () => {
     assert.equal(
         getPlayerRuntimePlayheadFromScroll({
             scrollTopPx: 390,
@@ -127,7 +127,7 @@ test('getPlayerRuntimePlayheadFromScroll uses the nearest anchor time from the c
                 { id: 'clip-2', canvasId: 11, index: 1, top: 300, height: 500 },
             ],
         }),
-        5000,
+        4400,
     );
 });
 
@@ -158,7 +158,7 @@ test('getPlayerRuntimePlayheadFromScroll falls back to scroll event interpolatio
     );
 });
 
-test('getPlayerRuntimePlayheadFromScroll prefers the nearest anchor over scroll event interpolation', () => {
+test('getPlayerRuntimePlayheadFromScroll uses anchor interval interpolation before scroll event interpolation', () => {
     assert.equal(
         getPlayerRuntimePlayheadFromScroll({
             scrollTopPx: 470,
@@ -184,7 +184,7 @@ test('getPlayerRuntimePlayheadFromScroll prefers the nearest anchor over scroll 
                 { id: 'image-1', canvasId: 11, index: 1, top: 600, height: 400 },
             ],
         }),
-        12000,
+        11280,
     );
 });
 

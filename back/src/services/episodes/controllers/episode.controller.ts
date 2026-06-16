@@ -13,12 +13,19 @@ export class EpisodeController {
     @Post('/products/:productId/episodes')
     async create(@Param('productId', ParseIntPipe) productId: number, @Body() body: EpisodeCreateDto) {
         // 1. Destructure body, params, query
-        const { episodeNumber, title, subTitle, thumbnailImageUrl } = body;
+        const { episodeNumber, title, subTitle, thumbnailImageUrl, defaultCanvasId } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.episodeService.create({ productId, episodeNumber, title, subTitle, thumbnailImageUrl });
+        await this.episodeService.create({
+            productId,
+            episodeNumber,
+            title,
+            subTitle,
+            thumbnailImageUrl,
+            defaultCanvasId,
+        });
 
         // 4. Send response
         return { data: {} };
@@ -69,12 +76,20 @@ export class EpisodeController {
         @Body() body: EpisodeUpdateDto
     ) {
         // 1. Destructure body, params, query
-        const { episodeNumber, title, subTitle, thumbnailImageUrl } = body;
+        const { episodeNumber, title, subTitle, thumbnailImageUrl, defaultCanvasId } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.episodeService.update({ productId, episodeId, episodeNumber, title, subTitle, thumbnailImageUrl });
+        await this.episodeService.update({
+            productId,
+            episodeId,
+            episodeNumber,
+            title,
+            subTitle,
+            thumbnailImageUrl,
+            defaultCanvasId,
+        });
 
         // 4. Send response
         return { data: {} };

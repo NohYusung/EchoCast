@@ -16,13 +16,13 @@ export function getPlaybackSnapshot(
     activeEvents: PlaybackEvent[];
     isComplete: boolean;
 } {
-    const clampedTime = Math.min(Math.max(currentTime, 0), manifest.durationMs);
+    const clampedTime = Math.min(Math.max(currentTime, 0), manifest.totalDuration);
     const events = buildPlaybackEvents(manifest);
 
     return {
         currentTime: clampedTime,
         visualFrame: resolveVisualFrame(manifest.items, clampedTime),
         activeEvents: events.filter((event) => event.startTime <= clampedTime && clampedTime < event.endTime),
-        isComplete: clampedTime >= manifest.durationMs,
+        isComplete: clampedTime >= manifest.totalDuration,
     };
 }

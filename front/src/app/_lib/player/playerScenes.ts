@@ -87,7 +87,7 @@ export function buildPlayerScenes(manifest: PlayerManifest): PlayerScene[] {
                 kind: 'placeholder',
                 label: 'EMPTY',
                 startTime: 0,
-                endTime: Math.max(1000, manifest.durationMs),
+                endTime: Math.max(1000, manifest.totalDuration),
                 volume: 1,
                 height: DEFAULT_SCENE_HEIGHT,
                 background: 'linear-gradient(180deg, #161b24 0%, #0d1117 100%)',

@@ -69,7 +69,7 @@ export class Cue extends DddAggregate {
     @JoinColumn({ name: 'characterId' })
     character?: Character;
 
-    @ManyToOne(() => Track, { nullable: false })
+    @ManyToOne(() => Track)
     @JoinColumn({ name: 'trackId' })
     track!: Track;
 

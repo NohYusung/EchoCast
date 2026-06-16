@@ -4,9 +4,14 @@ interface PlayerManifestResponse {
     data?: PlayerManifest;
 }
 
-export async function getPlayerManifest(episodeId: string): Promise<PlayerManifest> {
+export async function getPlayerManifest(episodeId: string, { canvasId }: { canvasId?: string } = {}): Promise<PlayerManifest> {
     const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100').replace(/\/$/, '');
-    const response = await fetch(`${apiBaseUrl}/player/manifest/${episodeId}`, {
+    const searchParams = new URLSearchParams();
+    if (canvasId) {
+        searchParams.set('canvasId', canvasId);
+    }
+    const queryString = searchParams.toString();
+    const response = await fetch(`${apiBaseUrl}/player/manifest/${episodeId}${queryString ? `?${queryString}` : ''}`, {
         cache: 'no-store',
     });
 

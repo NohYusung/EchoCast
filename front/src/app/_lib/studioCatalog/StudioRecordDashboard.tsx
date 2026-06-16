@@ -17,6 +17,7 @@ import {
     filterRecordingCueQueue,
     getRecordingProgress,
     selectInitialRecordingCue,
+    toRecordingStripSize,
 } from '../player/recordingStudio';
 import type { RecordingCueFilter, RecordingCueQueueItem, RecordingTakeSummary } from '../player/recordingStudio';
 import { toVisualClips } from '../player/visualClips';
@@ -82,6 +83,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const [artists, setArtists] = useState<StudioRecordArtist[]>([]);
     const [filter, setFilter] = useState<RecordingCueFilter>('all');
     const [selectedCueId, setSelectedCueId] = useState<number | undefined>();
+    const [recordingStripScale, setRecordingStripScale] = useState(100);
     const [isRecording, setIsRecording] = useState(false);
     const [isSavingRecord, setIsSavingRecord] = useState(false);
     const [recordingStartedAt, setRecordingStartedAt] = useState<number | undefined>();
@@ -155,10 +157,32 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const visibleQueue = useMemo(() => filterRecordingCueQueue(queue, filter), [filter, queue]);
     const progress = useMemo(() => getRecordingProgress(queue), [queue]);
     const selectedCue = queue.find((item) => item.cueId === selectedCueId) ?? selectInitialRecordingCue(queue);
-    const selectedCueIndex = selectedCue ? Math.max(0, queue.findIndex((item) => item.cueId === selectedCue.cueId)) : 0;
     const selectedRecords = selectedCue?.records ?? [];
     const stripClips = useMemo(() => getRecordStripClips({ draft: draftState, manifest: manifestState }), [draftState, manifestState]);
     const stripCueMarkers = useMemo(() => buildRecordingCueStripMarkers({ queue: allQueue, selectedCueId: selectedCue?.cueId }), [allQueue, selectedCue?.cueId]);
+    const stripCueMarkersByCanvasMediaId = useMemo(() => {
+        const markers = new Map<number, typeof stripCueMarkers>();
+
+        for (const marker of stripCueMarkers) {
+            if (typeof marker.canvasMediaId !== 'number') continue;
+
+            const current = markers.get(marker.canvasMediaId) ?? [];
+            current.push(marker);
+            markers.set(marker.canvasMediaId, current);
+        }
+
+        return markers;
+    }, [stripCueMarkers]);
+    const unplacedStripCueMarkers = useMemo(
+        () => stripCueMarkers.filter((marker) => typeof marker.canvasMediaId !== 'number'),
+        [stripCueMarkers],
+    );
+    const selectedCueMarker = stripCueMarkers.find((marker) => marker.isSelected);
+    const recordingStripSize = toRecordingStripSize(recordingStripScale);
+    const recordWorkspaceStyle = {
+        '--tr-record-strip-width': `${recordingStripSize.width}px`,
+        '--tr-record-strip-fallback-height': `${recordingStripSize.fallbackHeight}px`,
+    } as CSSProperties;
     const cueCountByCharacterId = useMemo(() => {
         const counts = new Map<number, number>();
 
@@ -427,6 +451,13 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         setSelectedCueId(cueId);
     }
 
+    function updateRecordingStripScale(value: string) {
+        const scale = Math.round(Number(value));
+        if (!Number.isFinite(scale)) return;
+
+        setRecordingStripScale(toRecordingStripSize(scale).scale);
+    }
+
     return (
         <div className="tp-catalog tr-record">
             <header className="tp-topbar tr-record-topbar">
@@ -497,7 +528,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                     </Link>
                 </nav>
 
-                <main className="tr-record-workspace">
+                <main className="tr-record-workspace" style={recordWorkspaceStyle}>
                     <aside className="tr-queue-panel">
                         <div className="tr-panel-head">
                             <div>
@@ -584,35 +615,88 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                 대사 위치 {stripCueMarkers.length}
                             </strong>
                         </div>
+                        <div className="tr-strip-controls">
+                            <label>
+                                <span>크기</span>
+                                <input
+                                    aria-label="녹음 스트립 크기"
+                                    max={200}
+                                    min={70}
+                                    onChange={(event) => updateRecordingStripScale(event.currentTarget.value)}
+                                    step={5}
+                                    type="range"
+                                    value={recordingStripSize.scale}
+                                />
+                                <input
+                                    aria-label="녹음 스트립 크기 숫자"
+                                    max={200}
+                                    min={70}
+                                    onChange={(event) => updateRecordingStripScale(event.currentTarget.value)}
+                                    step={5}
+                                    type="number"
+                                    value={recordingStripSize.scale}
+                                />
+                            </label>
+                            <small>폭 {recordingStripSize.width}px · 원본 비율</small>
+                        </div>
                         <div className="tr-strip">
                             <div className="tr-strip-map">
-                                {stripClips.map((clip, index) => (
-                                    <button
-                                        className={`tr-strip-clip ${index === selectedCueIndex % Math.max(1, stripClips.length) ? 'active' : ''}`}
-                                        key={clip.id}
-                                        style={getStripClipStyle(clip)}
-                                        type="button"
-                                    >
-                                        <b>{index + 1}</b>
-                                        <span>{clip.label}</span>
-                                    </button>
-                                ))}
-                                <div className="tr-strip-cue-layer" aria-label="대사 등록 위치">
-                                    {stripCueMarkers.map((marker) => (
-                                        <button
-                                            className={`tr-strip-cue-marker ${marker.isSelected ? 'active' : ''} ${marker.status}`}
-                                            key={marker.cueId}
-                                            onClick={() => selectStripCue(marker.cueId, marker.characterId)}
-                                            style={{ borderColor: marker.characterColor, top: `${marker.topPercent}%` }}
-                                            type="button"
+                                {stripClips.map((clip, index) => {
+                                    const clipMarkers =
+                                        typeof clip.canvasMediaId === 'number'
+                                            ? stripCueMarkersByCanvasMediaId.get(clip.canvasMediaId) ?? []
+                                            : [];
+                                    const isSelectedClip =
+                                        typeof selectedCueMarker?.canvasMediaId === 'number' &&
+                                        selectedCueMarker.canvasMediaId === clip.canvasMediaId;
+
+                                    return (
+                                        <div
+                                            className={`tr-strip-clip ${clip.mediaUrl ? 'has-media' : 'is-placeholder'} ${isSelectedClip ? 'active' : ''}`}
+                                            key={clip.id}
+                                            style={getStripClipStyle(clip)}
                                         >
-                                            <i style={{ background: marker.characterColor }} />
-                                            <span>{marker.characterName}</span>
-                                            <strong>{marker.text}</strong>
-                                            <em>{formatMs(marker.startTime)}</em>
-                                        </button>
-                                    ))}
-                                </div>
+                                            <RecordStripPreview clip={clip} />
+                                            <b>{index + 1}</b>
+                                            <span>{clip.label}</span>
+                                            {clipMarkers.map((marker) => (
+                                                <button
+                                                    className={`tr-strip-cue-marker ${marker.isSelected ? 'active' : ''} ${marker.status}`}
+                                                    key={marker.cueId}
+                                                    onClick={() => selectStripCue(marker.cueId, marker.characterId)}
+                                                    style={{
+                                                        borderColor: marker.characterColor,
+                                                        top: `${marker.positionPercent}%`,
+                                                    }}
+                                                    type="button"
+                                                >
+                                                    <i style={{ background: marker.characterColor }} />
+                                                    <span>{marker.characterName}</span>
+                                                    <strong>{marker.text}</strong>
+                                                    <em>{formatMs(marker.startTime)}</em>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    );
+                                })}
+                                {unplacedStripCueMarkers.length > 0 ? (
+                                    <div className="tr-strip-cue-layer" aria-label="대사 등록 위치 미지정">
+                                        {unplacedStripCueMarkers.map((marker) => (
+                                            <button
+                                                className={`tr-strip-cue-marker ${marker.isSelected ? 'active' : ''} ${marker.status}`}
+                                                key={marker.cueId}
+                                                onClick={() => selectStripCue(marker.cueId, marker.characterId)}
+                                                style={{ borderColor: marker.characterColor, top: `${marker.topPercent}%` }}
+                                                type="button"
+                                            >
+                                                <i style={{ background: marker.characterColor }} />
+                                                <span>{marker.characterName}</span>
+                                                <strong>{marker.text}</strong>
+                                                <em>{formatMs(marker.startTime)}</em>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
                             </div>
                         </div>
                     </section>
@@ -785,15 +869,19 @@ async function requestRecordingUploadUrl(apiBaseUrl: string, request: { key: str
 }
 
 function getStripClipStyle(clip: VisualClip): CSSProperties {
-    if (clip.mediaUrl) {
-        return {
-            backgroundImage: `linear-gradient(180deg, rgba(6, 8, 12, 0.08), rgba(6, 8, 12, 0.72)), url("${clip.mediaUrl}")`,
-        };
-    }
-
     return {
         background: clip.background,
     };
+}
+
+function RecordStripPreview({ clip }: { clip: VisualClip }) {
+    if (!clip.mediaUrl) return null;
+
+    if (clip.mediaType === 'video') {
+        return <video muted playsInline preload="metadata" src={clip.mediaUrl} />;
+    }
+
+    return <img alt="" src={clip.mediaUrl} />;
 }
 
 function getClientApiBaseUrl(): string {

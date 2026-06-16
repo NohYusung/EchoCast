@@ -8,6 +8,7 @@ type Ctor = {
     title: string;
     subTitle?: string;
     thumbnailImageUrl?: string;
+    defaultCanvasId?: number;
 };
 
 @Entity('episodes')
@@ -30,7 +31,10 @@ export class Episode extends DddAggregate {
     @Column({ comment: '에피소드 썸네일 이미지 URL', nullable: true })
     thumbnailImageUrl?: string;
 
-    @ManyToOne(() => Product, { nullable: false })
+    @Column({ comment: '대표 캔버스 id', nullable: true })
+    defaultCanvasId?: number;
+
+    @ManyToOne(() => Product)
     @JoinColumn({ name: 'productId' })
     product!: Product;
 
@@ -42,6 +46,7 @@ export class Episode extends DddAggregate {
             this.title = args.title;
             this.subTitle = args.subTitle;
             this.thumbnailImageUrl = args.thumbnailImageUrl;
+            this.defaultCanvasId = args.defaultCanvasId;
         }
     }
 
@@ -50,17 +55,20 @@ export class Episode extends DddAggregate {
         title,
         subTitle,
         thumbnailImageUrl,
+        defaultCanvasId,
     }: {
         episodeNumber?: number;
         title?: string;
         subTitle?: string;
         thumbnailImageUrl?: string;
+        defaultCanvasId?: number;
     }) {
         const changedArgs = this.stripUnchanged({
             episodeNumber,
             title,
             subTitle,
             thumbnailImageUrl,
+            defaultCanvasId,
         });
 
         if (!changedArgs) {

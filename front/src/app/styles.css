@@ -1865,17 +1865,7 @@ p {
     color: var(--tp-accent);
     font-size: 11px;
     font-weight: 800;
-    opacity: 0;
-    transition:
-        opacity 0.14s,
-        transform 0.14s;
-    transform: translateX(6px);
     white-space: nowrap;
-}
-
-.tp-episode-row:hover .tp-open-hint {
-    opacity: 1;
-    transform: translateX(0);
 }
 
 .tp-open-hint svg {
@@ -1885,34 +1875,23 @@ p {
 
 .tp-episode-actions {
     display: flex;
+    align-items: flex-end;
+    flex-direction: column;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 7px;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+        opacity 0.14s,
+        transform 0.14s;
+    transform: translateX(6px);
 }
 
-.tp-episode-record-link {
-    display: inline-flex;
-    min-height: 34px;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    border: 1px solid rgba(91, 155, 255, 0.42);
-    border-radius: 8px;
-    background: rgba(91, 155, 255, 0.12);
-    color: #d8e7ff;
-    font-size: 11px;
-    font-weight: 900;
-    padding: 0 11px;
-    white-space: nowrap;
-}
-
-.tp-episode-record-link:hover {
-    border-color: rgba(91, 155, 255, 0.72);
-    background: rgba(91, 155, 255, 0.2);
-}
-
-.tp-episode-record-link svg {
-    width: 13px;
-    height: 13px;
+.tp-episode-row:hover .tp-episode-actions,
+.tp-episode-row:focus-within .tp-episode-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
 }
 
 .tp-episode-add {
@@ -1991,7 +1970,16 @@ p {
 
     .tp-episode-actions {
         grid-column: 2;
+        align-items: flex-start;
         justify-content: flex-start;
+    }
+}
+
+@media (hover: none) {
+    .tp-episode-actions {
+        opacity: 1;
+        pointer-events: auto;
+        transform: none;
     }
 }
 
@@ -14100,7 +14088,7 @@ p {
 
 .tr-strip-panel {
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     padding: 18px 14px;
 }
 
@@ -14113,10 +14101,52 @@ p {
     font-weight: 800;
 }
 
+.tr-strip-controls {
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--tr-line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.018);
+    margin-bottom: 12px;
+    padding: 10px;
+}
+
+.tr-strip-controls label {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 58px;
+    align-items: center;
+    gap: 8px;
+    color: var(--tr-muted);
+    font-size: 10.5px;
+    font-weight: 850;
+}
+
+.tr-strip-controls input[type='range'] {
+    width: 100%;
+    accent-color: var(--tr-blue);
+}
+
+.tr-strip-controls input[type='number'] {
+    width: 58px;
+    border: 1px solid var(--tr-line);
+    border-radius: 7px;
+    outline: 0;
+    background: #0a0d13;
+    color: var(--tr-text);
+    font: 800 10.5px/1 var(--tp-mono);
+    padding: 6px 7px;
+}
+
+.tr-strip-controls small {
+    color: var(--tr-faint);
+    font: 800 10px/1 var(--tp-mono);
+    text-align: right;
+}
+
 .tr-strip {
     position: relative;
     min-height: 0;
-    overflow-y: auto;
+    overflow: auto;
     border-left: 1px solid var(--tr-line);
     padding-left: 12px;
 }
@@ -14124,26 +14154,40 @@ p {
 .tr-strip-map {
     position: relative;
     display: grid;
-    min-height: 640px;
+    width: var(--tr-record-strip-width, 320px);
+    min-height: var(--tr-record-strip-fallback-height, 164px);
+    align-content: start;
     gap: 8px;
     padding-right: 10px;
 }
 
 .tr-strip-clip {
     position: relative;
-    display: flex;
-    min-height: 164px;
-    align-items: flex-start;
-    justify-content: space-between;
-    flex-direction: column;
+    display: block;
+    min-height: 0;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 6px;
     background-position: center;
-    background-size: cover;
+    background-size: contain;
     color: #ffffff;
-    padding: 7px;
     text-align: left;
+}
+
+.tr-strip-clip.is-placeholder {
+    min-height: var(--tr-record-strip-fallback-height, 164px);
+    padding: 7px;
+}
+
+.tr-strip-clip > img,
+.tr-strip-clip > video {
+    position: relative;
+    z-index: 0;
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #090b10;
+    object-fit: contain;
 }
 
 .tr-strip-clip.active {
@@ -14151,15 +14195,29 @@ p {
     box-shadow: inset 0 0 0 1px rgba(77, 141, 255, 0.65);
 }
 
-.tr-strip-clip b,
-.tr-strip-clip span {
-    position: relative;
-    z-index: 1;
+.tr-strip-clip > b,
+.tr-strip-clip > span {
+    position: absolute;
+    z-index: 2;
     border-radius: 5px;
     background: rgba(5, 7, 12, 0.7);
     padding: 2px 5px;
     font-size: 10px;
     font-weight: 900;
+}
+
+.tr-strip-clip > b {
+    top: 7px;
+    left: 7px;
+}
+
+.tr-strip-clip > span {
+    right: 7px;
+    bottom: 7px;
+    left: 7px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tr-strip-cue-layer {

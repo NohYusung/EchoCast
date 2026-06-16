@@ -33,7 +33,7 @@ export class Audio extends DddAggregate {
     @Column({ comment: '오디오 파일 길이(ms)', nullable: true })
     duration?: number;
 
-    @ManyToOne(() => Episode, { nullable: false })
+    @ManyToOne(() => Episode)
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
 

@@ -47,11 +47,11 @@ export class CanvasMedia extends DddAggregate {
     @Column({ comment: '캔버스 미디어 음소거 여부', nullable: true })
     isMuted?: boolean;
 
-    @ManyToOne(() => Canvas, (canvas) => canvas.canvasMedias, { nullable: false })
+    @ManyToOne(() => Canvas, (canvas) => canvas.canvasMedias)
     @JoinColumn({ name: 'canvasId' })
     canvas!: Canvas;
 
-    @ManyToOne(() => Media, (media) => media.canvasMedias, { nullable: false })
+    @ManyToOne(() => Media, (media) => media.canvasMedias)
     @JoinColumn({ name: 'mediaId' })
     media!: Media;
 

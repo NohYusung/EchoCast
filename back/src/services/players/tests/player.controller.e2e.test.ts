@@ -48,6 +48,8 @@ test('GET player manifest endpoint exposes episode playback content without draf
             })
         );
         const canvas = await dataSource.manager.save(new Canvas({ episodeId: episode.id }));
+        episode.defaultCanvasId = canvas.id;
+        await dataSource.manager.save(episode);
         const media = await dataSource.manager.save(
             new Media({
                 episodeId: episode.id,
@@ -87,6 +89,7 @@ test('GET player manifest endpoint exposes episode playback content without draf
         assert.equal(manifestResponse.body.data.records[0].isAccepted, true);
         assert.equal(manifestResponse.body.data.cues[0].approvedRecordUrl, 'https://assets.example.com/api-record.wav');
 
+        await request(app.getHttpServer()).get(`/player/manifest/${episode.id}?canvasId=1abc`).expect(400);
         await request(app.getHttpServer()).get(`/episodes/${episode.id}/player-draft`).expect(404);
         await request(app.getHttpServer()).put(`/episodes/${episode.id}/player-draft`).send({}).expect(404);
     } finally {

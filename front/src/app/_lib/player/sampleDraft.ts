@@ -180,20 +180,6 @@ export function createSamplePlayerDraft({
                 durationMs: 400,
             },
         ],
-        ttsVoices: [
-            {
-                id: 1,
-                provider: 'test-player',
-                voiceName: 'hero-ko',
-                languageCode: 'ko-KR',
-            },
-            {
-                id: 2,
-                provider: 'test-player',
-                voiceName: 'guide-ko',
-                languageCode: 'ko-KR',
-            },
-        ],
         cues: [
             {
                 id: 5001,

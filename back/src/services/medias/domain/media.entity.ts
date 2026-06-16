@@ -33,7 +33,7 @@ export class Media extends DddAggregate {
     @Column({ comment: '미디어 url' })
     mediaUrl!: string;
 
-    @ManyToOne(() => Episode, { nullable: false })
+    @ManyToOne(() => Episode)
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
 

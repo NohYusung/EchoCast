@@ -6,7 +6,7 @@ import type { PlayerManifest } from '../playerManifest.types';
 test('buildPlayerScenes preserves canvas visuals that share the same timeline window', () => {
     const manifest: PlayerManifest = {
         episodeId: 1,
-        durationMs: 4000,
+        totalDuration: 4000,
         tracks: [
             {
                 id: 1,
@@ -80,7 +80,7 @@ test('buildPlayerScenes preserves canvas visuals that share the same timeline wi
 test('buildPlayerScenes does not reserve duration-based height for image media', () => {
     const manifest: PlayerManifest = {
         episodeId: 1,
-        durationMs: 33000,
+        totalDuration: 33000,
         tracks: [
             {
                 id: 1,
@@ -123,7 +123,7 @@ test('buildPlayerScenes does not reserve duration-based height for image media',
 test('buildPlayerScenes carries video playback controls from manifest items', () => {
     const manifest: PlayerManifest = {
         episodeId: 1,
-        durationMs: 12000,
+        totalDuration: 12000,
         tracks: [
             {
                 id: 1,
@@ -176,7 +176,7 @@ test('buildPlayerScenes carries video playback controls from manifest items', ()
 test('buildPlayerScenes resolves visual media by id and kind when audio ids overlap', () => {
     const manifest: PlayerManifest = {
         episodeId: 1,
-        durationMs: 4000,
+        totalDuration: 4000,
         tracks: [
             {
                 id: 1,
@@ -224,7 +224,7 @@ test('buildPlayerScenes resolves visual media by id and kind when audio ids over
 test('buildPlayerScenes uses preview canvas visual clips before legacy visual items', () => {
     const manifest = {
         episodeId: 1,
-        durationMs: 12000,
+        totalDuration: 12000,
         tracks: [
             {
                 id: 1,

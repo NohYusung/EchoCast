@@ -38,7 +38,6 @@ function createDraft(): PlayerDraft {
             },
         ],
         media: [],
-        ttsVoices: [],
         cues: [
             {
                 id: 5001,
@@ -104,7 +103,7 @@ test('saveTimelineItemTimings fetches the current draft, applies edits, and send
             JSON.stringify({
                 manifest: {
                     episodeId: 1,
-                    durationMs: 13000,
+                    totalDuration: 13000,
                 },
             }),
             { status: 200 }
@@ -127,5 +126,5 @@ test('saveTimelineItemTimings fetches the current draft, applies edits, and send
     assert.equal(calls[0].url, 'http://localhost:4100/episodes/sample-player/player-draft');
     assert.equal(calls[1].url, 'http://localhost:4100/episodes/sample-player/player-draft');
     assert.equal(calls[1].init?.method, 'PUT');
-    assert.equal(result.durationMs, 13000);
+    assert.equal(result.totalDuration, 13000);
 });

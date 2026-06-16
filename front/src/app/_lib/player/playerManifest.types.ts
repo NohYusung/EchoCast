@@ -5,7 +5,7 @@ export type PlayerTrackKind = 'scroll' | 'scrolls' | 'record' | 'audio' | 'effec
 
 export interface PlayerManifestItem {
     id: number;
-    trackId: number;
+    trackId?: number;
     kind: PlayerItemKind;
     startTime: number;
     endTime: number;
@@ -82,7 +82,7 @@ export interface TtsManifest {
 
 export interface PlayerManifest {
     episodeId: number;
-    durationMs: number;
+    totalDuration: number;
     previewCanvasId?: number;
     tracks: Array<{
         id: number;

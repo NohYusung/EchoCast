@@ -27,7 +27,7 @@ test('getPlayerManifest unwraps API data response', async () => {
             JSON.stringify({
                 data: {
                     episodeId: '1',
-                    durationMs: 1000,
+                    totalDuration: 1000,
                     tracks: [],
                     items: [],
                     cues: [],
@@ -44,5 +44,35 @@ test('getPlayerManifest unwraps API data response', async () => {
 
     assert.deepEqual(requestedUrls, ['http://localhost:4100/player/manifest/1']);
     assert.equal(manifest.episodeId, '1');
-    assert.equal(manifest.durationMs, 1000);
+    assert.equal(manifest.totalDuration, 1000);
+});
+
+test('getPlayerManifest forwards canvasId filter when provided', async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'http://localhost:4100';
+    const requestedUrls: string[] = [];
+
+    globalThis.fetch = (async (input, init) => {
+        requestedUrls.push(String(input));
+        assert.equal(init?.cache, 'no-store');
+
+        return new Response(
+            JSON.stringify({
+                data: {
+                    episodeId: '1',
+                    totalDuration: 1000,
+                    tracks: [],
+                    items: [],
+                    cues: [],
+                    media: [],
+                    records: [],
+                    tts: [],
+                },
+            }),
+            { status: 200 }
+        );
+    }) as typeof fetch;
+
+    await getPlayerManifest('1', { canvasId: '22' });
+
+    assert.deepEqual(requestedUrls, ['http://localhost:4100/player/manifest/1?canvasId=22']);
 });

@@ -3,4 +3,5 @@ export class EpisodeCreateDto {
     title!: string;
     subTitle?: string;
     thumbnailImageUrl?: string;
+    defaultCanvasId?: number;
 }

@@ -19,4 +19,7 @@ export class EpisodeResponseDto {
 
     @Expose()
     thumbnailImageUrl?: string;
+
+    @Expose()
+    defaultCanvasId?: number;
 }

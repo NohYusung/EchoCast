@@ -2,7 +2,7 @@ import type { PlayerManifest } from './playerManifest.types';
 
 export const sampleManifest: PlayerManifest = {
     episodeId: 1,
-    durationMs: 12800,
+    totalDuration: 12800,
     tracks: [
         {
             id: 1,

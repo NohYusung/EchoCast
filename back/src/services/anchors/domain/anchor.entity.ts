@@ -31,11 +31,11 @@ export class Anchor extends DddAggregate {
     @Column({ comment: '캔버스 등록 미디어 정렬 인덱스' })
     index!: number;
 
-    @ManyToOne(() => Track, { nullable: false })
+    @ManyToOne(() => Track)
     @JoinColumn({ name: 'trackId' })
     track!: Track;
 
-    @ManyToOne(() => Canvas, { nullable: false })
+    @ManyToOne(() => Canvas)
     @JoinColumn({ name: 'canvasId' })
     canvas!: Canvas;
 

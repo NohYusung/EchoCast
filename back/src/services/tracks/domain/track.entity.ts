@@ -39,7 +39,7 @@ export class Track extends DddAggregate {
     @JoinColumn({ name: 'characterId' })
     character?: Character;
 
-    @ManyToOne(() => Episode, { nullable: false })
+    @ManyToOne(() => Episode)
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
 

@@ -13,6 +13,7 @@ type EpisodeRetrieveItem = {
     episodeNumber: number;
     title: string;
     subTitle?: string;
+    defaultCanvasId?: number | string;
 };
 
 type CharacterListItem = {
@@ -62,11 +63,16 @@ type ApiListResponse<T> = {
 type PlayerDraftParams = {
     productId: string;
     episodeId: string;
+    canvasId?: string;
 };
 
-export async function getPlayerDraft({ productId, episodeId }: PlayerDraftParams): Promise<PlayerDraft> {
+export async function getPlayerDraft({ productId, episodeId, canvasId }: PlayerDraftParams): Promise<PlayerDraft> {
     const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100').replace(/\/$/, '');
     const fallbackDraft = createEmptyPlayerDraft({ productId, episodeId });
+    const manifestUrl = new URL(`${apiBaseUrl}/player/manifest/${episodeId}`);
+    if (canvasId) {
+        manifestUrl.searchParams.set('canvasId', canvasId);
+    }
 
     try {
         const [product, episode, characters, tracks, manifest] = await Promise.all([
@@ -74,7 +80,7 @@ export async function getPlayerDraft({ productId, episodeId }: PlayerDraftParams
             retrieveApiData<EpisodeRetrieveItem>(`${apiBaseUrl}/products/${productId}/episodes/${episodeId}`),
             listApiItems<CharacterListItem>(`${apiBaseUrl}/products/${productId}/characters`),
             listApiItems<TrackListItem>(`${apiBaseUrl}/episodes/${episodeId}/tracks`),
-            retrieveApiData<PlayerManifest>(`${apiBaseUrl}/player/manifest/${episodeId}`),
+            retrieveApiData<PlayerManifest>(manifestUrl.toString()),
         ]);
 
         return toPlayerDraft({
@@ -179,7 +185,6 @@ function toPlayerDraft({
             ...media,
             episodeId: episodeNumericId,
         })),
-        ttsVoices: toTtsVoices(manifest),
         cues: recordingCueEntries.map(({ track, cue }) => {
             const cueId = toNumericId(cue.id);
             const manifestCue = manifestCuesById.get(cueId);
@@ -232,7 +237,6 @@ function createEmptyPlayerDraft({ productId, episodeId }: PlayerDraftParams): Pl
         tracks: [],
         items: [],
         media: [],
-        ttsVoices: [],
         cues: [],
         records: [],
         screenEffects: [],
@@ -248,23 +252,6 @@ function toDraftTrack(track: TrackListItem, index: number, episodeId: number): P
         layerId: index,
         isMuted: track.isMuted,
     };
-}
-
-function toTtsVoices(manifest: PlayerManifest): PlayerDraft['ttsVoices'] {
-    const voiceById = new Map<number, PlayerDraft['ttsVoices'][number]>();
-
-    for (const tts of manifest.tts) {
-        if (!voiceById.has(tts.voiceId)) {
-            voiceById.set(tts.voiceId, {
-                id: tts.voiceId,
-                provider: tts.provider,
-                voiceName: tts.voiceName,
-                languageCode: 'ko-KR',
-            });
-        }
-    }
-
-    return [...voiceById.values()];
 }
 
 function resolveCueCharacterId(track: TrackListItem, cue: TrackCueListItem): number | undefined {

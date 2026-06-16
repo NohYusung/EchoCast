@@ -23,15 +23,15 @@ export class Scroll extends DddAggregate {
     @Column({ comment: '스크롤 종료 앵커 id' })
     endAnchorId!: number;
 
-    @ManyToOne(() => Track, { nullable: false })
+    @ManyToOne(() => Track)
     @JoinColumn({ name: 'trackId' })
     track!: Track;
 
-    @OneToOne(() => Anchor, { nullable: false })
+    @OneToOne(() => Anchor)
     @JoinColumn({ name: 'startAnchorId' })
     startAnchor!: Anchor;
 
-    @ManyToOne(() => Anchor, { nullable: false })
+    @ManyToOne(() => Anchor)
     @JoinColumn({ name: 'endAnchorId' })
     endAnchor!: Anchor;
 

@@ -104,9 +104,9 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
     const scrollEvents = useMemo(() => toPlayerRuntimeScrollEvents(manifest.scrolls), [manifest.scrolls]);
     const scrollAnchors = useMemo(() => toPlayerRuntimeScrollAnchors(manifest.anchors), [manifest.anchors]);
     const playbackEvents = useMemo(() => buildPlaybackEvents(manifest), [manifest]);
-    const durationMs = Math.max(
+    const totalDuration = Math.max(
         1000,
-        manifest.durationMs,
+        manifest.totalDuration,
         ...scenes.map((scene) => scene.endTime),
         ...scenes.map((scene) => (scene.kind === 'video' ? scene.startTime + getVideoSceneDurationMs(scene) : 0)),
     );
@@ -134,8 +134,8 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
     const activeEvents = getActivePlaybackEvents(playbackEvents, playheadMs);
 
     useEffect(() => {
-        setPlayheadMs((current) => clamp(current, 0, durationMs));
-    }, [durationMs]);
+        setPlayheadMs((current) => clamp(current, 0, totalDuration));
+    }, [totalDuration]);
 
     useEffect(() => {
         if (!isPlaying) return undefined;
@@ -151,7 +151,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                 const next = advancePlayerRuntimePlayhead({
                     currentTimeMs: current,
                     elapsedMs,
-                    durationMs,
+                    durationMs: totalDuration,
                 });
 
                 if (next.isEnded) {
@@ -167,7 +167,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
         animationFrame = requestAnimationFrame(tick);
 
         return () => cancelAnimationFrame(animationFrame);
-    }, [durationMs, isPlaying]);
+    }, [totalDuration, isPlaying]);
 
     const getRuntimeVisualSegments = useCallback((scroller: HTMLDivElement): PreviewScrollVisualSegment[] => {
         const scrollerRect = scroller.getBoundingClientRect();
@@ -210,11 +210,11 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
 
             if (nextPlayheadMs === undefined) return current;
 
-            const next = clamp(nextPlayheadMs, 0, durationMs);
+            const next = clamp(nextPlayheadMs, 0, totalDuration);
 
             return Math.abs(current - next) < 16 ? current : next;
         });
-    }, [durationMs, getRuntimeVisualSegments, scrollAnchors, scrollEvents]);
+    }, [totalDuration, getRuntimeVisualSegments, scrollAnchors, scrollEvents]);
 
     useEffect(() => {
         syncPlayheadFromScroll();
@@ -310,7 +310,7 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
                 </a>
                 <div className="vpp-title">
                     <strong>Episode {manifest.episodeId || episodeId}</strong>
-                    <span>{formatPlayerTime(playheadMs)} / {formatPlayerTime(durationMs)}</span>
+                    <span>{formatPlayerTime(playheadMs)} / {formatPlayerTime(totalDuration)}</span>
                 </div>
                 <a className="vpp-icon-button" href={`/studio/products/1/episodes/${manifest.episodeId || episodeId}`} aria-label="에디터로">
                     <PlayerIcon name="studio" size={19} />

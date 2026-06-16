@@ -4,7 +4,6 @@ import { DatabasesModule } from '../../databases';
 import { AnchorRepository } from '../anchors/repository/anchor.repository';
 import { AudioRepository } from '../audios/repository/audio.repository';
 import { CanvasRepository } from '../canvases/repository/canvas.repository';
-import { CharacterRepository } from '../characters/repository/characater.repository';
 import { CueRepository } from '../cues/repository/cue.repository';
 import { EpisodeRepository } from '../episodes/repository/episode.repository';
 import { RecordRepository } from '../records/repository/record.repository';
@@ -21,11 +20,6 @@ import { PlayerController } from './controllers/player.controller';
             provide: EpisodeRepository,
             inject: [DataSource],
             useFactory: (dataSource: DataSource) => new EpisodeRepository(dataSource),
-        },
-        {
-            provide: CharacterRepository,
-            inject: [DataSource],
-            useFactory: (dataSource: DataSource) => new CharacterRepository(dataSource),
         },
         {
             provide: TrackRepository,
@@ -66,7 +60,6 @@ import { PlayerController } from './controllers/player.controller';
             provide: PlayerService,
             inject: [
                 EpisodeRepository,
-                CharacterRepository,
                 TrackRepository,
                 CanvasRepository,
                 CueRepository,
@@ -77,7 +70,6 @@ import { PlayerController } from './controllers/player.controller';
             ],
             useFactory: (
                 episodeRepository: EpisodeRepository,
-                characterRepository: CharacterRepository,
                 trackRepository: TrackRepository,
                 canvasRepository: CanvasRepository,
                 cueRepository: CueRepository,
@@ -88,7 +80,6 @@ import { PlayerController } from './controllers/player.controller';
             ) =>
                 new PlayerService(
                     episodeRepository,
-                    characterRepository,
                     trackRepository,
                     canvasRepository,
                     cueRepository,

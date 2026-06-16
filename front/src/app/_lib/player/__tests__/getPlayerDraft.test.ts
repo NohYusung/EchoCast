@@ -102,7 +102,7 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
             return jsonResponse({
                 data: {
                     episodeId: 1,
-                    durationMs: 6100,
+                    totalDuration: 6100,
                     tracks: [
                         {
                             id: 2,

@@ -53,6 +53,7 @@ test('POST /products/:productId/episodes creates an episode and PUT /products/:p
                         title: episodeTitle,
                         subTitle,
                         thumbnailImageUrl,
+                        defaultCanvasId: null,
                     },
                 ],
                 total: 1,
@@ -71,6 +72,7 @@ test('POST /products/:productId/episodes creates an episode and PUT /products/:p
                 title: episodeTitle,
                 subTitle,
                 thumbnailImageUrl,
+                defaultCanvasId: null,
             },
         });
 
@@ -101,6 +103,7 @@ test('POST /products/:productId/episodes creates an episode and PUT /products/:p
                 title: updatedTitle,
                 subTitle: updatedSubTitle,
                 thumbnailImageUrl: updatedThumbnailImageUrl,
+                defaultCanvasId: null,
             },
         });
     } finally {

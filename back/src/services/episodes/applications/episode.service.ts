@@ -16,12 +16,14 @@ export class EpisodeService extends DddService {
         title,
         subTitle,
         thumbnailImageUrl,
+        defaultCanvasId,
     }: {
         productId: number;
         episodeNumber: number;
         title: string;
         subTitle?: string;
         thumbnailImageUrl?: string;
+        defaultCanvasId?: number;
     }) {
         const episode = new Episode({
             productId,
@@ -29,6 +31,7 @@ export class EpisodeService extends DddService {
             title,
             subTitle,
             thumbnailImageUrl,
+            defaultCanvasId,
         });
 
         await this.episodeRepository.save([episode]);
@@ -61,6 +64,7 @@ export class EpisodeService extends DddService {
         title,
         subTitle,
         thumbnailImageUrl,
+        defaultCanvasId,
     }: {
         productId: number;
         episodeId: number;
@@ -68,6 +72,7 @@ export class EpisodeService extends DddService {
         title?: string;
         subTitle?: string;
         thumbnailImageUrl?: string;
+        defaultCanvasId?: number;
     }) {
         const [episode] = await this.episodeRepository.find({ id: episodeId, productId });
 
@@ -75,7 +80,7 @@ export class EpisodeService extends DddService {
             throw new NotFoundException('에피소드를 찾을 수 없습니다.');
         }
 
-        episode.update({ episodeNumber, title, subTitle, thumbnailImageUrl });
+        episode.update({ episodeNumber, title, subTitle, thumbnailImageUrl, defaultCanvasId });
         await this.episodeRepository.save([episode]);
     }
 }

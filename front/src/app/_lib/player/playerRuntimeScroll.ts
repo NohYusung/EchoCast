@@ -168,32 +168,56 @@ export function getPlayerRuntimePlayheadFromScroll({
         .sort((a, b) => a.offset - b.offset || a.time - b.time);
 
     if (anchorPoints.length > 0) {
-        const nearestAnchorPoints = anchorPoints
-            .map((point) => ({
-                ...point,
-                distance: Math.abs(point.offset - currentOffset),
-            }))
-            .sort((a, b) => a.distance - b.distance || a.time - b.time);
-        const nearestDistance = nearestAnchorPoints[0].distance;
-        const nearestCandidates = nearestAnchorPoints.filter((point) => point.distance === nearestDistance);
+        const offsetGroups = anchorPoints.reduce<Array<{ offset: number; times: number[] }>>((groups, point) => {
+            const lastGroup = groups[groups.length - 1];
 
-        if (typeof currentPlayheadMs === 'number' && Number.isFinite(currentPlayheadMs)) {
-            const nextPoint = nearestCandidates
-                .filter((point) => point.time >= currentPlayheadMs)
-                .sort((a, b) => a.time - b.time)[0];
-
-            if (nextPoint) {
-                return nextPoint.time;
+            if (lastGroup && lastGroup.offset === point.offset) {
+                lastGroup.times.push(point.time);
+                return groups;
             }
 
-            return [...nearestCandidates].sort(
-                (a, b) =>
-                    Math.abs(a.time - currentPlayheadMs) - Math.abs(b.time - currentPlayheadMs) ||
-                    b.time - a.time,
-            )[0].time;
+            groups.push({ offset: point.offset, times: [point.time] });
+            return groups;
+        }, []);
+        const selectTimeAtOffset = (times: number[]) => {
+            const orderedTimes = [...times].sort((a, b) => a - b);
+
+            if (typeof currentPlayheadMs === 'number' && Number.isFinite(currentPlayheadMs)) {
+                const nextTime = orderedTimes.find((time) => time >= currentPlayheadMs);
+
+                if (typeof nextTime === 'number') {
+                    return nextTime;
+                }
+            }
+
+            return orderedTimes[orderedTimes.length - 1];
+        };
+        const exactGroup = offsetGroups.find((group) => group.offset === currentOffset);
+
+        if (exactGroup) {
+            return selectTimeAtOffset(exactGroup.times);
         }
 
-        return nearestCandidates[0].time;
+        const upperIndex = offsetGroups.findIndex((group) => group.offset > currentOffset);
+
+        if (upperIndex === -1) {
+            return selectTimeAtOffset(offsetGroups[offsetGroups.length - 1].times);
+        }
+
+        if (upperIndex === 0) {
+            return selectTimeAtOffset(offsetGroups[0].times);
+        }
+
+        const startGroup = offsetGroups[upperIndex - 1];
+        const endGroup = offsetGroups[upperIndex];
+
+        return getInterpolatedTime({
+            currentOffset,
+            startOffset: startGroup.offset,
+            endOffset: endGroup.offset,
+            startTime: Math.max(...startGroup.times),
+            endTime: Math.min(...endGroup.times),
+        });
     }
 
     for (const event of [...scrollEvents].sort((a, b) => a.start - b.start)) {

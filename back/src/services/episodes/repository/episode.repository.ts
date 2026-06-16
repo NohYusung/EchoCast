@@ -16,6 +16,7 @@ export class EpisodeRepository extends DddRepository<Episode> {
             title?: string;
             subTitle?: string;
             thumbnailImageUrl?: string;
+            defaultCanvasId?: number;
         },
         options?: TypeormRelationOptions<Episode>
     ) {
@@ -27,6 +28,7 @@ export class EpisodeRepository extends DddRepository<Episode> {
                 title: conditions.title,
                 subTitle: conditions.subTitle,
                 thumbnailImageUrl: conditions.thumbnailImageUrl,
+                defaultCanvasId: conditions.defaultCanvasId,
             }),
             ...convertOptions(options),
         });
@@ -39,6 +41,7 @@ export class EpisodeRepository extends DddRepository<Episode> {
         title?: string;
         subTitle?: string;
         thumbnailImageUrl?: string;
+        defaultCanvasId?: number;
     }) {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Episode>({
@@ -48,6 +51,7 @@ export class EpisodeRepository extends DddRepository<Episode> {
                 title: conditions.title,
                 subTitle: conditions.subTitle,
                 thumbnailImageUrl: conditions.thumbnailImageUrl,
+                defaultCanvasId: conditions.defaultCanvasId,
             }),
         });
     }

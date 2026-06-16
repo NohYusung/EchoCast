@@ -6,6 +6,7 @@ import {
     filterRecordingCueQueue,
     getRecordingProgress,
     selectInitialRecordingCue,
+    toRecordingStripSize,
 } from '../recordingStudio';
 import type { PlayerDraft } from '../playerDraft.types';
 import type { PlayerManifest } from '../playerManifest.types';
@@ -25,7 +26,6 @@ const draft: PlayerDraft = {
     tracks: [{ id: 10, episodeId: 1, name: '지후 보이스', kind: 'record', layerId: 1, isMuted: false }],
     items: [],
     media: [],
-    ttsVoices: [],
     cues: [
         {
             id: 2,
@@ -33,8 +33,12 @@ const draft: PlayerDraft = {
             scriptId: 2,
             characterId: 1,
             trackId: 10,
+            startCanvasMediaId: 302,
+            endCanvasMediaId: 302,
             startTime: 2500,
             endTime: 5200,
+            startPosition: 64,
+            endPosition: 64,
             volume: 1,
         },
         {
@@ -43,8 +47,12 @@ const draft: PlayerDraft = {
             scriptId: 1,
             characterId: 1,
             trackId: 10,
+            startCanvasMediaId: 301,
+            endCanvasMediaId: 301,
             startTime: 0,
             endTime: 2100,
+            startPosition: 18,
+            endPosition: 18,
             volume: 1,
         },
         {
@@ -73,7 +81,7 @@ const draft: PlayerDraft = {
 
 const manifest: PlayerManifest = {
     episodeId: 1,
-    durationMs: 7200,
+    totalDuration: 7200,
     tracks: [],
     items: [],
     cues: [
@@ -144,7 +152,23 @@ test('selectInitialRecordingCue prefers the first pending cue and falls back to 
     assert.equal(selectInitialRecordingCue(filterRecordingCueQueue(queue, 'done'))?.cueId, 1);
 });
 
-test('buildRecordingCueStripMarkers maps cue start times to strip positions', () => {
+test('buildRecordingCueQueue preserves saved strip placement fields for recording markers', () => {
+    const queue = buildRecordingCueQueue({ draft, characterId: 1 });
+
+    assert.deepEqual(
+        queue.map((item) => ({
+            cueId: item.cueId,
+            startCanvasMediaId: item.startCanvasMediaId,
+            startPosition: item.startPosition,
+        })),
+        [
+            { cueId: 1, startCanvasMediaId: 301, startPosition: 18 },
+            { cueId: 2, startCanvasMediaId: 302, startPosition: 64 },
+        ],
+    );
+});
+
+test('buildRecordingCueStripMarkers maps saved canvas media positions to strip markers', () => {
     const queue = buildRecordingCueQueue({ draft });
     const markers = buildRecordingCueStripMarkers({ queue, selectedCueId: 2 });
 
@@ -152,6 +176,8 @@ test('buildRecordingCueStripMarkers maps cue start times to strip positions', ()
         markers.map((marker) => ({
             cueId: marker.cueId,
             characterName: marker.characterName,
+            canvasMediaId: marker.canvasMediaId,
+            positionPercent: marker.positionPercent,
             topPercent: marker.topPercent,
             isSelected: marker.isSelected,
         })),
@@ -159,21 +185,41 @@ test('buildRecordingCueStripMarkers maps cue start times to strip positions', ()
             {
                 cueId: 1,
                 characterName: '지후',
-                topPercent: 4,
+                canvasMediaId: 301,
+                positionPercent: 18,
+                topPercent: 18,
                 isSelected: false,
             },
             {
                 cueId: 2,
                 characterName: '지후',
-                topPercent: 34.72,
+                canvasMediaId: 302,
+                positionPercent: 64,
+                topPercent: 64,
                 isSelected: true,
             },
             {
                 cueId: 3,
                 characterName: '서연',
+                canvasMediaId: undefined,
+                positionPercent: 83.33,
                 topPercent: 83.33,
                 isSelected: false,
             },
         ],
     );
+});
+
+test('toRecordingStripSize scales the strip while preserving media ratio', () => {
+    assert.deepEqual(toRecordingStripSize(150), {
+        scale: 150,
+        width: 480,
+        fallbackHeight: 246,
+    });
+
+    assert.deepEqual(toRecordingStripSize(1000), {
+        scale: 200,
+        width: 640,
+        fallbackHeight: 328,
+    });
 });

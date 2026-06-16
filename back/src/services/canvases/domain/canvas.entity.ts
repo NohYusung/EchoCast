@@ -15,7 +15,7 @@ export class Canvas extends DddAggregate {
     @Column({ comment: '에피소드 id' })
     episodeId!: number;
 
-    @ManyToOne(() => Episode, { nullable: false })
+    @ManyToOne(() => Episode)
     @JoinColumn({ name: 'episodeId' })
     episode!: Episode;
 

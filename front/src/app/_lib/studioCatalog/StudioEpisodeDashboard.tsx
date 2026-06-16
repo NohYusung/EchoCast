@@ -766,12 +766,11 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                                 편집기 열기 <StudioCatalogIcon name="chevronRight" />
                                             </Link>
                                             <Link
-                                                aria-label={`${episode.title} 녹음실 입장`}
-                                                className="tp-episode-record-link"
+                                                aria-label={`${episode.title} 녹음하기`}
+                                                className="tp-open-hint tp-episode-record-link"
                                                 href={`/studio/products/${product.id}/episodes/${episode.id}/record`}
                                             >
-                                                <StudioCatalogIcon name="mic" />
-                                                녹음실 입장
+                                                녹음 하기 <StudioCatalogIcon name="chevronRight" />
                                             </Link>
                                         </span>
                                     </article>

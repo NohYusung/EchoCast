@@ -28,6 +28,10 @@ export interface RecordingCueQueueItem {
     startTime: number;
     endTime: number;
     durationMs: number;
+    startCanvasMediaId?: number;
+    endCanvasMediaId?: number;
+    startPosition?: number;
+    endPosition?: number;
     status: RecordingCueStatus;
     takeCount: number;
     latestRecordUrl?: string;
@@ -49,6 +53,8 @@ export interface RecordingCueStripMarker {
     characterColor: string;
     text: string;
     startTime: number;
+    canvasMediaId?: number;
+    positionPercent: number;
     topPercent: number;
     status: RecordingCueStatus;
     isSelected: boolean;
@@ -57,6 +63,9 @@ export interface RecordingCueStripMarker {
 type DraftCue = PlayerDraft['cues'][number];
 type DraftRecord = PlayerDraft['records'][number];
 type RecordingCueSource = DraftCue | CueManifest;
+
+const defaultRecordingStripWidth = 320;
+const defaultRecordingStripFallbackHeight = 164;
 
 export function buildRecordingCueQueue({
     draft,
@@ -129,6 +138,10 @@ export function buildRecordingCueQueue({
                 startTime: cue.startTime,
                 endTime: cue.endTime,
                 durationMs: Math.max(0, cue.endTime - cue.startTime),
+                startCanvasMediaId: toOptionalNumber(cue.startCanvasMediaId ?? manifestCue?.startCanvasMediaId),
+                endCanvasMediaId: toOptionalNumber(cue.endCanvasMediaId ?? manifestCue?.endCanvasMediaId),
+                startPosition: toOptionalNumber(cue.startPosition ?? manifestCue?.startPosition),
+                endPosition: toOptionalNumber(cue.endPosition ?? manifestCue?.endPosition),
                 status: records.length > 0 ? 'done' : 'pending',
                 takeCount: records.length,
                 latestRecordUrl: latestRecord?.audioUrl,
@@ -172,22 +185,51 @@ export function buildRecordingCueStripMarkers({
     const durationMs = Math.max(1, ...queue.map((item) => item.endTime));
 
     return queue
-        .map((item) => ({
-            cueId: item.cueId,
-            characterId: item.characterId,
-            characterName: item.characterName,
-            characterColor: item.characterColor,
-            text: item.text,
-            startTime: item.startTime,
-            topPercent: roundPercent(clampPercent((item.startTime / durationMs) * 100)),
-            status: item.status,
-            isSelected: item.cueId === selectedCueId,
-        }))
-        .sort((left, right) => left.topPercent - right.topPercent || left.startTime - right.startTime || left.cueId - right.cueId);
+        .map((item) => {
+            const timePercent = roundPercent(clampTimelinePercent((item.startTime / durationMs) * 100));
+            const canvasMediaId = toOptionalNumber(item.startCanvasMediaId);
+            const savedPosition = toOptionalNumber(item.startPosition);
+            const hasStripPlacement = typeof canvasMediaId === 'number' && typeof savedPosition === 'number';
+            const positionPercent = hasStripPlacement
+                ? roundPercent(clampPositionPercent(savedPosition))
+                : timePercent;
+
+            return {
+                cueId: item.cueId,
+                characterId: item.characterId,
+                characterName: item.characterName,
+                characterColor: item.characterColor,
+                text: item.text,
+                startTime: item.startTime,
+                canvasMediaId: hasStripPlacement ? canvasMediaId : undefined,
+                positionPercent,
+                topPercent: positionPercent,
+                status: item.status,
+                isSelected: item.cueId === selectedCueId,
+            } satisfies RecordingCueStripMarker;
+        })
+        .sort(
+            (left, right) =>
+                (left.canvasMediaId ?? Number.MAX_SAFE_INTEGER) - (right.canvasMediaId ?? Number.MAX_SAFE_INTEGER) ||
+                left.positionPercent - right.positionPercent ||
+                left.startTime - right.startTime ||
+                left.cueId - right.cueId,
+        );
 }
 
 export function getRecordingStorageKey(productId: string, episodeId: string): string {
     return `test-player:recording-studio:${productId}:${episodeId}:takes`;
+}
+
+export function toRecordingStripSize(scale: number) {
+    const normalizedScale = Math.min(200, Math.max(70, Math.round(Number.isFinite(scale) ? scale : 100)));
+    const ratio = normalizedScale / 100;
+
+    return {
+        scale: normalizedScale,
+        width: Math.round(defaultRecordingStripWidth * ratio),
+        fallbackHeight: Math.round(defaultRecordingStripFallbackHeight * ratio),
+    };
 }
 
 function toRecordingTake(record: DraftRecord | RecordManifest, source: RecordingTakeSummary['source']): RecordingTakeSummary {
@@ -210,8 +252,16 @@ function addRecord(recordsByCueId: Map<number, RecordingTakeSummary[]>, record: 
     recordsByCueId.set(record.cueId, records);
 }
 
-function clampPercent(value: number): number {
+function toOptionalNumber(value: number | undefined): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function clampTimelinePercent(value: number): number {
     return Math.min(96, Math.max(4, value));
+}
+
+function clampPositionPercent(value: number): number {
+    return Math.min(100, Math.max(0, value));
 }
 
 function roundPercent(value: number): number {

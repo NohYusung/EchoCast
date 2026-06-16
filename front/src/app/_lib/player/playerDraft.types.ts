@@ -1,5 +1,7 @@
 import type { PlayerItemKind, PlayerTrackKind } from './playerManifest.types';
 
+// PlayerDraft는 백엔드 PlayerService draft/manifest와 프론트 녹음실/export 로직 사이의 경계 타입이다.
+// 필드 삭제나 이름 변경은 getPlayerDraft, recordingStudio, vogopangContent, sampleDraft 소비 경로를 같이 확인한다.
 export interface PlayerDraft {
     products: Array<{
         id: number;
@@ -36,7 +38,7 @@ export interface PlayerDraft {
     }>;
     items: Array<{
         id: number;
-        trackId: number;
+        trackId?: number;
         kind: PlayerItemKind;
         startTime: number;
         endTime: number;
@@ -58,12 +60,6 @@ export interface PlayerDraft {
         naturalHeight?: number;
         durationMs?: number;
     }>;
-    ttsVoices: Array<{
-        id: number;
-        provider: string;
-        voiceName: string;
-        languageCode: string;
-    }>;
     cues: Array<{
         id: number;
         episodeId: number;
@@ -79,6 +75,8 @@ export interface PlayerDraft {
         audioEndTime?: number;
         startPosition?: number;
         endPosition?: number;
+        // 보이스 큐의 주 계약은 record/audio 기반이며 ttsVoiceId/ttsUrl은 레거시 fallback이다.
+        // production API에서 다시 살릴 때는 Cue 엔티티/DTO/PlayerService 계약을 먼저 맞춘다.
         ttsVoiceId?: number;
         ttsUrl?: string;
         volume: number;
@@ -92,6 +90,8 @@ export interface PlayerDraft {
         volume: number;
         isAccepted: boolean;
     }>;
+    // screenEffects는 현재 getPlayerDraft에서 빈 배열로만 생성되고 Vogopang export에서만 읽는다.
+    // 실제 백엔드 screen effect 도메인이 생기기 전까지 persistent draft 계약으로 확장하지 않는다.
     screenEffects?: Array<{
         type: 'effect';
         uuid: string;

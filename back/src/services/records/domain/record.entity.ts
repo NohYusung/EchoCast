@@ -35,7 +35,7 @@ export class Record extends DddAggregate {
     @Column({ comment: '채택 여부', default: false })
     isAccepted!: boolean;
 
-    @ManyToOne(() => Cue, { nullable: false })
+    @ManyToOne(() => Cue)
     @JoinColumn({ name: 'cueId' })
     cue!: Cue;
 

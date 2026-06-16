@@ -34,17 +34,20 @@ describe('EpisodeService', () => {
                 title: 'Before episode title',
                 subTitle: 'Before subtitle',
                 thumbnailImageUrl: 'https://assets.example.com/episodes/before.png',
+                defaultCanvasId: 11,
             });
 
             const createdEpisodes = await episodeService.list({ productId: product.id });
             const episode = createdEpisodes.items[0];
             assert.equal(episode.thumbnailImageUrl, 'https://assets.example.com/episodes/before.png');
+            assert.equal(episode.defaultCanvasId, 11);
 
             await episodeService.update({
                 productId: product.id,
                 episodeId: episode.id,
                 title: 'After episode title',
                 thumbnailImageUrl: 'https://assets.example.com/episodes/after.png',
+                defaultCanvasId: 12,
             });
 
             const updatedEpisode = await episodeService.retrieve({ productId: product.id, episodeId: episode.id });
@@ -55,6 +58,7 @@ describe('EpisodeService', () => {
             assert.equal(updatedEpisode.title, 'After episode title');
             assert.equal(updatedEpisode.subTitle, 'Before subtitle');
             assert.equal(updatedEpisode.thumbnailImageUrl, 'https://assets.example.com/episodes/after.png');
+            assert.equal(updatedEpisode.defaultCanvasId, 12);
         } finally {
             await dataSource.destroy();
         }
