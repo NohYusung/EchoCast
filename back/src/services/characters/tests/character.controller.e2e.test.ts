@@ -102,6 +102,61 @@ test('DELETE /products/:productId/characters/:characterId removes a character fr
     }
 });
 
+test('PUT /products/:productId/characters/:characterId updates a character in the product list', async () => {
+    const moduleRef = await Test.createTestingModule({
+        imports: [AppModule],
+    }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+
+    await app.init();
+
+    try {
+        const productTitle = `캐릭터 수정 테스트 작품 ${Date.now()}`;
+        await request(app.getHttpServer()).post('/products').send({ title: productTitle }).expect(201);
+
+        const productsResponse = await request(app.getHttpServer()).get('/products').expect(200);
+        const product = productsResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.title === productTitle
+        );
+        assert.ok(product);
+
+        await request(app.getHttpServer())
+            .post(`/products/${product.id}/characters`)
+            .send({ name: '수정 전', role: 'minor', imageUrl: 'https://cdn.example.com/characters/before.png' })
+            .expect(201);
+
+        const beforeUpdateResponse = await request(app.getHttpServer())
+            .get(`/products/${product.id}/characters`)
+            .expect(200);
+        const character = beforeUpdateResponse.body.data.items.find(
+            (item: { id: number; name: string }) => item.name === '수정 전'
+        );
+        assert.ok(character);
+
+        const updateResponse = await request(app.getHttpServer())
+            .put(`/products/${product.id}/characters/${character.id}`)
+            .send({ name: '수정 후', role: 'supporting', imageUrl: 'https://cdn.example.com/characters/after.png' })
+            .expect(200);
+
+        assert.deepEqual(updateResponse.body, { data: {} });
+
+        const afterUpdateResponse = await request(app.getHttpServer())
+            .get(`/products/${product.id}/characters`)
+            .expect(200);
+        const updatedCharacter = afterUpdateResponse.body.data.items.find(
+            (item: { id: number; name: string }) => item.name === '수정 후'
+        );
+
+        assert.ok(updatedCharacter);
+        assert.equal(updatedCharacter.id, character.id);
+        assert.equal(updatedCharacter.productId, product.id);
+        assert.equal(updatedCharacter.role, 'supporting');
+        assert.equal(updatedCharacter.imageUrl, 'https://cdn.example.com/characters/after.png');
+    } finally {
+        await app.close();
+    }
+});
+
 test('DELETE /products/:productId/characters/:characterId returns 404 when the character is not registered in the product', async () => {
     const moduleRef = await Test.createTestingModule({
         imports: [AppModule],

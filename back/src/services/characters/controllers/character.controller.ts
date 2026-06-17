@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Dependencies, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Dependencies, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
 import { CharacterService } from '../applications/characater.service';
-import { CharacterCreateDto } from './dto';
+import { CharacterCreateDto, CharacterUpdateDto } from './dto';
 
 @Dependencies(CharacterService)
 @Controller()
@@ -38,6 +38,27 @@ export class CharacterController {
 
         // 4. Send response
         return { data };
+    }
+
+    /**
+     * 캐릭터 정보 수정
+     */
+    @Put('/products/:productId/characters/:characterId')
+    async update(
+        @Param('productId', ParseIntPipe) productId: number,
+        @Param('characterId', ParseIntPipe) characterId: number,
+        @Body() body: CharacterUpdateDto
+    ) {
+        // 1. Destructure body, params, query
+        const { name, role, imageUrl } = body;
+
+        // 2. Get context
+
+        // 3. Get result
+        await this.characterService.update({ productId, characterId, name, role, imageUrl });
+
+        // 4. Send response
+        return { data: {} };
     }
 
     /**

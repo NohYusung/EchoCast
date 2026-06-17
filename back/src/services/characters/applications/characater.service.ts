@@ -43,6 +43,29 @@ export class CharacterService extends DddService {
         return { items, total };
     }
 
+    async update({
+        productId,
+        characterId,
+        name,
+        role,
+        imageUrl,
+    }: {
+        productId: number;
+        characterId: number;
+        name?: string;
+        role?: CharacterRole;
+        imageUrl?: string;
+    }) {
+        const [character] = await this.characterRepository.find({ id: characterId, productId });
+
+        if (!character) {
+            throw new NotFoundException('캐릭터를 찾을 수 없습니다.');
+        }
+
+        character.update({ name, role, imageUrl });
+        await this.characterRepository.save([character]);
+    }
+
     async delete({ productId, characterId }: { productId: number; characterId: number }) {
         const [character] = await this.characterRepository.find({ id: characterId, productId });
 

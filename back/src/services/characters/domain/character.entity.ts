@@ -41,4 +41,18 @@ export class Character extends DddAggregate {
             this.imageUrl = args.imageUrl;
         }
     }
+
+    update({ name, role, imageUrl }: { name?: string; role?: CharacterRole; imageUrl?: string }) {
+        const changedArgs = this.stripUnchanged({
+            name,
+            role,
+            imageUrl,
+        });
+
+        if (!changedArgs) {
+            return;
+        }
+
+        Object.assign(this, changedArgs);
+    }
 }
