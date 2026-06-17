@@ -33,3 +33,12 @@ test('recording character filters stay normalized and wrap inside the queue pane
     assert.match(styles, /\.tr-character-filter\s*\{[\s\S]*?flex-wrap: wrap;/);
     assert.match(styles, /\.tr-character-filter\s*\{[\s\S]*?overflow: visible;/);
 });
+
+test('recording status filters keep compact rows above the cue list', () => {
+    assert.match(styles, /\.tr-queue-panel\s*\{[\s\S]*?grid-template-rows: auto auto auto minmax\(0, 1fr\);/);
+    assert.match(styles, /\.tr-filter-tabs\s*\{[\s\S]*?align-self: start;/);
+    assert.match(styles, /\.tr-filter-tabs\s*\{[\s\S]*?display: inline-flex;/);
+    assert.match(styles, /\.tr-filter-tabs\s*\{[\s\S]*?background: #161922;/);
+    assert.match(styles, /\.tr-filter-tabs button\s*\{[\s\S]*?min-height: 29px;/);
+    assert.match(styles, /\.tr-filter-tabs button\.active\s*\{[\s\S]*?background: #232734;/);
+});

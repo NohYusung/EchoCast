@@ -1204,7 +1204,6 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                         <div className="tp-canvas-source-list">
                                                             {mediaItems
                                                                 .filter((media) => media.mediaType !== 'audio')
-                                                                .slice(0, 8)
                                                                 .map((media) => (
                                                                     <button
                                                                         key={media.id}
