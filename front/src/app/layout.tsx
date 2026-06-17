@@ -3,11 +3,11 @@ import type { Metadata } from 'next';
 import './styles.css';
 
 export const metadata: Metadata = {
-    title: 'Tooned Player',
-    description: 'Tooned Player test studio',
+    title: 'DobeDub',
+    description: 'DobeDub player studio',
     icons: {
         icon: '/brand/tooned-player-mark.svg',
-        apple: '/brand/tooned-player-app-icon.png',
+        apple: '/brand/tooned-player-app-icon.svg',
     },
 };
 

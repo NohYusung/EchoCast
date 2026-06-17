@@ -53,6 +53,7 @@ type CharacterCreateRequest = {
     role: CharacterRole;
     imageUrl?: string;
 };
+type CharacterUpdateRequest = Partial<CharacterCreateRequest>;
 type ProductUpdateRequest = {
     coverImageUrl?: string;
 };
@@ -163,6 +164,10 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     const [newCharacterName, setNewCharacterName] = useState('');
     const [newCharacterRole, setNewCharacterRole] = useState<CharacterRole>('unknown');
     const [newCharacterImageFile, setNewCharacterImageFile] = useState<File | null>(null);
+    const [editingCharacterId, setEditingCharacterId] = useState<number | null>(null);
+    const [editingCharacterName, setEditingCharacterName] = useState('');
+    const [editingCharacterRole, setEditingCharacterRole] = useState<CharacterRole>('unknown');
+    const [editingCharacterImageFile, setEditingCharacterImageFile] = useState<File | null>(null);
     const [settingsCoverImageFile, setSettingsCoverImageFile] = useState<File | null>(null);
     const [settingsCoverImagePreviewUrl, setSettingsCoverImagePreviewUrl] = useState<string | null>(null);
     const [settingsDraft, setSettingsDraft] = useState<ProductSettingsDraft>(() =>
@@ -171,11 +176,13 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     const [episodeNumberTouched, setEpisodeNumberTouched] = useState(false);
     const [titleTouched, setTitleTouched] = useState(false);
     const [characterNameTouched, setCharacterNameTouched] = useState(false);
+    const [editingCharacterNameTouched, setEditingCharacterNameTouched] = useState(false);
     const [settingsTitleTouched, setSettingsTitleTouched] = useState(false);
     const [settingsMessage, setSettingsMessage] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCharacterLoading, setIsCharacterLoading] = useState(false);
     const [isCharacterSubmitting, setIsCharacterSubmitting] = useState(false);
+    const [deletingCharacterId, setDeletingCharacterId] = useState<number | null>(null);
     const [isSettingsSubmitting, setIsSettingsSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [characterError, setCharacterError] = useState<string | null>(null);
@@ -278,6 +285,7 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     const showEpisodeNumberError = episodeNumberTouched && !isValidEpisodeNumber;
     const showTitleError = titleTouched && !newTitle.trim();
     const showCharacterNameError = characterNameTouched && !newCharacterName.trim();
+    const showEditingCharacterNameError = editingCharacterNameTouched && !editingCharacterName.trim();
     const showSettingsTitleError = settingsTitleTouched && !settingsDraft.title.trim();
 
     const openCreateModal = () => {
@@ -348,11 +356,16 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
     };
 
     const closeCharacterModal = () => {
-        if (isCharacterSubmitting) return;
+        if (isCharacterSubmitting || deletingCharacterId !== null) return;
 
         setCharacterError(null);
         setIsCharacterModalOpen(false);
         setIsCharacterCreateModalOpen(false);
+        setEditingCharacterId(null);
+        setEditingCharacterName('');
+        setEditingCharacterRole('unknown');
+        setEditingCharacterImageFile(null);
+        setEditingCharacterNameTouched(false);
     };
 
     const openCharacterCreateModal = () => {
@@ -373,6 +386,26 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
         setNewCharacterImageFile(null);
         setCharacterNameTouched(false);
         setIsCharacterCreateModalOpen(false);
+    };
+
+    const startCharacterEdit = (character: CharacterListItem) => {
+        setCharacterError(null);
+        setEditingCharacterId(character.id);
+        setEditingCharacterName(character.name);
+        setEditingCharacterRole(character.role);
+        setEditingCharacterImageFile(null);
+        setEditingCharacterNameTouched(false);
+    };
+
+    const cancelCharacterEdit = () => {
+        if (isCharacterSubmitting) return;
+
+        setEditingCharacterId(null);
+        setEditingCharacterName('');
+        setEditingCharacterRole('unknown');
+        setEditingCharacterImageFile(null);
+        setEditingCharacterNameTouched(false);
+        setCharacterError(null);
     };
 
     const createCharacter = async (event: FormEvent<HTMLFormElement>) => {
@@ -422,6 +455,85 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
             setCharacterError('캐릭터 등록에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
         } finally {
             setIsCharacterSubmitting(false);
+        }
+    };
+
+    const updateCharacter = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setEditingCharacterNameTouched(true);
+        setCharacterError(null);
+
+        const characterId = editingCharacterId;
+        const name = editingCharacterName.trim();
+        if (characterId === null || !name) return;
+        if (editingCharacterImageFile && !editingCharacterImageFile.type.startsWith('image/')) {
+            setCharacterError('캐릭터 이미지는 이미지 파일만 등록할 수 있습니다.');
+            return;
+        }
+
+        setIsCharacterSubmitting(true);
+
+        try {
+            const apiProductId = resolveProductApiId(productId, product);
+            let imageUrl: string | undefined;
+
+            if (editingCharacterImageFile) {
+                const key = getCharacterImageUploadKey(apiProductId, editingCharacterImageFile);
+                const [uploadUrl] = await getFileUploadUrls(productApiBaseUrl, [key]);
+
+                if (!uploadUrl) {
+                    throw new Error('File upload URL response is empty');
+                }
+
+                await uploadFileToPresignedUrl(uploadUrl.presignedUrl, editingCharacterImageFile);
+                imageUrl = uploadUrl.publicUrl;
+            }
+
+            await updateCharacterApi(apiProductId, characterId, {
+                name,
+                role: editingCharacterRole,
+                imageUrl,
+            });
+
+            const listedCharacters = await listCharacters(apiProductId);
+            setCharacters(listedCharacters);
+            setEditingCharacterId(null);
+            setEditingCharacterName('');
+            setEditingCharacterRole('unknown');
+            setEditingCharacterImageFile(null);
+            setEditingCharacterNameTouched(false);
+        } catch {
+            setCharacterError('캐릭터 수정에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
+        } finally {
+            setIsCharacterSubmitting(false);
+        }
+    };
+
+    const deleteCharacter = async (character: CharacterListItem) => {
+        if (isCharacterSubmitting || deletingCharacterId !== null) return;
+
+        const shouldDelete = window.confirm(`${character.name} 캐릭터를 삭제할까요?`);
+        if (!shouldDelete) return;
+
+        setCharacterError(null);
+        setDeletingCharacterId(character.id);
+
+        try {
+            const apiProductId = resolveProductApiId(productId, product);
+            await deleteCharacterApi(apiProductId, character.id);
+            const listedCharacters = await listCharacters(apiProductId);
+            setCharacters(listedCharacters);
+            if (editingCharacterId === character.id) {
+                setEditingCharacterId(null);
+                setEditingCharacterName('');
+                setEditingCharacterRole('unknown');
+                setEditingCharacterImageFile(null);
+                setEditingCharacterNameTouched(false);
+            }
+        } catch {
+            setCharacterError('캐릭터 삭제에 실패했습니다. 연결된 대사나 백엔드 API 상태를 확인해 주세요.');
+        } finally {
+            setDeletingCharacterId(null);
         }
     };
 
@@ -873,7 +985,12 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                 <h2>캐릭터 관리</h2>
                                 <p>{product.title}에 등록된 캐릭터를 조회하고 새 캐릭터를 등록합니다.</p>
                             </div>
-                            <button aria-label="닫기" onClick={closeCharacterModal} type="button">
+                            <button
+                                aria-label="닫기"
+                                disabled={isCharacterSubmitting || deletingCharacterId !== null}
+                                onClick={closeCharacterModal}
+                                type="button"
+                            >
                                 <StudioCatalogIcon name="close" />
                             </button>
                         </div>
@@ -888,7 +1005,10 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                             ) : characters.length > 0 ? (
                                 <div className="tp-character-list">
                                     {characters.map((character, index) => (
-                                        <article className="tp-character-card" key={character.id}>
+                                        <article
+                                            className={`tp-character-card ${editingCharacterId === character.id ? 'is-editing' : ''}`}
+                                            key={character.id}
+                                        >
                                             <span
                                                 className={`tp-character-avatar ${character.imageUrl ? 'has-image' : ''}`}
                                                 style={
@@ -919,6 +1039,122 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                                                     <b>{character.id}</b>ID
                                                 </span>
                                             </span>
+                                            <span className="tp-character-actions">
+                                                <button
+                                                    disabled={isCharacterSubmitting || deletingCharacterId !== null}
+                                                    onClick={() => startCharacterEdit(character)}
+                                                    type="button"
+                                                >
+                                                    수정
+                                                </button>
+                                                <button
+                                                    className="is-danger"
+                                                    disabled={isCharacterSubmitting || deletingCharacterId !== null}
+                                                    onClick={() => void deleteCharacter(character)}
+                                                    type="button"
+                                                >
+                                                    {deletingCharacterId === character.id ? '삭제 중' : '삭제'}
+                                                </button>
+                                            </span>
+                                            {editingCharacterId === character.id ? (
+                                                <form className="tp-character-edit-form" onSubmit={updateCharacter}>
+                                                    <label className="tp-field">
+                                                        캐릭터 이름 <b>*</b>
+                                                        <input
+                                                            className={
+                                                                showEditingCharacterNameError ? 'error' : ''
+                                                            }
+                                                            disabled={isCharacterSubmitting}
+                                                            onBlur={() => setEditingCharacterNameTouched(true)}
+                                                            onChange={(event) =>
+                                                                setEditingCharacterName(event.target.value)
+                                                            }
+                                                            value={editingCharacterName}
+                                                        />
+                                                        {showEditingCharacterNameError ? (
+                                                            <small className="tp-error">
+                                                                캐릭터 이름을 입력해 주세요.
+                                                            </small>
+                                                        ) : null}
+                                                    </label>
+                                                    <div className="tp-field">
+                                                        캐릭터 이미지
+                                                        <label className="tp-character-image-picker">
+                                                            <span>
+                                                                {editingCharacterImageFile
+                                                                    ? editingCharacterImageFile.name
+                                                                    : '새 이미지 파일 선택'}
+                                                            </span>
+                                                            <input
+                                                                accept="image/*"
+                                                                disabled={isCharacterSubmitting}
+                                                                onChange={(event) => {
+                                                                    const file =
+                                                                        event.currentTarget.files?.[0] ?? null;
+                                                                    event.currentTarget.value = '';
+
+                                                                    if (file && !file.type.startsWith('image/')) {
+                                                                        setCharacterError(
+                                                                            '캐릭터 이미지는 이미지 파일만 등록할 수 있습니다.'
+                                                                        );
+                                                                        setEditingCharacterImageFile(null);
+                                                                        return;
+                                                                    }
+
+                                                                    setCharacterError(null);
+                                                                    setEditingCharacterImageFile(file);
+                                                                }}
+                                                                type="file"
+                                                            />
+                                                        </label>
+                                                        {editingCharacterImageFile ? (
+                                                            <button
+                                                                className="tp-character-image-clear"
+                                                                disabled={isCharacterSubmitting}
+                                                                onClick={() => setEditingCharacterImageFile(null)}
+                                                                type="button"
+                                                            >
+                                                                선택 해제
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+                                                    <div className="tp-field">
+                                                        역할
+                                                        <div className="tp-segment">
+                                                            {characterRoleOptions.map((role) => (
+                                                                <button
+                                                                    className={
+                                                                        editingCharacterRole === role ? 'on' : ''
+                                                                    }
+                                                                    disabled={isCharacterSubmitting}
+                                                                    key={role}
+                                                                    onClick={() => setEditingCharacterRole(role)}
+                                                                    type="button"
+                                                                >
+                                                                    {characterRoleLabels[role]}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="tp-character-edit-actions">
+                                                        <button
+                                                            className="tp-btn ghost"
+                                                            disabled={isCharacterSubmitting}
+                                                            onClick={cancelCharacterEdit}
+                                                            type="button"
+                                                        >
+                                                            취소
+                                                        </button>
+                                                        <button
+                                                            className="tp-btn primary"
+                                                            disabled={isCharacterSubmitting}
+                                                            type="submit"
+                                                        >
+                                                            {isCharacterSubmitting ? '저장 중' : '수정 저장'}
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            ) : null}
                                         </article>
                                     ))}
                                 </div>
@@ -929,10 +1165,20 @@ export function StudioEpisodeDashboard({ productId }: { productId?: string }) {
                         <div className="tp-modal-foot">
                             <span />
                             <div>
-                                <button className="tp-btn ghost" onClick={closeCharacterModal} type="button">
+                                <button
+                                    className="tp-btn ghost"
+                                    disabled={isCharacterSubmitting || deletingCharacterId !== null}
+                                    onClick={closeCharacterModal}
+                                    type="button"
+                                >
                                     닫기
                                 </button>
-                                <button className="tp-btn primary" onClick={openCharacterCreateModal} type="button">
+                                <button
+                                    className="tp-btn primary"
+                                    disabled={isCharacterSubmitting || deletingCharacterId !== null}
+                                    onClick={openCharacterCreateModal}
+                                    type="button"
+                                >
                                     새 캐릭터 등록하기
                                 </button>
                             </div>
@@ -1340,6 +1586,36 @@ async function createCharacterApi(productId: string, character: CharacterCreateR
 
     if (!response.ok) {
         throw new Error(`Character create failed: ${response.status}`);
+    }
+}
+
+async function updateCharacterApi(productId: string, characterId: number, character: CharacterUpdateRequest) {
+    const response = await fetch(
+        `${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}/characters/${characterId}`,
+        {
+            method: 'PUT',
+            headers: {
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify(character),
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(`Character update failed: ${response.status}`);
+    }
+}
+
+async function deleteCharacterApi(productId: string, characterId: number) {
+    const response = await fetch(
+        `${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}/characters/${characterId}`,
+        {
+            method: 'DELETE',
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(`Character delete failed: ${response.status}`);
     }
 }
 

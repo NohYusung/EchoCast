@@ -32,3 +32,14 @@ test('episode dashboard does not route recording through the latest product epis
         /href=\{`\/studio\/products\/\$\{product\.id\}\/episodes\/\$\{latestEpisode\.id\}\/record`\}/,
     );
 });
+
+test('character management modal wires character edit and delete actions to product character APIs', () => {
+    assert.match(source, /const updateCharacter = async \(event: FormEvent<HTMLFormElement>\)/);
+    assert.match(source, /const deleteCharacter = async \(character: CharacterListItem\)/);
+    assert.match(source, /await updateCharacterApi\(apiProductId, characterId,/);
+    assert.match(source, /await deleteCharacterApi\(apiProductId, character\.id\)/);
+    assert.match(source, /\/products\/\$\{productId\}\/characters\/\$\{characterId\}[\s\S]*?method: 'PUT'/);
+    assert.match(source, /\/products\/\$\{productId\}\/characters\/\$\{characterId\}[\s\S]*?method: 'DELETE'/);
+    assert.match(source, />\s*수정\s*<\/button>/);
+    assert.match(source, /삭제 중' : '삭제'/);
+});
