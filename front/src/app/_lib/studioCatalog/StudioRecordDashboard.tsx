@@ -89,7 +89,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const [recordingStartedAt, setRecordingStartedAt] = useState<number | undefined>();
     const [recordingMs, setRecordingMs] = useState(0);
     const [liveWave, setLiveWave] = useState(() => createWave('idle', 42));
-    const [note, setNote] = useState('');
     const [message, setMessage] = useState('');
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const recordingChunksRef = useRef<Blob[]>([]);
@@ -743,14 +742,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                     <p>
                                         {selectedCue.trackName} · {formatMs(selectedCue.startTime)} - {formatMs(selectedCue.endTime)}
                                     </p>
-                                    <label className="tr-note-field">
-                                        <StudioCatalogIcon name="settings" />
-                                        <input
-                                            onChange={(event) => setNote(event.target.value)}
-                                            placeholder="감정·톤·속도 메모"
-                                            value={note}
-                                        />
-                                    </label>
                                 </>
                             ) : (
                                 <div className="tr-empty large">녹음할 대사가 없습니다.</div>
