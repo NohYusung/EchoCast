@@ -307,7 +307,17 @@ jobs:
       # ECS task log가 CloudWatch Logs에 쌓일 log group을 보장한다.
       - name: Ensure backend log group
         run: |
-          aws logs create-log-group --region "$AWS_REGION" --log-group-name "$BACKEND_LOG_GROUP" || true
+          existing_log_group="$(aws logs describe-log-groups \
+            --region "$AWS_REGION" \
+            --log-group-name-prefix "$BACKEND_LOG_GROUP" \
+            --query "logGroups[?logGroupName=='${BACKEND_LOG_GROUP}'].logGroupName | [0]" \
+            --output text)"
+
+          if [ "$existing_log_group" = "$BACKEND_LOG_GROUP" ]; then
+            echo "Log group already exists: ${BACKEND_LOG_GROUP}"
+          else
+            aws logs create-log-group --region "$AWS_REGION" --log-group-name "$BACKEND_LOG_GROUP"
+          fi
 
       # repository의 ECS task definition 템플릿에 이미지, secret, role, log 설정을 주입한다.
       - name: Render backend task definition
