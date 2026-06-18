@@ -9,7 +9,7 @@ describe('AwsS3Service', () => {
         const configsService = {
             get aws() {
                 return {
-                    bucketName: 'test-player-assets',
+                    bucketName: 'new-dubright-assets',
                     region: 'us-east-1',
                     awsUrl: 'https://assets.example.com',
                     accessKeyId: 'AKIAEXAMPLE',
@@ -40,7 +40,7 @@ describe('AwsS3Service', () => {
         const configsService = {
             get aws() {
                 return {
-                    bucketName: 'test-player-assets',
+                    bucketName: 'new-dubright-assets',
                     region: 'us-east-1',
                     awsUrl: 'https://assets.example.com',
                     accessKeyId: 'AKIAEXAMPLE',

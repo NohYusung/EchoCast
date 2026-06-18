@@ -19,7 +19,7 @@ function createWindow(config) {
         minHeight: 760,
         backgroundColor: '#05070a',
         icon: appIconPath,
-        title: 'test-player',
+        title: 'new-dubright',
         webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
@@ -67,7 +67,7 @@ app.whenReady()
     .then(bootDesktopApp)
     .catch((error) => {
         shutdownManagedProcesses();
-        dialog.showErrorBox('test-player failed to start', error instanceof Error ? error.message : String(error));
+        dialog.showErrorBox('new-dubright failed to start', error instanceof Error ? error.message : String(error));
         app.quit();
     });
 

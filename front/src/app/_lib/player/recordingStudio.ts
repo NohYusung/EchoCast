@@ -229,7 +229,7 @@ export function buildRecordingCueStripMarkers({
 }
 
 export function getRecordingStorageKey(productId: string, episodeId: string): string {
-    return `test-player:recording-studio:${productId}:${episodeId}:takes`;
+    return `new-dubright:recording-studio:${productId}:${episodeId}:takes`;
 }
 
 export function toRecordingStripSize(scale: number) {

@@ -11,8 +11,8 @@ const {
 
 test('getDesktopConfig builds local front and back URLs from environment ports', () => {
     const config = getDesktopConfig({
-        TEST_PLAYER_DESKTOP_FRONT_PORT: '3107',
-        TEST_PLAYER_DESKTOP_BACK_PORT: '4107',
+        NEW_DUBRIGHT_DESKTOP_FRONT_PORT: '3107',
+        NEW_DUBRIGHT_DESKTOP_BACK_PORT: '4107',
     });
 
     assert.equal(config.frontPort, 3107);
@@ -29,8 +29,8 @@ test('getDesktopServiceDefinitions wires back and front workspace commands', () 
     assert.deepEqual(
         services.map((service) => [service.name, service.command, service.args]),
         [
-            ['back', 'npm', ['run', 'start:dev', '--workspace', '@test-player/back']],
-            ['front', 'npm', ['run', 'dev', '--workspace', '@test-player/front', '--', '-p', '3000']],
+            ['back', 'npm', ['run', 'start:dev', '--workspace', '@new-dubright/back']],
+            ['front', 'npm', ['run', 'dev', '--workspace', '@new-dubright/front', '--', '-p', '3000']],
         ],
     );
     assert.equal(services[0].env.PORT, '4100');

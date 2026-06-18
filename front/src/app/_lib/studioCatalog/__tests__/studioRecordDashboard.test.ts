@@ -43,6 +43,11 @@ test('recording status filters keep compact rows above the cue list', () => {
     assert.match(styles, /\.tr-filter-tabs button\.active\s*\{[\s\S]*?background: #232734;/);
 });
 
+test('recording cue rows do not show timeline start time', () => {
+    assert.match(source, /장면 \{item\.sortOrder\} · 테이크 \{item\.takeCount\}/);
+    assert.doesNotMatch(source, /formatMs\(item\.startTime\)/);
+});
+
 test('recording take list fills the take panel without summary stats', () => {
     assert.match(styles, /\.tr-take-panel\s*\{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\);/);
     assert.match(styles, /\.tr-take-list\s*\{[\s\S]*?overflow: auto;/);

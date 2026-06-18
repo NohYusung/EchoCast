@@ -4,7 +4,7 @@ export default function HomePage() {
     return (
         <main className="shell">
             <section className="toolbar">
-                <h1>test-player</h1>
+                <h1>new-dubright</h1>
                 <nav>
                     <Link href="/studio/products">Products</Link>
                     <Link href="/studio/products/1/episodes">Episodes</Link>

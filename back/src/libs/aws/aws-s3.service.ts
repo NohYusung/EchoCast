@@ -28,7 +28,7 @@ export class AwsS3Service {
         const aws = this.configsService.aws;
         if (!aws) {
             throw new Error(
-                'AWS 설정이 필요합니다. TEST_PLAYER_AWS_BUCKET_NAME, TEST_PLAYER_AWS_REGION, TEST_PLAYER_AWS_URL을 설정하세요.'
+                'AWS 설정이 필요합니다. NEW_DUBRIGHT_AWS_BUCKET_NAME, NEW_DUBRIGHT_AWS_REGION, NEW_DUBRIGHT_AWS_URL을 설정하세요.'
             );
         }
 
@@ -39,7 +39,7 @@ export class AwsS3Service {
         if (this.configsService.isLocal()) {
             if (!aws.accessKeyId || !aws.secretAccessKey) {
                 throw new Error(
-                    '로컬 S3 업로드에는 TEST_PLAYER_AWS_ACCESS_KEY_ID와 TEST_PLAYER_AWS_SECRET_ACCESS_KEY 설정이 필요합니다.'
+                    '로컬 S3 업로드에는 NEW_DUBRIGHT_AWS_ACCESS_KEY_ID와 NEW_DUBRIGHT_AWS_SECRET_ACCESS_KEY 설정이 필요합니다.'
                 );
             }
 

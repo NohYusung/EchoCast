@@ -1,6 +1,6 @@
-# test-player
+# new-dubright
 
-`test-player` is a monorepo scaffold for testing the next Dubright player direction.
+`new-dubright` is a monorepo scaffold for testing the next Dubright player direction.
 
 ## Structure
 
@@ -29,9 +29,9 @@
 ## Desktop Shell
 
 - Default ports are `4100` for `back` and `3000` for `front`.
-- Set `TEST_PLAYER_DESKTOP_BACK_PORT` or `TEST_PLAYER_DESKTOP_FRONT_PORT` to override ports.
-- Set `TEST_PLAYER_DESKTOP_PATH` to open a specific route when the local backend already has the required data, for example:
-  `TEST_PLAYER_DESKTOP_PATH=/studio/products/1/episodes/1 npm run desktop`.
+- Set `NEW_DUBRIGHT_DESKTOP_BACK_PORT` or `NEW_DUBRIGHT_DESKTOP_FRONT_PORT` to override ports.
+- Set `NEW_DUBRIGHT_DESKTOP_PATH` to open a specific route when the local backend already has the required data, for example:
+  `NEW_DUBRIGHT_DESKTOP_PATH=/studio/products/1/episodes/1 npm run desktop`.
 
 ## Player Flow
 

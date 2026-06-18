@@ -11,7 +11,7 @@ describe('resolveTypeOrmOptions', () => {
                 port: 3306,
                 username: 'test',
                 password: '',
-                database: 'test-player',
+                database: 'new-dubright',
                 synchronize: false,
                 logging: true,
             },

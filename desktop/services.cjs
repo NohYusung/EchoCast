@@ -20,12 +20,12 @@ function normalizeLaunchPath(value) {
 }
 
 function getDesktopConfig(env = process.env) {
-    const frontPort = parsePort(env.TEST_PLAYER_DESKTOP_FRONT_PORT, DEFAULT_FRONT_PORT);
-    const backPort = parsePort(env.TEST_PLAYER_DESKTOP_BACK_PORT, DEFAULT_BACK_PORT);
-    const host = env.TEST_PLAYER_DESKTOP_HOST || DEFAULT_HOST;
+    const frontPort = parsePort(env.NEW_DUBRIGHT_DESKTOP_FRONT_PORT ?? env.TEST_PLAYER_DESKTOP_FRONT_PORT, DEFAULT_FRONT_PORT);
+    const backPort = parsePort(env.NEW_DUBRIGHT_DESKTOP_BACK_PORT ?? env.TEST_PLAYER_DESKTOP_BACK_PORT, DEFAULT_BACK_PORT);
+    const host = env.NEW_DUBRIGHT_DESKTOP_HOST || env.TEST_PLAYER_DESKTOP_HOST || DEFAULT_HOST;
     const frontUrl = `http://${host}:${frontPort}`;
     const apiBaseUrl = `http://${host}:${backPort}`;
-    const launchPath = normalizeLaunchPath(env.TEST_PLAYER_DESKTOP_PATH);
+    const launchPath = normalizeLaunchPath(env.NEW_DUBRIGHT_DESKTOP_PATH ?? env.TEST_PLAYER_DESKTOP_PATH);
 
     return {
         apiReadyUrl: new URL('/products', apiBaseUrl).toString(),
@@ -45,7 +45,7 @@ function getDesktopServiceDefinitions(config) {
         {
             name: 'back',
             command: 'npm',
-            args: ['run', 'start:dev', '--workspace', '@test-player/back'],
+            args: ['run', 'start:dev', '--workspace', '@new-dubright/back'],
             env: {
                 PORT: String(config.backPort),
             },
@@ -53,7 +53,7 @@ function getDesktopServiceDefinitions(config) {
         {
             name: 'front',
             command: 'npm',
-            args: ['run', 'dev', '--workspace', '@test-player/front', '--', '-p', String(config.frontPort)],
+            args: ['run', 'dev', '--workspace', '@new-dubright/front', '--', '-p', String(config.frontPort)],
             env: {
                 NEXT_PUBLIC_API_BASE_URL: config.apiBaseUrl,
             },

@@ -895,7 +895,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                                 장면 {item.sortOrder} · 테이크 {item.takeCount}
                                             </small>
                                         </span>
-                                        <em>{formatMs(item.startTime)}</em>
                                     </button>
                                 ))
                             )}
