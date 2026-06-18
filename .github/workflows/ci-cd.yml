@@ -232,10 +232,28 @@ jobs:
           test -n "$BACKEND_TASK_ROLE_ARN"
           test -n "$BACKEND_EXECUTION_ROLE_ARN"
 
+      # AWS 인증 방식이 하나도 설정되지 않았으면 ECR build/push 전에 명확한 메시지로 실패시킨다.
+      - name: Validate AWS credential inputs
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -n "$AWS_ROLE_TO_ASSUME" ]; then
+            exit 0
+          fi
+
+          if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+            exit 0
+          fi
+
+          echo "AWS credentials are not configured."
+          echo "Set repository variable AWS_ROLE_TO_ASSUME for OIDC, or set repository secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
+          exit 1
+
       # OIDC role이 설정된 경우 GitHub Actions가 장기 access key 없이 AWS 권한을 얻는다.
       - name: Configure AWS credentials with OIDC role
         if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
@@ -243,7 +261,7 @@ jobs:
       # OIDC role이 없으면 repository secret의 AWS access key로 AWS 권한을 얻는다.
       - name: Configure AWS credentials with access keys
         if: ${{ env.AWS_ROLE_TO_ASSUME == '' }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ${{ env.AWS_REGION }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
