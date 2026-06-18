@@ -40,6 +40,17 @@ function requireEnv(env: Record<string, string | undefined>, key: string, legacy
 
 function resolveDatabaseConfig(env: Record<string, string | undefined>): DataSourceOptions {
     const isProduction = env.NODE_ENV === 'production';
+    const isTest = env.NODE_ENV === 'test';
+
+    if (isTest) {
+        return {
+            type: 'sqljs',
+            synchronize: true,
+            logging: false,
+            autoSave: false,
+        };
+    }
+
     const synchronize = !isProduction;
 
     return {

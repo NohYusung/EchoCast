@@ -39,3 +39,11 @@
 - `?variant=image-only` keeps image scenes while preserving source timeline positions.
 - The frontend requests the API manifest first and falls back to `front/src/data/sampleManifest.ts` when the API is unavailable.
 - Set `NEXT_PUBLIC_API_BASE_URL=http://localhost:4100` for the frontend to call the local NestJS API directly.
+
+## Backend Dev Deploy
+
+- `.github/workflows/ci-cd.yml` builds and pushes `back/Dockerfile` to ECR on `main` pushes when backend or common files change.
+- Default target: ECR `new-dubright-back-dev`, ECS cluster `dev-ecs`, service `new-dubright-back-task-dev-service`, region `ap-northeast-2`.
+- Required GitHub auth: set either repository variable `AWS_ROLE_TO_ASSUME` for OIDC or repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+- Override defaults with repository variables when needed: `AWS_REGION`, `BACKEND_ECR_REPOSITORY`, `BACKEND_ECS_CLUSTER`, `BACKEND_ECS_SERVICE`, `BACKEND_SECRET_ARN`, `BACKEND_LOG_GROUP`, `BACKEND_TASK_ROLE_ARN`, `BACKEND_EXECUTION_ROLE_ARN`.
+- Set repository variable `BACKEND_DEPLOY_ENABLED=false` to disable backend deploy while keeping CI active.

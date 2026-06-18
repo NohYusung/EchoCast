@@ -1,0 +1,80 @@
+{
+    "family": "new-dubright-back-task-dev",
+    "taskRoleArn": "__TASK_ROLE_ARN__",
+    "executionRoleArn": "__EXECUTION_ROLE_ARN__",
+    "networkMode": "bridge",
+    "requiresCompatibilities": ["EC2"],
+    "containerDefinitions": [
+        {
+            "name": "new-dubright-back-dev",
+            "image": "__IMAGE_URI__",
+            "cpu": 256,
+            "memoryReservation": 512,
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 3000,
+                    "hostPort": 0,
+                    "protocol": "tcp"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                },
+                {
+                    "name": "PORT",
+                    "value": "3000"
+                }
+            ],
+            "secrets": [
+                {
+                    "name": "NEW_DUBRIGHT_DB_HOST",
+                    "valueFrom": "__SECRET_ARN__:NEW_DUBRIGHT_DB_HOST::"
+                },
+                {
+                    "name": "NEW_DUBRIGHT_DB_PORT",
+                    "valueFrom": "__SECRET_ARN__:NEW_DUBRIGHT_DB_PORT::"
+                },
+                {
+                    "name": "NEW_DUBRIGHT_DB_USERNAME",
+                    "valueFrom": "__SECRET_ARN__:NEW_DUBRIGHT_DB_USERNAME::"
+                },
+                {
+                    "name": "NEW_DUBRIGHT_DB_PASSWORD",
+                    "valueFrom": "__SECRET_ARN__:NEW_DUBRIGHT_DB_PASSWORD::"
+                },
+                {
+                    "name": "NEW_DUBRIGHT_DB_DATABASE",
+                    "valueFrom": "__SECRET_ARN__:NEW_DUBRIGHT_DB_DATABASE::"
+                },
+                {
+                    "name": "NEW_DUBRIGHT_AWS_BUCKET_NAME",
+                    "valueFrom": "__SECRET_ARN__:NEW_DUBRIGHT_AWS_BUCKET_NAME::"
+                },
+                {
+                    "name": "NEW_DUBRIGHT_AWS_REGION",
+                    "valueFrom": "__SECRET_ARN__:NEW_DUBRIGHT_AWS_REGION::"
+                },
+                {
+                    "name": "NEW_DUBRIGHT_AWS_URL",
+                    "valueFrom": "__SECRET_ARN__:NEW_DUBRIGHT_AWS_URL::"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "__LOG_GROUP__",
+                    "awslogs-region": "__AWS_REGION__",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "mountPoints": [],
+            "volumesFrom": [],
+            "systemControls": []
+        }
+    ],
+    "volumes": [],
+    "placementConstraints": []
+}

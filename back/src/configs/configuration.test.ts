@@ -25,3 +25,13 @@ test('database synchronize is fixed by NODE_ENV instead of env flags', () => {
     assert.equal(productionConfig.database.synchronize, false);
     assert.equal(productionConfig.database.logging, false);
 });
+
+test('test environment uses an in-memory database without DB env values', () => {
+    const testConfig = configuration({
+        NODE_ENV: 'test',
+    });
+
+    assert.equal(testConfig.database.type, 'sqljs');
+    assert.equal(testConfig.database.synchronize, true);
+    assert.equal(testConfig.database.logging, false);
+});

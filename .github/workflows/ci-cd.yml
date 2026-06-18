@@ -166,16 +166,125 @@ jobs:
           retention-days: 14
 
   backend_deploy:
-    name: Backend deploy
-    needs: backend_delivery
-    if: ${{ vars.BACKEND_DEPLOY_ENABLED == 'true' && needs.backend_delivery.result == 'success' }}
+    name: Backend deploy to dev ECS
+    needs:
+      - changes
+      - back_ci
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.back_ci.result == 'success' && (needs.changes.outputs.common == 'true' || needs.changes.outputs.back == 'true') && vars.BACKEND_DEPLOY_ENABLED != 'false' }}
     runs-on: ubuntu-latest
-    environment: backend-production
+    environment: backend-dev
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
+      AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+      BACKEND_ECR_REPOSITORY: ${{ vars.BACKEND_ECR_REPOSITORY || 'new-dubright-back-dev' }}
+      BACKEND_ECS_CLUSTER: ${{ vars.BACKEND_ECS_CLUSTER || 'dev-ecs' }}
+      BACKEND_ECS_SERVICE: ${{ vars.BACKEND_ECS_SERVICE || 'new-dubright-back-task-dev-service' }}
+      BACKEND_LOG_GROUP: ${{ vars.BACKEND_LOG_GROUP || '/ecs/new-dubright-back-task-dev' }}
+      BACKEND_SECRET_ARN: ${{ vars.BACKEND_SECRET_ARN || 'arn:aws:secretsmanager:ap-northeast-2:471112500555:secret:dev/new-dubright/back-ulvm9v' }}
+      BACKEND_TASK_ROLE_ARN: ${{ vars.BACKEND_TASK_ROLE_ARN || 'arn:aws:iam::471112500555:role/DevEcsTaskIAM' }}
+      BACKEND_EXECUTION_ROLE_ARN: ${{ vars.BACKEND_EXECUTION_ROLE_ARN || 'arn:aws:iam::471112500555:role/ecsTaskExecutionRole' }}
     steps:
-      - name: Deployment is not configured
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate backend deploy variables
         run: |
-          echo "Configure the backend deployment command before setting BACKEND_DEPLOY_ENABLED=true."
-          exit 1
+          test -n "$AWS_REGION"
+          test -n "$BACKEND_ECR_REPOSITORY"
+          test -n "$BACKEND_ECS_CLUSTER"
+          test -n "$BACKEND_ECS_SERVICE"
+          test -n "$BACKEND_LOG_GROUP"
+          test -n "$BACKEND_SECRET_ARN"
+          test -n "$BACKEND_TASK_ROLE_ARN"
+          test -n "$BACKEND_EXECUTION_ROLE_ARN"
+
+      - name: Configure AWS credentials with OIDC role
+        if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+
+      - name: Configure AWS credentials with access keys
+        if: ${{ env.AWS_ROLE_TO_ASSUME == '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve backend image tags
+        id: image
+        run: |
+          image_repository="${{ steps.ecr.outputs.registry }}/${BACKEND_ECR_REPOSITORY}"
+          echo "uri=${image_repository}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "latest=${image_repository}:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: back/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.uri }}
+            ${{ steps.image.outputs.latest }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Ensure backend log group
+        run: |
+          aws logs create-log-group --region "$AWS_REGION" --log-group-name "$BACKEND_LOG_GROUP" || true
+
+      - name: Render backend task definition
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          sed \
+            -e "s#__IMAGE_URI__#${IMAGE_URI}#g" \
+            -e "s#__SECRET_ARN__#${BACKEND_SECRET_ARN}#g" \
+            -e "s#__LOG_GROUP__#${BACKEND_LOG_GROUP}#g" \
+            -e "s#__AWS_REGION__#${AWS_REGION}#g" \
+            -e "s#__TASK_ROLE_ARN__#${BACKEND_TASK_ROLE_ARN}#g" \
+            -e "s#__EXECUTION_ROLE_ARN__#${BACKEND_EXECUTION_ROLE_ARN}#g" \
+            back/ecs/task-definition.dev.json > task-definition.json
+
+      - name: Verify ECS service exists
+        run: |
+          status="$(aws ecs describe-services \
+            --region "$AWS_REGION" \
+            --cluster "$BACKEND_ECS_CLUSTER" \
+            --services "$BACKEND_ECS_SERVICE" \
+            --query 'services[0].status' \
+            --output text)"
+          if [ "$status" != "ACTIVE" ]; then
+            echo "ECS service is not ACTIVE: ${BACKEND_ECS_CLUSTER}/${BACKEND_ECS_SERVICE} (${status})"
+            exit 1
+          fi
+
+      - name: Deploy backend task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: task-definition.json
+          cluster: ${{ env.BACKEND_ECS_CLUSTER }}
+          service: ${{ env.BACKEND_ECS_SERVICE }}
+          wait-for-service-stability: true
 
   frontend_deploy:
     name: Frontend deploy
