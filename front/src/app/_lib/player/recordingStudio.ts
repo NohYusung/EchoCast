@@ -239,7 +239,7 @@ export function toRecordingStripSize(scale: number) {
     return {
         scale: normalizedScale,
         width: Math.round(defaultRecordingStripWidth * ratio),
-        panelWidth: Math.max(384, Math.round(defaultRecordingStripWidth * ratio) + 64),
+        panelWidth: Math.round(defaultRecordingStripWidth * ratio) + 64,
         fallbackHeight: Math.round(defaultRecordingStripFallbackHeight * ratio),
     };
 }

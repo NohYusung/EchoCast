@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../StudioRecordDashboard.tsx', import.meta.url), 'utf8');
+const recordingStudioSource = readFileSync(new URL('../../player/recordingStudio.ts', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../../../styles.css', import.meta.url), 'utf8');
 
 test('recording strip exposes a ratio-preserving size control', () => {
@@ -11,6 +12,8 @@ test('recording strip exposes a ratio-preserving size control', () => {
     assert.match(source, /aria-label="녹음 스트립 크기 숫자"/);
     assert.match(source, /'--tr-record-strip-panel-width': `\$\{recordingStripSize\.panelWidth\}px`/);
     assert.match(source, /폭 \{recordingStripSize\.width\}px · 패널 \{recordingStripSize\.panelWidth\}px · 원본 비율/);
+    assert.match(recordingStudioSource, /panelWidth: Math\.round\(defaultRecordingStripWidth \* ratio\) \+ 64/);
+    assert.doesNotMatch(recordingStudioSource, /panelWidth: Math\.max\(384/);
     assert.match(styles, /--tr-record-strip-width/);
     assert.match(styles, /grid-template-columns: 306px var\(--tr-record-strip-panel-width, 384px\)/);
 });

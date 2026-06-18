@@ -9053,6 +9053,89 @@ p {
     opacity: 0.56;
 }
 
+.odx-record-import-panel {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.odx-record-import-head,
+.odx-record-import-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.odx-record-import-head span {
+    color: var(--odx-faint);
+    font-size: 10px;
+    font-weight: 850;
+}
+
+.odx-record-import-head b {
+    color: var(--odx-muted);
+    font-family: var(--odx-mono);
+    font-size: 10px;
+}
+
+.odx-record-import-list {
+    display: grid;
+    gap: 7px;
+}
+
+.odx-record-import-row {
+    min-width: 0;
+    min-height: 42px;
+    border-radius: 7px;
+    background: rgba(8, 10, 14, 0.64);
+    padding: 8px;
+}
+
+.odx-record-import-row span {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.odx-record-import-row strong,
+.odx-record-import-row small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.odx-record-import-row strong {
+    color: var(--odx-text);
+    font-size: 11px;
+}
+
+.odx-record-import-row small {
+    color: var(--odx-muted);
+    font-family: var(--odx-mono);
+    font-size: 10px;
+}
+
+.odx-record-import-row button {
+    flex: 0 0 auto;
+    min-width: 70px;
+    height: 28px;
+    border: 1px solid rgba(77, 141, 255, 0.5);
+    border-radius: 7px;
+    background: rgba(77, 141, 255, 0.2);
+    color: #dbeafe;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.odx-record-import-row button:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+}
+
 .odx-anchor-event-summary {
     display: grid;
     grid-template-columns: 84px minmax(0, 1fr);
