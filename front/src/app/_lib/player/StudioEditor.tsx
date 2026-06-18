@@ -155,6 +155,7 @@ const SCROLL_POSITION_STEP_PX = 24;
 const MEDIA_DRAG_MIME = 'application/x-tooned-media-id';
 const MEDIA_BATCH_DRAG_MIME = 'application/x-tooned-media-ids';
 const AUDIO_DRAG_MIME = 'application/x-tooned-audio-id';
+const DEFAULT_SCROLL_TRACK_NAME = '새 스크롤 트랙';
 const defaultAnchorEventDraft: AnchorEventDraft = {
     endAnchorId: '',
     isSaving: false,
@@ -1386,7 +1387,18 @@ function getDefaultTrackName(kind: TrackFormType) {
     if (kind === 'audio') return '새 오디오 트랙';
     if (kind === 'bgm') return '새 BGM';
     if (kind === 'effect') return '새 효과음';
-    return '새 스크롤 트랙';
+    return DEFAULT_SCROLL_TRACK_NAME;
+}
+
+function getScrollEventLabel(trackName: string, index: number) {
+    const normalizedTrackName = trackName.trim();
+    const eventNumber = index + 1;
+
+    if (!normalizedTrackName || normalizedTrackName === DEFAULT_SCROLL_TRACK_NAME) {
+        return `새 스크롤 이벤트${eventNumber}`;
+    }
+
+    return `${normalizedTrackName} ${eventNumber}`;
 }
 
 function getDefaultCueLabel(kind: TrackApiType | undefined) {
@@ -1677,7 +1689,7 @@ function toTimelineData(tracks: TrackListItem[]): TrackTimelineData {
                         track: String(track.id),
                         start,
                         duration: Math.max(end - start, MIN_TIMELINE_ITEM_DURATION_SECONDS),
-                        label: `${track.name} ${index + 1}`,
+                        label: getScrollEventLabel(track.name, index),
                         sublabel: formatScrollRangeLabel(
                             scroll.startIndex,
                             scroll.startPosition,
@@ -5009,7 +5021,7 @@ function InspectorPanel({
                         </div>
                     </section>
                     <section className="odx-inspector-card">
-                        <h3>앵커 이벤트</h3>
+                        <h3>스크롤 이벤트</h3>
                         <div className="odx-anchor-event-summary">
                             <span>현재 이벤트</span>
                             <b>{anchorEventLabel}</b>
@@ -7552,8 +7564,8 @@ export function StudioEditor({
                 isSaving: false,
                 error:
                     error instanceof Error
-                        ? `앵커 이벤트 저장에 실패했습니다: ${error.message}`
-                        : '앵커 이벤트 저장에 실패했습니다.',
+                        ? `스크롤 이벤트 저장에 실패했습니다: ${error.message}`
+                        : '스크롤 이벤트 저장에 실패했습니다.',
             }));
         }
     };
@@ -7576,8 +7588,8 @@ export function StudioEditor({
                 isSaving: false,
                 error:
                     error instanceof Error
-                        ? `앵커 이벤트 삭제에 실패했습니다: ${error.message}`
-                        : '앵커 이벤트 삭제에 실패했습니다.',
+                        ? `스크롤 이벤트 삭제에 실패했습니다: ${error.message}`
+                        : '스크롤 이벤트 삭제에 실패했습니다.',
             }));
         }
     };

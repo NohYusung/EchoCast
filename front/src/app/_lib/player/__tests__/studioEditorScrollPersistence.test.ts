@@ -14,3 +14,19 @@ test('scroll event timeline edits update existing anchors instead of creating ne
     assert.doesNotMatch(persistScrollEventUpdateBlock, /createScrollEventMutationRequest/);
     assert.doesNotMatch(persistScrollEventUpdateBlock, /createAnchor/);
 });
+
+test('default scroll tracks render timeline items as scroll events', () => {
+    assert.match(source, /const DEFAULT_SCROLL_TRACK_NAME = '새 스크롤 트랙'/);
+    assert.match(source, /return `새 스크롤 이벤트\$\{eventNumber\}`/);
+    assert.match(source, /label: getScrollEventLabel\(track\.name, index\)/);
+    assert.doesNotMatch(source, /label: `\$\{track\.name\} \$\{index \+ 1\}`/);
+});
+
+test('anchor inspector labels its linked event as a scroll event', () => {
+    assert.match(source, /<h3>스크롤 이벤트<\/h3>/);
+    assert.match(source, /스크롤 이벤트 저장에 실패했습니다/);
+    assert.match(source, /스크롤 이벤트 삭제에 실패했습니다/);
+    assert.doesNotMatch(source, />앵커 이벤트</);
+    assert.doesNotMatch(source, /앵커 이벤트 저장에 실패했습니다/);
+    assert.doesNotMatch(source, /앵커 이벤트 삭제에 실패했습니다/);
+});
