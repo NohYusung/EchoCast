@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 변경 감지 단계. 이후 CI/CD job이 back/front/common 중 어디를 검사할지 결정한다.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -24,9 +25,11 @@ jobs:
       back: ${{ steps.filter.outputs.back }}
       front: ${{ steps.filter.outputs.front }}
     steps:
+      # 변경 파일을 비교하려면 repository checkout이 먼저 필요하다.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # path filter로 common/back/front 변경 여부를 job output으로 만든다.
       - name: Detect changed paths
         id: filter
         uses: dorny/paths-filter@v3
@@ -43,15 +46,18 @@ jobs:
             front:
               - "front/**"
 
+  # 백엔드 검증 단계. 백엔드 또는 공통 파일 변경 시 타입체크와 테스트를 실행한다.
   back_ci:
     name: Back CI
     needs: changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.common == 'true' || needs.changes.outputs.back == 'true' }}
     runs-on: ubuntu-latest
     steps:
+      # 백엔드 소스와 workspace package 정보를 runner에 가져온다.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # repository의 Node 22 런타임과 npm cache를 준비한다.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -59,24 +65,30 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # lockfile 기준으로 back/front workspace 의존성을 재현 가능하게 설치한다.
       - name: Install dependencies
         run: npm ci
 
+      # Nest 백엔드 TypeScript 타입 오류를 배포 전에 차단한다.
       - name: Typecheck back
         run: npm run typecheck --workspace @new-dubright/back
 
+      # 백엔드 unit/e2e 테스트를 실행해 API 계약과 도메인 로직 회귀를 막는다.
       - name: Test back
         run: npm run test --workspace @new-dubright/back
 
+  # 프론트엔드 검증 단계. 프론트 또는 공통 파일 변경 시 타입체크, 테스트, 빌드를 실행한다.
   front_ci:
     name: Front CI
     needs: changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.common == 'true' || needs.changes.outputs.front == 'true' }}
     runs-on: ubuntu-latest
     steps:
+      # 프론트 소스와 workspace package 정보를 runner에 가져온다.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # repository의 Node 22 런타임과 npm cache를 준비한다.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -84,18 +96,23 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # lockfile 기준으로 back/front workspace 의존성을 재현 가능하게 설치한다.
       - name: Install dependencies
         run: npm ci
 
+      # Next.js 프론트 TypeScript 타입 오류를 배포 전에 차단한다.
       - name: Typecheck front
         run: npm run typecheck --workspace @new-dubright/front
 
+      # 프론트 테스트를 실행해 플레이어/스튜디오 UI 로직 회귀를 막는다.
       - name: Test front
         run: npm run test --workspace @new-dubright/front
 
+      # production Next.js build가 가능한지 확인한다.
       - name: Build front
         run: npm run build --workspace @new-dubright/front
 
+  # 백엔드 산출물 보관 단계. push/manual 실행에서 빌드 결과를 artifact로 남긴다.
   backend_delivery:
     name: Backend delivery artifact
     needs:
@@ -104,9 +121,11 @@ jobs:
     if: ${{ github.event_name != 'pull_request' && needs.back_ci.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.common == 'true' || needs.changes.outputs.back == 'true') }}
     runs-on: ubuntu-latest
     steps:
+      # 백엔드 빌드 대상 소스를 runner에 가져온다.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 백엔드 빌드를 위한 Node 22 런타임과 npm cache를 준비한다.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -114,12 +133,15 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # lockfile 기준 의존성을 설치해 CI와 로컬 빌드 차이를 줄인다.
       - name: Install dependencies
         run: npm ci
 
+      # Nest 백엔드를 dist 산출물로 컴파일한다.
       - name: Build backend
         run: npm run build --workspace @new-dubright/back
 
+      # dist와 package 정보를 GitHub artifact로 저장해 배포 조사나 재사용이 가능하게 한다.
       - name: Upload backend artifact
         uses: actions/upload-artifact@v4
         with:
@@ -130,6 +152,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # 프론트 산출물 보관 단계. push/manual 실행에서 Next.js build 결과를 artifact로 남긴다.
   frontend_delivery:
     name: Frontend delivery artifact
     needs:
@@ -138,9 +161,11 @@ jobs:
     if: ${{ github.event_name != 'pull_request' && needs.front_ci.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.common == 'true' || needs.changes.outputs.front == 'true') }}
     runs-on: ubuntu-latest
     steps:
+      # 프론트 빌드 대상 소스를 runner에 가져온다.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 프론트 빌드를 위한 Node 22 런타임과 npm cache를 준비한다.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -148,12 +173,15 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # lockfile 기준 의존성을 설치해 CI와 로컬 빌드 차이를 줄인다.
       - name: Install dependencies
         run: npm ci
 
+      # Next.js production build 산출물을 생성한다.
       - name: Build frontend
         run: npm run build --workspace @new-dubright/front
 
+      # .next, public, package 정보를 GitHub artifact로 저장한다.
       - name: Upload frontend artifact
         uses: actions/upload-artifact@v4
         with:
@@ -165,6 +193,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # 백엔드 dev ECS 배포 단계. main push에서 ECR 이미지 push 후 기존 ECS service를 업데이트한다.
   backend_deploy:
     name: Backend deploy to dev ECS
     needs:
@@ -187,9 +216,11 @@ jobs:
       BACKEND_TASK_ROLE_ARN: ${{ vars.BACKEND_TASK_ROLE_ARN || 'arn:aws:iam::471112500555:role/DevEcsTaskIAM' }}
       BACKEND_EXECUTION_ROLE_ARN: ${{ vars.BACKEND_EXECUTION_ROLE_ARN || 'arn:aws:iam::471112500555:role/ecsTaskExecutionRole' }}
     steps:
+      # Docker build context와 task definition 템플릿을 runner에 가져온다.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 배포에 필요한 AWS/ECS/ECR 변수 누락을 이미지 빌드 전에 빠르게 실패시킨다.
       - name: Validate backend deploy variables
         run: |
           test -n "$AWS_REGION"
@@ -201,6 +232,7 @@ jobs:
           test -n "$BACKEND_TASK_ROLE_ARN"
           test -n "$BACKEND_EXECUTION_ROLE_ARN"
 
+      # OIDC role이 설정된 경우 GitHub Actions가 장기 access key 없이 AWS 권한을 얻는다.
       - name: Configure AWS credentials with OIDC role
         if: ${{ env.AWS_ROLE_TO_ASSUME != '' }}
         uses: aws-actions/configure-aws-credentials@v4
@@ -208,6 +240,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
 
+      # OIDC role이 없으면 repository secret의 AWS access key로 AWS 권한을 얻는다.
       - name: Configure AWS credentials with access keys
         if: ${{ env.AWS_ROLE_TO_ASSUME == '' }}
         uses: aws-actions/configure-aws-credentials@v4
@@ -216,10 +249,12 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
+      # Docker image push를 위해 Amazon ECR registry에 로그인한다.
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # 현재 commit SHA 태그와 latest 태그를 같은 ECR repository 기준으로 만든다.
       - name: Resolve backend image tags
         id: image
         run: |
@@ -227,14 +262,17 @@ jobs:
           echo "uri=${image_repository}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "latest=${image_repository}:latest" >> "$GITHUB_OUTPUT"
 
+      # GitHub hosted runner에서 arm64 image build를 지원하도록 QEMU를 준비한다.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
+      # Docker Buildx builder를 준비해 cache와 multi-platform build를 사용할 수 있게 한다.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # back/Dockerfile로 linux/arm64 백엔드 이미지를 빌드하고 ECR에 push한다.
       - name: Build and push backend image
         uses: docker/build-push-action@v6
         with:
@@ -248,10 +286,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ECS task log가 CloudWatch Logs에 쌓일 log group을 보장한다.
       - name: Ensure backend log group
         run: |
           aws logs create-log-group --region "$AWS_REGION" --log-group-name "$BACKEND_LOG_GROUP" || true
 
+      # repository의 ECS task definition 템플릿에 이미지, secret, role, log 설정을 주입한다.
       - name: Render backend task definition
         env:
           IMAGE_URI: ${{ steps.image.outputs.uri }}
@@ -265,6 +305,7 @@ jobs:
             -e "s#__EXECUTION_ROLE_ARN__#${BACKEND_EXECUTION_ROLE_ARN}#g" \
             back/ecs/task-definition.dev.json > task-definition.json
 
+      # 현재 workflow는 기존 ECS service 업데이트 전용이므로 대상 service 존재 여부를 확인한다.
       - name: Verify ECS service exists
         run: |
           status="$(aws ecs describe-services \
@@ -278,6 +319,7 @@ jobs:
             exit 1
           fi
 
+      # 새 task definition revision을 등록하고 ECS service가 새 이미지로 안정화될 때까지 기다린다.
       - name: Deploy backend task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
@@ -286,6 +328,7 @@ jobs:
           service: ${{ env.BACKEND_ECS_SERVICE }}
           wait-for-service-stability: true
 
+  # 프론트 배포 placeholder. Amplify 등 실제 프론트 배포 방식이 정해지기 전까지 의도적으로 실패한다.
   frontend_deploy:
     name: Frontend deploy
     needs: frontend_delivery
@@ -293,11 +336,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: frontend-production
     steps:
+      # FRONTEND_DEPLOY_ENABLED=true로 켜기 전에 실제 배포 명령을 먼저 구현하도록 막는다.
       - name: Deployment is not configured
         run: |
           echo "Configure the frontend deployment command before setting FRONTEND_DEPLOY_ENABLED=true."
           exit 1
 
+  # 전체 CI/CD 결과 집계 단계. skipped job은 허용하고 failure/cancelled만 최종 실패로 올린다.
   ci_cd_summary:
     name: CI/CD summary
     needs:
@@ -311,6 +356,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      # needs 결과를 출력하고 실패한 필수 job이 있으면 workflow를 실패 처리한다.
       - name: Check CI/CD result
         run: |
           echo "changes=${{ needs.changes.result }}"
