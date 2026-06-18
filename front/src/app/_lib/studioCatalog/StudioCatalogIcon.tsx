@@ -8,14 +8,17 @@ export type StudioCatalogIconName =
     | 'chevronRight'
     | 'close'
     | 'download'
+    | 'edit'
     | 'image'
     | 'mic'
     | 'more'
     | 'panel'
+    | 'pause'
     | 'play'
     | 'plus'
     | 'search'
     | 'settings'
+    | 'stop'
     | 'trash'
     | 'users';
 
@@ -32,6 +35,12 @@ const iconPaths: Record<StudioCatalogIconName, ReactNode> = {
     chevronRight: <path d="M9 6l6 6-6 6" />,
     close: <path d="M6 6l12 12M18 6 6 18" />,
     download: <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />,
+    edit: (
+        <>
+            <path d="M4 20h4l10.5-10.5a2.8 2.8 0 0 0-4-4L4 16v4Z" />
+            <path d="m13.5 6.5 4 4" />
+        </>
+    ),
     image: (
         <>
             <rect height="18" rx="2" width="18" x="3" y="3" />
@@ -58,6 +67,12 @@ const iconPaths: Record<StudioCatalogIconName, ReactNode> = {
             <path d="M3 9h18M9 9v12" />
         </>
     ),
+    pause: (
+        <>
+            <path d="M8 5v14" />
+            <path d="M16 5v14" />
+        </>
+    ),
     play: <path d="M8 5v14l11-7-11-7Z" />,
     plus: <path d="M12 5v14M5 12h14" />,
     search: (
@@ -72,6 +87,7 @@ const iconPaths: Record<StudioCatalogIconName, ReactNode> = {
             <path d="M19 12a7 7 0 0 0-.1-1.4l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.4-1.4l-.3-2.6H9.2l-.3 2.6a7 7 0 0 0-2.4 1.4l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12a7 7 0 0 0 .1 1.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.4 1.4l.3 2.6h2.6l.3-2.6a7 7 0 0 0 2.4-1.4l2.4 1 2-3.4-2-1.6A7 7 0 0 0 19 12Z" />
         </>
     ),
+    stop: <rect height="12" rx="1.5" width="12" x="6" y="6" />,
     trash: <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />,
     users: (
         <>

@@ -3,11 +3,27 @@ import { getPreviewScrollAnchor, getPreviewScrollPixel, type PreviewScrollVisual
 export type CueTimelineTiming = {
     start: number;
     duration: number;
+    audioStart?: number;
+    audioEnd?: number;
 };
 
 export type CueTimingUpdateRequest = {
     startTime: number;
     endTime: number;
+    audioStartTime?: number;
+    audioEndTime?: number;
+};
+
+export type CueAudioTimelineEditMode = 'move' | 'resize-start' | 'resize-end';
+
+export type CueAudioTimelineEdit = {
+    mode: CueAudioTimelineEditMode;
+    originalStart: number;
+    originalDuration: number;
+};
+
+export type CueAudioTimelineClip = CueTimelineTiming & {
+    audioDuration?: number;
 };
 
 export type CueStripPositionRequest = {
@@ -129,6 +145,56 @@ export function toCueTimingUpdateRequest(timing: CueTimelineTiming): CueTimingUp
     return {
         startTime,
         endTime: Math.round((timing.start + timing.duration) * 1000),
+        ...(typeof timing.audioStart === 'number' ? { audioStartTime: Math.round(timing.audioStart * 1000) } : {}),
+        ...(typeof timing.audioEnd === 'number' ? { audioEndTime: Math.round(timing.audioEnd * 1000) } : {}),
+    };
+}
+
+function toFiniteAudioTime(value: number | undefined) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+export function applyCueAudioTimelineEditTiming<TClip extends CueAudioTimelineClip>(
+    clip: TClip,
+    edit: CueAudioTimelineEdit,
+    timing: CueTimelineTiming,
+): TClip {
+    const nextClip = {
+        ...clip,
+        start: timing.start,
+        duration: timing.duration,
+    };
+
+    if (edit.mode === 'move') {
+        return nextClip;
+    }
+
+    const audioStart = toFiniteAudioTime(clip.audioStart) ?? 0;
+    const explicitAudioEnd = toFiniteAudioTime(clip.audioEnd);
+    const audioDuration = toFiniteAudioTime(clip.audioDuration);
+    const audioEnd =
+        explicitAudioEnd !== undefined && explicitAudioEnd > audioStart
+            ? explicitAudioEnd
+            : audioDuration !== undefined
+              ? Math.min(audioDuration, audioStart + edit.originalDuration)
+              : undefined;
+
+    if (audioEnd === undefined || audioEnd <= audioStart) {
+        return nextClip;
+    }
+
+    if (edit.mode === 'resize-start') {
+        return {
+            ...nextClip,
+            audioStart: Math.max(0, Math.min(audioEnd, audioEnd - timing.duration)),
+            audioEnd,
+        };
+    }
+
+    return {
+        ...nextClip,
+        audioStart,
+        audioEnd: audioDuration !== undefined ? Math.min(audioDuration, audioStart + timing.duration) : audioStart + timing.duration,
     };
 }
 

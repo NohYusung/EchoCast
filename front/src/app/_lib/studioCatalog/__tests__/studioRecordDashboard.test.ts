@@ -42,3 +42,121 @@ test('recording status filters keep compact rows above the cue list', () => {
     assert.match(styles, /\.tr-filter-tabs button\s*\{[\s\S]*?min-height: 29px;/);
     assert.match(styles, /\.tr-filter-tabs button\.active\s*\{[\s\S]*?background: #232734;/);
 });
+
+test('recording take list fills the take panel without summary stats', () => {
+    assert.match(styles, /\.tr-take-panel\s*\{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\);/);
+    assert.match(styles, /\.tr-take-list\s*\{[\s\S]*?overflow: auto;/);
+    assert.doesNotMatch(source, /완료 대사/);
+    assert.doesNotMatch(source, /총 녹음 길이/);
+    assert.doesNotMatch(styles, /\.tr-record-stats/);
+    assert.doesNotMatch(styles, /\.tr-take-panel\s*\{[\s\S]*?grid-template-rows: auto auto minmax\(0, 1fr\) auto auto;/);
+});
+
+test('recording screen does not show the unimplemented export action', () => {
+    assert.doesNotMatch(source, /완료본 편집기로 전달/);
+    assert.doesNotMatch(source, /tr-export/);
+    assert.doesNotMatch(styles, /\.tr-export/);
+});
+
+test('recording console exposes playback, stop, and record controls', () => {
+    assert.match(source, /aria-label=\{isFocusedRecordPlaying \? '일시정지' : '재생'\}/);
+    assert.match(source, /aria-label="정지"/);
+    assert.match(source, /aria-label="녹음"/);
+    assert.match(source, /onClick=\{stopTransport\}/);
+    assert.match(source, /onClick=\{\(\) => void startRecording\(\)\}/);
+    assert.doesNotMatch(source, /toggleRecording/);
+    assert.doesNotMatch(styles, /\.tr-record-main/);
+});
+
+test('recording screen focuses the latest saved take until the user clicks another take', () => {
+    assert.match(source, /const \[focusedRecordKey, setFocusedRecordKey\]/);
+    assert.match(source, /const nextRecord = getLatestRecordingTake\(nextCue\?\.records \?\? \[\]\)/);
+    assert.match(source, /setFocusedRecordKey\(getRecordingTakeKey\(nextRecord\)\)/);
+    assert.match(source, /onClick=\{\(\) => \{[\s\S]*?stopRecordPlayback\(\);[\s\S]*?setFocusedRecordKey\(recordKey\);[\s\S]*?\}\}/);
+    assert.match(source, /tr-take-card \$\{record\.isAccepted \? 'accepted' : ''\} \$\{recordKey === activeFocusedRecordKey \? 'is-focused' : ''\}/);
+    assert.match(styles, /\.tr-take-card\.is-focused\s*\{/);
+});
+
+test('recording read panel shows the selected cue media above the dialogue text', () => {
+    assert.match(source, /const selectedCueClip = useMemo/);
+    assert.match(source, /<div className="tr-cue-stage">/);
+    assert.match(source, /<div className="tr-cue-preview" style=\{selectedCueClip \? getStripClipStyle\(selectedCueClip\) : undefined\}>/);
+    assert.match(source, /<RecordStagePreview clip=\{selectedCueClip\} \/>/);
+    assert.match(source, /<div className="tr-cue-caption">/);
+    assert.match(source, /<p>\{selectedCue\.trackName\}<\/p>/);
+    assert.doesNotMatch(source, /selectedCue\.trackName\} · \{formatMs\(selectedCue\.startTime\)\}/);
+    assert.match(styles, /\.tr-cue-stage\s*\{[\s\S]*?grid-template-rows: minmax\(0, 1fr\) auto;/);
+    assert.match(styles, /\.tr-cue-preview\s*\{[\s\S]*?min-height: 260px;/);
+    assert.match(styles, /\.tr-cue-caption\s*\{[\s\S]*?border-top: 1px solid var\(--tr-line\);/);
+});
+
+test('recording waveform decodes focused take audio and caches rendered peaks', () => {
+    assert.match(source, /const RECORD_WAVEFORM_BAR_COUNT = 300;/);
+    assert.match(source, /const \[recordWaveforms, setRecordWaveforms\]/);
+    assert.match(source, /const activeRecordWaveform = activeFocusedRecordKey \? recordWaveforms\[activeFocusedRecordKey\] : undefined;/);
+    assert.match(source, /buildRecordWaveformPeaks\(focusedRecord\.audioUrl, RECORD_WAVEFORM_BAR_COUNT\)/);
+    assert.match(source, /audioContext\.decodeAudioData\(await response\.arrayBuffer\(\)\)/);
+    assert.match(source, /setRecordWaveforms\(\(current\) =>/);
+    assert.match(source, /const hasRecordWaveform = isRecording \|\| Boolean\(focusedRecord\);/);
+    assert.match(source, /focusedRecord\s*\?\s*activeRecordWaveform \?\? createWave\(focusedRecord\.audioUrl, RECORD_WAVEFORM_BAR_COUNT\)\s*:\s*\[\]/);
+    assert.doesNotMatch(source, /createWave\(focusedRecord\?\.audioUrl \?\? selectedCue\?\.cueId \?\? 'empty', RECORD_WAVEFORM_BAR_COUNT\)/);
+    assert.match(source, /\{hasRecordWaveform \? \(/);
+    assert.match(source, /<div className="tr-waveform-empty">녹음 파일 없음<\/div>/);
+    assert.match(styles, /\.tr-waveform-empty\s*\{/);
+    assert.match(source, /'--tr-waveform-bar-count': currentWave\.length/);
+    assert.match(styles, /\.tr-waveform-bars\s*\{/);
+    assert.match(styles, /grid-template-columns: repeat\(var\(--tr-waveform-bar-count\), minmax\(0, 1fr\)\);/);
+    assert.match(styles, /\.tr-waveform-bars i\s*\{/);
+    assert.match(styles, /align-items: end;/);
+    assert.match(styles, /gap: 1px;/);
+    assert.match(styles, /width: min\(2px, 100%\);/);
+    assert.match(styles, /align-self: end;/);
+    assert.match(styles, /background: rgba\(255, 255, 255, 0\.16\);/);
+    assert.match(styles, /background: #ed1c24;/);
+});
+
+test('recording waveform progress fill follows actual audio playback progress', () => {
+    assert.match(source, /const \[recordPlaybackProgress, setRecordPlaybackProgress\]/);
+    assert.match(source, /const waveformRef = useRef<HTMLDivElement \| null>\(null\);/);
+    assert.match(source, /const recordPlaybackProgressRef = useRef\(0\);/);
+    assert.match(source, /const recordPlaybackFrameRef = useRef<number \| undefined>\(undefined\);/);
+    assert.match(source, /startRecordPlaybackProgressLoop\(currentAudio, record\)/);
+    assert.match(source, /startRecordPlaybackProgressLoop\(audio, record\)/);
+    assert.match(source, /function startRecordPlaybackProgressLoop\(audio: HTMLAudioElement, record: RecordingTakeSummary \| undefined\)/);
+    assert.match(source, /audio\.ontimeupdate = \(\) => updateRecordPlaybackProgressForRecord\(audio, record\);/);
+    assert.match(source, /audio\.onloadedmetadata = \(\) => updateRecordPlaybackProgressForRecord\(audio, record\);/);
+    assert.match(source, /window\.requestAnimationFrame\(tick\)/);
+    assert.match(source, /updateRecordPlaybackProgressForRecord\(audio, record\)/);
+    assert.doesNotMatch(source, /function updateRecordPlaybackProgress\(audio: HTMLAudioElement\)/);
+    assert.match(source, /function syncRecordPlaybackProgress\(progress: number, options\?: \{ syncState\?: boolean \}\)/);
+    assert.match(source, /waveformRef\.current\?\.style\.setProperty\('--tr-waveform-progress', `\$\{progressPercent\}%`\);/);
+    assert.match(source, /now - recordPlaybackProgressStateSyncedAtRef\.current > 250/);
+    assert.match(source, /const waveformProgressPercent = isRecording \? 0 : Math\.round\(Math\.min\(1, Math\.max\(0, recordPlaybackProgress\)\) \* 10000\) \/ 100;/);
+    assert.match(source, /'--tr-waveform-progress': `\$\{waveformProgressPercent\}%`/);
+    assert.match(source, /className="tr-waveform-progress"/);
+    assert.match(source, /ref=\{waveformRef\}/);
+    assert.match(styles, /\.tr-waveform-progress\s*\{/);
+    assert.match(styles, /clip-path: inset\(0 calc\(100% - var\(--tr-waveform-progress\)\) 0 0\);/);
+    assert.doesNotMatch(styles, /transition: clip-path 120ms linear;/);
+});
+
+test('recording durations are displayed as readable seconds', () => {
+    assert.match(source, /function formatDurationSeconds\(milliseconds: number\): string/);
+    assert.match(source, /return `\$\{formattedSeconds\}초`;/);
+    assert.match(source, /<span className="tr-waveform-time">\{formatDurationSeconds\(waveformDurationMs\)\}<\/span>/);
+    assert.match(source, /서버 기록 · \{formatDurationSeconds\(record\.durationMs \?\? 0\)\}/);
+});
+
+test('recording waveform can seek playback by clicking a timeline position', () => {
+    assert.match(source, /const recordPlaybackSeekRef = useRef<\{ recordKey: string; seconds: number \} \| undefined>\(undefined\);/);
+    assert.match(source, /function seekRecordWaveform\(event: ReactPointerEvent<HTMLDivElement>\)/);
+    assert.match(source, /const ratio = Math\.min\(1, Math\.max\(0, \(event\.clientX - rect\.left\) \/ rect\.width\)\);/);
+    assert.match(source, /recordPlaybackSeekRef\.current = \{ recordKey: activeFocusedRecordKey, seconds: nextSeconds \};/);
+    assert.match(source, /currentAudio\.currentTime = nextSeconds;/);
+    assert.match(source, /applyPendingRecordPlaybackSeek\(audio, recordKey, record\)/);
+    assert.match(source, /recordPlaybackSeekRef\.current = undefined;/);
+    assert.match(source, /onPointerDown=\{seekRecordWaveform\}/);
+    assert.match(source, /role="slider"/);
+    assert.match(styles, /\.tr-waveform\s*\{[\s\S]*?cursor: pointer;/);
+    assert.match(styles, /\.tr-waveform\s*\{[\s\S]*?touch-action: none;/);
+});

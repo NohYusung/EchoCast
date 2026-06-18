@@ -161,6 +161,39 @@ describe('ProductService', () => {
         }
     });
 
+    it('soft deletes a product', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [Character, Product],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const productRepository = new ProductRepository(dataSource);
+            const productService = new ProductService(productRepository);
+            const product = await dataSource.manager.save(
+                new Product({
+                    title: 'Deleted product',
+                })
+            );
+
+            await productService.delete({ productId: product.id });
+
+            const [storedProduct] = await productRepository.find({ id: product.id });
+            const deletedProduct = await dataSource.manager.findOne(Product, {
+                where: { id: product.id },
+                withDeleted: true,
+            });
+
+            assert.equal(storedProduct, undefined);
+            assert.ok(deletedProduct?.deletedAt instanceof Date);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
     it('throws NotFoundException when retrieving a missing product', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
@@ -204,6 +237,31 @@ describe('ProductService', () => {
                     productService.update({
                         productId: 9999,
                         title: 'Missing product',
+                    }),
+                (error: unknown) => error instanceof NotFoundException
+            );
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('throws NotFoundException when deleting a missing product', async () => {
+        const dataSource = new DataSource({
+            type: 'sqljs',
+            entities: [Character, Product],
+            synchronize: true,
+            logging: false,
+        });
+        await dataSource.initialize();
+
+        try {
+            const productRepository = new ProductRepository(dataSource);
+            const productService = new ProductService(productRepository);
+
+            await assert.rejects(
+                () =>
+                    productService.delete({
+                        productId: 9999,
                     }),
                 (error: unknown) => error instanceof NotFoundException
             );

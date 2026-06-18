@@ -25,6 +25,7 @@ type StudioProduct = {
 type ProductListItem = {
     id: number;
     title: string;
+    subtitle?: string;
     coverImageUrl?: string;
 };
 type ProductListResponse = {
@@ -33,8 +34,9 @@ type ProductListResponse = {
         total: number;
     };
 };
-type ProductCreateRequest = {
+type ProductMutationRequest = {
     title: string;
+    subtitle?: string;
     coverImageUrl?: string;
 };
 type FileUploadUrlItem = {
@@ -74,6 +76,11 @@ export function StudioProductDashboard() {
     const [visibility, setVisibility] = useState<(typeof visibilityOptions)[number]>('비공개');
     const [coverImageFile, setCoverImageFile] = useState<File | null>(null);
     const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
+    const [editingProduct, setEditingProduct] = useState<StudioProduct | null>(null);
+    const [openMenuProductId, setOpenMenuProductId] = useState<string | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<StudioProduct | null>(null);
+    const [isDeletingProductId, setIsDeletingProductId] = useState<string | null>(null);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
     const [titleTouched, setTitleTouched] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -121,6 +128,34 @@ export function StudioProductDashboard() {
         };
     }, [coverImageFile]);
 
+    useEffect(() => {
+        if (!openMenuProductId) return undefined;
+
+        const closeOnPointerDown = (event: PointerEvent) => {
+            if (
+                event.target instanceof Element &&
+                (event.target.closest('.tp-product-menu') || event.target.closest('.tp-product-menu-button'))
+            ) {
+                return;
+            }
+
+            setOpenMenuProductId(null);
+        };
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setOpenMenuProductId(null);
+            }
+        };
+
+        document.addEventListener('pointerdown', closeOnPointerDown);
+        document.addEventListener('keydown', closeOnEscape);
+
+        return () => {
+            document.removeEventListener('pointerdown', closeOnPointerDown);
+            document.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [openMenuProductId]);
+
     const counts = useMemo(() => {
         return products.reduce(
             (acc, product) => {
@@ -157,7 +192,10 @@ export function StudioProductDashboard() {
     }, [filter, products, query, sort]);
 
     const previewTitle = title.trim();
-    const previewCover = coverPreviewUrl ? toCoverBackground(coverPreviewUrl) : gradientFor(previewTitle || '무제');
+    const previewCover = coverPreviewUrl
+        ? toCoverBackground(coverPreviewUrl)
+        : (editingProduct?.cover ?? gradientFor(previewTitle || '무제'));
+    const isEditingProduct = editingProduct !== null;
     const showTitleError = titleTouched && !previewTitle;
 
     const toggleGenre = (genre: string) => {
@@ -170,6 +208,27 @@ export function StudioProductDashboard() {
     };
 
     const openCreateModal = () => {
+        resetForm();
+        setEditingProduct(null);
+        setOpenMenuProductId(null);
+        setSubmitError(null);
+        setIsModalOpen(true);
+    };
+
+    const openEditModal = (product: StudioProduct) => {
+        setEditingProduct(product);
+        setOpenMenuProductId(null);
+        setDeleteError(null);
+        setTitle(product.title);
+        setLogline(product.logline);
+        setSynopsis('');
+        setRating(product.rating);
+        setRatio('1080x2400');
+        setSelectedGenres(product.genres);
+        setVisibility('비공개');
+        setCoverImageFile(null);
+        setCoverPreviewUrl(null);
+        setTitleTouched(false);
         setSubmitError(null);
         setIsModalOpen(true);
     };
@@ -178,8 +237,50 @@ export function StudioProductDashboard() {
         if (isSubmitting) return;
 
         setIsModalOpen(false);
-        setTitleTouched(false);
+        setEditingProduct(null);
         setSubmitError(null);
+        resetForm();
+    };
+
+    const toggleProductMenu = (productId: string) => {
+        setOpenMenuProductId((current) => (current === productId ? null : productId));
+        setDeleteError(null);
+    };
+
+    const openDeleteConfirm = (product: StudioProduct) => {
+        setDeleteTarget(product);
+        setOpenMenuProductId(null);
+        setDeleteError(null);
+    };
+
+    const closeDeleteConfirm = () => {
+        if (isDeletingProductId) return;
+
+        setDeleteTarget(null);
+        setDeleteError(null);
+    };
+
+    const confirmDeleteProduct = async () => {
+        if (!deleteTarget) return;
+
+        const productToDelete = deleteTarget;
+        setIsDeletingProductId(productToDelete.id);
+        setDeleteError(null);
+
+        try {
+            await deleteProduct(productToDelete.id);
+            setProducts((current) => current.filter((product) => product.id !== productToDelete.id));
+            setDeleteTarget(null);
+            if (editingProduct?.id === productToDelete.id) {
+                setIsModalOpen(false);
+                setEditingProduct(null);
+                resetForm();
+            }
+        } catch {
+            setDeleteError('프로젝트 삭제에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
+        } finally {
+            setIsDeletingProductId(null);
+        }
     };
 
     const handleCoverImageChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -230,11 +331,28 @@ export function StudioProductDashboard() {
                 coverImageUrl = uploadUrl.publicUrl;
             }
 
-            await createProduct({ title: previewTitle, coverImageUrl });
+            const trimmedLogline = logline.trim();
+            const productRequest: ProductMutationRequest = {
+                title: previewTitle,
+                subtitle: isEditingProduct ? trimmedLogline : trimmedLogline || undefined,
+            };
+            if (coverImageUrl) {
+                productRequest.coverImageUrl = coverImageUrl;
+            }
+
+            if (editingProduct) {
+                await updateProduct(editingProduct.id, productRequest);
+            } else {
+                await createProduct(productRequest);
+            }
             const listedProducts = await listProducts();
             setProducts(listedProducts);
         } catch {
-            setSubmitError('프로젝트 등록에 실패했습니다. 백엔드 API 상태를 확인해 주세요.');
+            setSubmitError(
+                isEditingProduct
+                    ? '프로젝트 수정에 실패했습니다. 백엔드 API 상태를 확인해 주세요.'
+                    : '프로젝트 등록에 실패했습니다. 백엔드 API 상태를 확인해 주세요.'
+            );
             setIsSubmitting(false);
             return;
         }
@@ -243,6 +361,7 @@ export function StudioProductDashboard() {
         setFilter('all');
         setQuery('');
         setIsModalOpen(false);
+        setEditingProduct(null);
         setIsSubmitting(false);
     };
 
@@ -255,6 +374,7 @@ export function StudioProductDashboard() {
         setSelectedGenres([]);
         setVisibility('비공개');
         setCoverImageFile(null);
+        setCoverPreviewUrl(null);
         setTitleTouched(false);
     };
 
@@ -349,20 +469,68 @@ export function StudioProductDashboard() {
                             <>
                                 <div className="tp-product-grid">
                                     {visibleProducts.map((product) => (
-                                        <Link
+                                        <article
                                             className="tp-product-card"
                                             data-testid={`product-card-${product.id}`}
-                                            href={`/studio/products/${product.id}/episodes`}
                                             key={product.id}
                                         >
                                             <div className="tp-product-cover" style={{ background: product.cover }}>
+                                                <Link
+                                                    aria-label={`${product.title} 에피소드로 이동`}
+                                                    className="tp-product-cover-link"
+                                                    href={`/studio/products/${product.id}/episodes`}
+                                                    onClick={() => setOpenMenuProductId(null)}
+                                                />
                                                 <span className={`tp-status ${product.status}`}>
                                                     {productStatusLabels[product.status]}
                                                 </span>
                                                 <span className="tp-rating">{product.rating}</span>
                                                 <strong>{product.title}</strong>
+                                                <button
+                                                    aria-expanded={openMenuProductId === product.id}
+                                                    aria-haspopup="menu"
+                                                    aria-label={`${product.title} 더보기`}
+                                                    className={`tp-product-menu-button${
+                                                        openMenuProductId === product.id ? ' open' : ''
+                                                    }`}
+                                                    data-testid={`product-menu-button-${product.id}`}
+                                                    onClick={() => toggleProductMenu(product.id)}
+                                                    type="button"
+                                                >
+                                                    <StudioCatalogIcon name="more" />
+                                                </button>
+                                                <div
+                                                    aria-hidden={openMenuProductId !== product.id}
+                                                    className={`tp-product-menu${
+                                                        openMenuProductId === product.id ? ' open' : ''
+                                                    }`}
+                                                    data-testid={`product-menu-${product.id}`}
+                                                    role="menu"
+                                                >
+                                                    <button
+                                                        onClick={() => openEditModal(product)}
+                                                        role="menuitem"
+                                                        type="button"
+                                                    >
+                                                        <StudioCatalogIcon name="edit" />
+                                                        수정
+                                                    </button>
+                                                    <button
+                                                        className="danger"
+                                                        onClick={() => openDeleteConfirm(product)}
+                                                        role="menuitem"
+                                                        type="button"
+                                                    >
+                                                        <StudioCatalogIcon name="trash" />
+                                                        삭제
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <div className="tp-product-card-body">
+                                            <Link
+                                                className="tp-product-card-body"
+                                                href={`/studio/products/${product.id}/episodes`}
+                                                onClick={() => setOpenMenuProductId(null)}
+                                            >
                                                 <div className="tp-tag-row">
                                                     {product.genres.length ? (
                                                         product.genres.map((genre) => <span key={genre}>{genre}</span>)
@@ -379,8 +547,8 @@ export function StudioProductDashboard() {
                                                 <div className="tp-progress">
                                                     <i style={{ width: `${product.progress}%` }} />
                                                 </div>
-                                            </div>
-                                        </Link>
+                                            </Link>
+                                        </article>
                                     ))}
                                     {filter === 'all' && !query ? (
                                         <button
@@ -418,11 +586,15 @@ export function StudioProductDashboard() {
                     <div aria-modal="true" className="tp-product-modal" role="dialog">
                         <div className="tp-modal-head">
                             <span>
-                                <StudioCatalogIcon name="plus" />
+                                <StudioCatalogIcon name={isEditingProduct ? 'edit' : 'plus'} />
                             </span>
                             <div>
-                                <h2>새 프로젝트 등록</h2>
-                                <p>프로젝트 정보를 입력하면 첫 에피소드 작업 공간이 함께 생성됩니다.</p>
+                                <h2>{isEditingProduct ? '프로젝트 수정' : '새 프로젝트 등록'}</h2>
+                                <p>
+                                    {isEditingProduct
+                                        ? '프로젝트 기본 정보를 수정합니다. 에피소드 작업 공간은 유지됩니다.'
+                                        : '프로젝트 정보를 입력하면 첫 에피소드 작업 공간이 함께 생성됩니다.'}
+                                </p>
                             </div>
                             <button aria-label="닫기" disabled={isSubmitting} onClick={closeModal} type="button">
                                 <StudioCatalogIcon name="close" />
@@ -444,7 +616,9 @@ export function StudioProductDashboard() {
                                     <strong>{coverImageFile ? coverImageFile.name : '클릭하여 업로드'}</strong>
                                     <small>
                                         {coverImageFile
-                                            ? '등록 시 표지로 업로드됩니다.'
+                                            ? isEditingProduct
+                                                ? '수정 시 표지로 업로드됩니다.'
+                                                : '등록 시 표지로 업로드됩니다.'
                                             : '프로젝트 표지 이미지 파일을 선택하세요.'}
                                     </small>
                                 </label>
@@ -547,7 +721,7 @@ export function StudioProductDashboard() {
                                 <p>미리보기</p>
                                 <div className="tp-preview-card">
                                     <div className="tp-preview-cover" style={{ background: previewCover }}>
-                                        <span>등록 예정</span>
+                                        <span>{isEditingProduct ? '수정 중' : '등록 예정'}</span>
                                         <strong>{previewTitle || '프로젝트명 미입력'}</strong>
                                     </div>
                                     <div className="tp-preview-body">
@@ -582,21 +756,80 @@ export function StudioProductDashboard() {
                                     className={submitError ? 'tp-modal-foot-error' : undefined}
                                     role={submitError ? 'alert' : undefined}
                                 >
-                                    {submitError ?? '등록 시 EP.01 작업 공간이 자동 생성됩니다.'}
+                                    {submitError ??
+                                        (isEditingProduct
+                                            ? '수정한 내용은 프로젝트 목록에 바로 반영됩니다.'
+                                            : '등록 시 EP.01 작업 공간이 자동 생성됩니다.')}
                                 </span>
                                 <div>
                                     <button className="tp-btn primary" disabled={isSubmitting} type="submit">
                                         {isSubmitting ? (
-                                            '등록 중'
+                                            isEditingProduct ? (
+                                                '수정 중'
+                                            ) : (
+                                                '등록 중'
+                                            )
                                         ) : (
                                             <>
-                                                <StudioCatalogIcon name="check" /> 프로젝트 등록
+                                                <StudioCatalogIcon name="check" />{' '}
+                                                {isEditingProduct ? '프로젝트 수정' : '프로젝트 등록'}
                                             </>
                                         )}
                                     </button>
                                 </div>
                             </div>
                         </form>
+                    </div>
+                </div>
+            ) : null}
+
+            {deleteTarget ? (
+                <div className="tp-modal-overlay compact" role="presentation">
+                    <div
+                        aria-labelledby="tp-product-delete-title"
+                        aria-modal="true"
+                        className="tp-confirm-dialog"
+                        role="dialog"
+                    >
+                        <span className="tp-confirm-icon danger">
+                            <StudioCatalogIcon name="trash" />
+                        </span>
+                        <div>
+                            <h2 id="tp-product-delete-title">프로젝트를 삭제할까요?</h2>
+                            <p>
+                                <b>{deleteTarget.title}</b> 프로젝트가 목록에서 삭제됩니다. 이 작업은 되돌릴 수
+                                없습니다.
+                            </p>
+                        </div>
+                        {deleteError ? (
+                            <p className="tp-confirm-error" role="alert">
+                                {deleteError}
+                            </p>
+                        ) : null}
+                        <div className="tp-confirm-actions">
+                            <button
+                                className="tp-btn ghost"
+                                disabled={Boolean(isDeletingProductId)}
+                                onClick={closeDeleteConfirm}
+                                type="button"
+                            >
+                                취소
+                            </button>
+                            <button
+                                className="tp-btn danger"
+                                disabled={Boolean(isDeletingProductId)}
+                                onClick={confirmDeleteProduct}
+                                type="button"
+                            >
+                                {isDeletingProductId === deleteTarget.id ? (
+                                    '삭제 중'
+                                ) : (
+                                    <>
+                                        <StudioCatalogIcon name="trash" /> 삭제
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             ) : null}
@@ -617,7 +850,7 @@ async function listProducts() {
     return result.data.items.map(toStudioProduct);
 }
 
-async function createProduct(product: ProductCreateRequest) {
+async function createProduct(product: ProductMutationRequest) {
     const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products`, {
         method: 'POST',
         headers: {
@@ -628,6 +861,30 @@ async function createProduct(product: ProductCreateRequest) {
 
     if (!response.ok) {
         throw new Error(`Product create failed: ${response.status}`);
+    }
+}
+
+async function updateProduct(productId: string, product: ProductMutationRequest) {
+    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}`, {
+        method: 'PUT',
+        headers: {
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify(product),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Product update failed: ${response.status}`);
+    }
+}
+
+async function deleteProduct(productId: string) {
+    const response = await fetch(`${productApiBaseUrl.replace(/\/$/, '')}/products/${productId}`, {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Product delete failed: ${response.status}`);
     }
 }
 
@@ -673,7 +930,7 @@ function toStudioProduct(product: ProductListItem): StudioProduct {
         updatedAtLabel: '방금 전',
         progress: 0,
         cover: product.coverImageUrl ? toCoverBackground(product.coverImageUrl) : gradientFor(product.title),
-        logline: '',
+        logline: product.subtitle ?? '',
     };
 }
 

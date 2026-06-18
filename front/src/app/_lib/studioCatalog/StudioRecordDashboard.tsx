@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { ToonedBrand } from '../brand/ToonedBrand';
 import { uploadFileToPresignedUrl } from '../player/mediaUploadBatch';
 import type { StudioEpisodeDetails } from '../player/getEpisodeDetails';
@@ -58,6 +58,7 @@ const filterLabels: Record<RecordingCueFilter, string> = {
 };
 
 const RECORDING_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/wav'];
+const RECORD_WAVEFORM_BAR_COUNT = 300;
 
 export function StudioRecordDashboard({ productId, episodeId, draft, manifest, episode }: StudioRecordDashboardProps) {
     const apiBaseUrl = useMemo(() => getClientApiBaseUrl(), []);
@@ -89,8 +90,20 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const [recordingStartedAt, setRecordingStartedAt] = useState<number | undefined>();
     const [recordingMs, setRecordingMs] = useState(0);
     const [liveWave, setLiveWave] = useState(() => createWave('idle', 42));
+    const [focusedRecordKey, setFocusedRecordKey] = useState<string | undefined>();
+    const [playingRecordKey, setPlayingRecordKey] = useState<string | undefined>();
+    const [isRecordPlaybackPaused, setIsRecordPlaybackPaused] = useState(false);
+    const [recordPlaybackProgress, setRecordPlaybackProgress] = useState(0);
+    const [recordWaveforms, setRecordWaveforms] = useState<Record<string, number[]>>({});
+    const [loadingWaveformKey, setLoadingWaveformKey] = useState<string | undefined>();
     const [message, setMessage] = useState('');
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const waveformRef = useRef<HTMLDivElement | null>(null);
+    const recordPlaybackRef = useRef<HTMLAudioElement | null>(null);
+    const recordPlaybackFrameRef = useRef<number | undefined>(undefined);
+    const recordPlaybackSeekRef = useRef<{ recordKey: string; seconds: number } | undefined>(undefined);
+    const recordPlaybackProgressRef = useRef(0);
+    const recordPlaybackProgressStateSyncedAtRef = useRef(0);
     const recordingChunksRef = useRef<Blob[]>([]);
     const recordingStreamRef = useRef<MediaStream | null>(null);
     const recordingCueRef = useRef<RecordingCueQueueItem | undefined>(undefined);
@@ -169,6 +182,17 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const progress = useMemo(() => getRecordingProgress(queue), [queue]);
     const selectedCue = queue.find((item) => item.cueId === selectedCueId) ?? selectInitialRecordingCue(queue);
     const selectedRecords = selectedCue?.records ?? [];
+    const focusedRecord =
+        selectedRecords.find((record) => getRecordingTakeKey(record) === focusedRecordKey) ??
+        selectedRecords.find((record) => record.isAccepted) ??
+        getLatestRecordingTake(selectedRecords);
+    const activeFocusedRecordKey = focusedRecord ? getRecordingTakeKey(focusedRecord) : undefined;
+    const isFocusedRecordPlaying =
+        typeof activeFocusedRecordKey === 'string' &&
+        playingRecordKey === activeFocusedRecordKey &&
+        !isRecordPlaybackPaused;
+    const activeRecordWaveform = activeFocusedRecordKey ? recordWaveforms[activeFocusedRecordKey] : undefined;
+    const isWaveformLoading = Boolean(activeFocusedRecordKey && loadingWaveformKey === activeFocusedRecordKey);
     const stripClips = useMemo(() => getRecordStripClips({ draft: draftState, manifest: manifestState }), [draftState, manifestState]);
     const stripCueMarkers = useMemo(() => buildRecordingCueStripMarkers({ queue: allQueue, selectedCueId: selectedCue?.cueId }), [allQueue, selectedCue?.cueId]);
     const stripCueMarkersByCanvasMediaId = useMemo(() => {
@@ -189,6 +213,18 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         [stripCueMarkers],
     );
     const selectedCueMarker = stripCueMarkers.find((marker) => marker.isSelected);
+    const selectedCueClip = useMemo(() => {
+        if (!selectedCue) return undefined;
+
+        const selectedCanvasMediaId =
+            typeof selectedCue.startCanvasMediaId === 'number' ? selectedCue.startCanvasMediaId : selectedCueMarker?.canvasMediaId;
+        if (typeof selectedCanvasMediaId === 'number') {
+            const placedClip = stripClips.find((clip) => clip.canvasMediaId === selectedCanvasMediaId);
+            if (placedClip) return placedClip;
+        }
+
+        return stripClips[0];
+    }, [selectedCue, selectedCueMarker?.canvasMediaId, stripClips]);
     const recordingStripSize = toRecordingStripSize(recordingStripScale);
     const recordWorkspaceStyle = {
         '--tr-record-strip-panel-width': `${recordingStripSize.panelWidth}px`,
@@ -205,11 +241,18 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         return counts;
     }, [allQueue]);
     const isAllCharactersSelected = availableCharacters.length > 0 && selectedAvailableCharacterIds.length === availableCharacters.length;
-    const currentWave = isRecording ? liveWave : createWave(selectedCue?.latestRecordUrl ?? selectedCue?.cueId ?? 'empty', 42);
-    const totalApiDuration = allQueue
-        .flatMap((item) => item.records)
-        .reduce((sum, record) => sum + (record.durationMs ?? 0), 0);
-
+    const hasRecordWaveform = isRecording || Boolean(focusedRecord);
+    const currentWave = isRecording
+        ? liveWave
+        : focusedRecord
+          ? activeRecordWaveform ?? createWave(focusedRecord.audioUrl, RECORD_WAVEFORM_BAR_COUNT)
+          : [];
+    const waveformDurationMs = isRecording ? recordingMs : (focusedRecord?.durationMs ?? 0);
+    const waveformProgressPercent = isRecording ? 0 : Math.round(Math.min(1, Math.max(0, recordPlaybackProgress)) * 10000) / 100;
+    const waveformStyle = {
+        '--tr-waveform-bar-count': currentWave.length,
+        '--tr-waveform-progress': `${waveformProgressPercent}%`,
+    } as CSSProperties;
     useEffect(() => {
         if (!selectedCue || selectedCue.cueId === selectedCueId) return;
         setSelectedCueId(selectedCue.cueId);
@@ -221,11 +264,48 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         const intervalId = window.setInterval(() => {
             const elapsedMs = Date.now() - recordingStartedAt;
             setRecordingMs(elapsedMs);
-            setLiveWave(createWave(elapsedMs, 42));
+            setLiveWave(createWave(elapsedMs, RECORD_WAVEFORM_BAR_COUNT));
         }, 120);
 
         return () => window.clearInterval(intervalId);
     }, [isRecording, recordingStartedAt]);
+
+    useEffect(() => {
+        syncRecordPlaybackProgress(0, { syncState: true });
+    }, [activeFocusedRecordKey]);
+
+    useEffect(() => {
+        if (!focusedRecord || !activeFocusedRecordKey || activeRecordWaveform) return;
+
+        let isCancelled = false;
+        setLoadingWaveformKey(activeFocusedRecordKey);
+        void buildRecordWaveformPeaks(focusedRecord.audioUrl, RECORD_WAVEFORM_BAR_COUNT)
+            .then((peaks) => {
+                if (isCancelled) return;
+
+                setRecordWaveforms((current) =>
+                    current[activeFocusedRecordKey] ? current : { ...current, [activeFocusedRecordKey]: peaks },
+                );
+            })
+            .catch(() => {
+                if (isCancelled) return;
+
+                setRecordWaveforms((current) =>
+                    current[activeFocusedRecordKey]
+                        ? current
+                        : { ...current, [activeFocusedRecordKey]: createWave(focusedRecord.audioUrl, RECORD_WAVEFORM_BAR_COUNT) },
+                );
+            })
+            .finally(() => {
+                if (!isCancelled) {
+                    setLoadingWaveformKey((current) => (current === activeFocusedRecordKey ? undefined : current));
+                }
+            });
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [activeFocusedRecordKey, activeRecordWaveform, focusedRecord]);
 
     useEffect(() => {
         return () => {
@@ -238,6 +318,9 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                 }
             }
             stopRecordingStream(recordingStreamRef.current);
+            cancelRecordPlaybackFrame();
+            recordPlaybackRef.current?.pause();
+            recordPlaybackRef.current = null;
         };
     }, []);
 
@@ -249,15 +332,8 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
         setDraftState(nextDraft);
         setManifestState(nextManifest);
-    }
 
-    async function toggleRecording() {
-        if (isRecording) {
-            stopRecording();
-            return;
-        }
-
-        await startRecording();
+        return { draft: nextDraft, manifest: nextManifest };
     }
 
     async function startRecording() {
@@ -275,6 +351,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
         try {
             setMessage('');
+            stopRecordPlayback();
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const mimeType = getSupportedRecordingMimeType();
             const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
@@ -305,7 +382,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             recorder.start();
             setRecordingStartedAt(startedAt);
             setRecordingMs(0);
-            setLiveWave(createWave(startedAt, 42));
+            setLiveWave(createWave(startedAt, RECORD_WAVEFORM_BAR_COUNT));
             setIsRecording(true);
         } catch (error) {
             stopRecordingStream(recordingStreamRef.current);
@@ -367,7 +444,14 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                 throw new Error(`Record create failed: ${createResponse.status}`);
             }
 
-            await refreshRecordingData();
+            const nextData = await refreshRecordingData();
+            const nextCue = buildRecordingCueQueue({ draft: nextData.draft, manifest: nextData.manifest }).find(
+                (item) => item.cueId === cue.cueId,
+            );
+            const nextRecord = getLatestRecordingTake(nextCue?.records ?? []);
+            if (nextRecord) {
+                setFocusedRecordKey(getRecordingTakeKey(nextRecord));
+            }
             setSelectedCueId(cue.cueId);
             setMessage('녹음이 서버에 저장되었습니다.');
         } catch (error) {
@@ -402,6 +486,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             }
 
             await refreshRecordingData();
+            setFocusedRecordKey(getRecordingTakeKey(record));
             setMessage('선택한 테이크를 채택했습니다.');
         } catch (error) {
             setMessage(toRecordErrorMessage(error, '테이크 채택에 실패했습니다.'));
@@ -425,6 +510,11 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                 throw new Error(`Record delete failed: ${response.status}`);
             }
 
+            if (focusedRecordKey === getRecordingTakeKey(record)) {
+                stopRecordPlayback();
+                setFocusedRecordKey(undefined);
+            }
+
             await refreshRecordingData();
             setMessage('테이크를 삭제했습니다.');
         } catch (error) {
@@ -434,18 +524,190 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         }
     }
 
-    function playRecord(audioUrl: string) {
-        const audio = new Audio(audioUrl);
+    function toggleRecordPlayback(record: RecordingTakeSummary | undefined = focusedRecord) {
+        if (!record) return;
+
+        const recordKey = getRecordingTakeKey(record);
+        const currentAudio = recordPlaybackRef.current;
+        if (playingRecordKey === recordKey && currentAudio) {
+            if (currentAudio.paused) {
+                void currentAudio
+                    .play()
+                    .then(() => {
+                        setIsRecordPlaybackPaused(false);
+                        startRecordPlaybackProgressLoop(currentAudio, record);
+                    })
+                    .catch((error: unknown) => setMessage(toRecordErrorMessage(error, '테이크를 재생하지 못했습니다.')));
+                return;
+            }
+
+            currentAudio.pause();
+            cancelRecordPlaybackFrame();
+            updateRecordPlaybackProgressForRecord(currentAudio, record);
+            setIsRecordPlaybackPaused(true);
+            return;
+        }
+
+        stopRecordPlayback();
+
+        const audio = new Audio(record.audioUrl);
+        audio.volume = Math.min(Math.max(record.volume, 0), 1);
+        applyPendingRecordPlaybackSeek(audio, recordKey, record);
+        audio.ontimeupdate = () => updateRecordPlaybackProgressForRecord(audio, record);
+        audio.onloadedmetadata = () => updateRecordPlaybackProgressForRecord(audio, record);
+        audio.onended = () => {
+            if (recordPlaybackRef.current !== audio) return;
+
+            recordPlaybackRef.current = null;
+            recordPlaybackSeekRef.current = undefined;
+            setPlayingRecordKey(undefined);
+            setIsRecordPlaybackPaused(false);
+            syncRecordPlaybackProgress(1, { syncState: true });
+        };
+        audio.onerror = () => {
+            if (recordPlaybackRef.current === audio) {
+                recordPlaybackRef.current = null;
+            }
+            recordPlaybackSeekRef.current = undefined;
+            setPlayingRecordKey(undefined);
+            setIsRecordPlaybackPaused(false);
+            syncRecordPlaybackProgress(0, { syncState: true });
+            setMessage('테이크를 재생하지 못했습니다.');
+        };
+
+        recordPlaybackRef.current = audio;
+        setFocusedRecordKey(recordKey);
+        setPlayingRecordKey(recordKey);
+        setIsRecordPlaybackPaused(false);
+        updateRecordPlaybackProgressForRecord(audio, record);
         void audio.play().catch((error: unknown) => {
+            if (recordPlaybackRef.current === audio) {
+                recordPlaybackRef.current = null;
+            }
+            recordPlaybackSeekRef.current = undefined;
+            setPlayingRecordKey(undefined);
+            setIsRecordPlaybackPaused(false);
+            syncRecordPlaybackProgress(0, { syncState: true });
             setMessage(toRecordErrorMessage(error, '테이크를 재생하지 못했습니다.'));
+        }).then(() => {
+            if (recordPlaybackRef.current === audio) {
+                startRecordPlaybackProgressLoop(audio, record);
+            }
         });
     }
 
-    function selectAdjacentCue(direction: -1 | 1) {
-        if (queue.length === 0) return;
-        const currentIndex = selectedCue ? queue.findIndex((item) => item.cueId === selectedCue.cueId) : 0;
-        const nextIndex = Math.min(queue.length - 1, Math.max(0, currentIndex + direction));
-        setSelectedCueId(queue[nextIndex].cueId);
+    function stopTransport() {
+        if (isRecording) {
+            stopRecording();
+            return;
+        }
+
+        stopRecordPlayback();
+    }
+
+    function stopRecordPlayback() {
+        const audio = recordPlaybackRef.current;
+        if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.ontimeupdate = null;
+            audio.onloadedmetadata = null;
+            audio.onended = null;
+            audio.onerror = null;
+        }
+
+        cancelRecordPlaybackFrame();
+        recordPlaybackRef.current = null;
+        recordPlaybackSeekRef.current = undefined;
+        setPlayingRecordKey(undefined);
+        setIsRecordPlaybackPaused(false);
+        syncRecordPlaybackProgress(0, { syncState: true });
+    }
+
+    function startRecordPlaybackProgressLoop(audio: HTMLAudioElement, record: RecordingTakeSummary | undefined) {
+        cancelRecordPlaybackFrame();
+
+        const tick = () => {
+            if (recordPlaybackRef.current !== audio) return;
+
+            updateRecordPlaybackProgressForRecord(audio, record);
+            if (!audio.paused && !audio.ended) {
+                recordPlaybackFrameRef.current = window.requestAnimationFrame(tick);
+            }
+        };
+
+        tick();
+    }
+
+    function cancelRecordPlaybackFrame() {
+        if (typeof recordPlaybackFrameRef.current !== 'number') return;
+
+        window.cancelAnimationFrame(recordPlaybackFrameRef.current);
+        recordPlaybackFrameRef.current = undefined;
+    }
+
+    function updateRecordPlaybackProgressForRecord(audio: HTMLAudioElement, record: RecordingTakeSummary | undefined) {
+        const durationSeconds =
+            Number.isFinite(audio.duration) && audio.duration > 0
+                ? audio.duration
+                : typeof record?.durationMs === 'number' && record.durationMs > 0
+                  ? record.durationMs / 1000
+                  : 0;
+        const progress = durationSeconds > 0 ? audio.currentTime / durationSeconds : 0;
+        syncRecordPlaybackProgress(progress);
+    }
+
+    function syncRecordPlaybackProgress(progress: number, options?: { syncState?: boolean }) {
+        const clampedProgress = Math.min(1, Math.max(0, progress));
+        const progressPercent = Math.round(clampedProgress * 10000) / 100;
+
+        recordPlaybackProgressRef.current = clampedProgress;
+        waveformRef.current?.style.setProperty('--tr-waveform-progress', `${progressPercent}%`);
+
+        const now = typeof performance === 'undefined' ? Date.now() : performance.now();
+        if (options?.syncState || now - recordPlaybackProgressStateSyncedAtRef.current > 250) {
+            recordPlaybackProgressStateSyncedAtRef.current = now;
+            setRecordPlaybackProgress(clampedProgress);
+        }
+    }
+
+    function applyPendingRecordPlaybackSeek(audio: HTMLAudioElement, recordKey: string, record: RecordingTakeSummary) {
+        const pendingSeek = recordPlaybackSeekRef.current;
+        if (!pendingSeek || pendingSeek.recordKey !== recordKey) return;
+
+        const applySeek = () => {
+            audio.currentTime = Math.max(0, pendingSeek.seconds);
+            recordPlaybackSeekRef.current = undefined;
+            updateRecordPlaybackProgressForRecord(audio, record);
+        };
+
+        try {
+            applySeek();
+        } catch {
+            audio.addEventListener('loadedmetadata', applySeek, { once: true });
+        }
+    }
+
+    function seekRecordWaveform(event: ReactPointerEvent<HTMLDivElement>) {
+        if (event.button !== 0 || isRecording || !focusedRecord || !activeFocusedRecordKey) return;
+
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+        const durationSeconds = getRecordDurationSeconds(focusedRecord);
+        if (durationSeconds <= 0) return;
+
+        const nextSeconds = ratio * durationSeconds;
+        const currentAudio = recordPlaybackRef.current;
+        recordPlaybackSeekRef.current = { recordKey: activeFocusedRecordKey, seconds: nextSeconds };
+        syncRecordPlaybackProgress(ratio, { syncState: true });
+
+        if (currentAudio && playingRecordKey === activeFocusedRecordKey) {
+            currentAudio.currentTime = nextSeconds;
+            updateRecordPlaybackProgressForRecord(currentAudio, focusedRecord);
+            if (!currentAudio.paused && !currentAudio.ended) {
+                startRecordPlaybackProgressLoop(currentAudio, focusedRecord);
+            }
+        }
     }
 
     function toggleCharacterFilter(characterId: number) {
@@ -475,6 +737,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }
 
     function selectStripCue(cueId: number, characterId: number) {
+        stopRecordPlayback();
         setSelectedCharacterIds((current) => (current.includes(characterId) ? current : [...current, characterId]));
         setSelectedCueId(cueId);
     }
@@ -616,7 +879,10 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                     <button
                                         className={`tr-cue-row ${item.cueId === selectedCue?.cueId ? 'active' : ''} ${item.status}`}
                                         key={item.cueId}
-                                        onClick={() => setSelectedCueId(item.cueId)}
+                                        onClick={() => {
+                                            stopRecordPlayback();
+                                            setSelectedCueId(item.cueId);
+                                        }}
                                         style={{ borderColor: item.cueId === selectedCue?.cueId ? item.characterColor : undefined }}
                                         type="button"
                                     >
@@ -734,45 +1000,83 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                     <section className="tr-read-panel">
                         <div className="tr-read-content">
                             {selectedCue ? (
-                                <>
-                                    <span className="tr-character-pill" style={{ borderColor: selectedCue.characterColor, color: selectedCue.characterColor }}>
-                                        {selectedCue.characterName}
-                                    </span>
-                                    <h1>{selectedCue.text}</h1>
-                                    <p>
-                                        {selectedCue.trackName} · {formatMs(selectedCue.startTime)} - {formatMs(selectedCue.endTime)}
-                                    </p>
-                                </>
+                                <div className="tr-cue-stage">
+                                    <div className="tr-cue-preview" style={selectedCueClip ? getStripClipStyle(selectedCueClip) : undefined}>
+                                        {selectedCueClip ? (
+                                            <RecordStagePreview clip={selectedCueClip} />
+                                        ) : (
+                                            <div className="tr-empty">연결된 이미지가 없습니다.</div>
+                                        )}
+                                    </div>
+                                    <div className="tr-cue-caption">
+                                        <span className="tr-character-pill" style={{ borderColor: selectedCue.characterColor, color: selectedCue.characterColor }}>
+                                            {selectedCue.characterName}
+                                        </span>
+                                        <h1>{selectedCue.text}</h1>
+                                        <p>{selectedCue.trackName}</p>
+                                    </div>
+                                </div>
                             ) : (
                                 <div className="tr-empty large">녹음할 대사가 없습니다.</div>
                             )}
                         </div>
 
                         <div className="tr-record-console">
-                            <div className="tr-waveform" aria-label="파형">
-                                {currentWave.map((height, index) => (
-                                    <i key={index} style={{ height: `${height}%` }} />
-                                ))}
-                                <span>{isRecording ? formatMs(recordingMs) : formatMs(selectedCue?.durationMs ?? 0)}</span>
+                            <div
+                                aria-label="녹음 재생 위치"
+                                aria-valuemax={100}
+                                aria-valuemin={0}
+                                aria-valuenow={Math.round(waveformProgressPercent)}
+                                className={`tr-waveform ${isWaveformLoading ? 'loading' : ''}`}
+                                onPointerDown={seekRecordWaveform}
+                                ref={waveformRef}
+                                role="slider"
+                                style={waveformStyle}
+                                tabIndex={focusedRecord && !isRecording ? 0 : -1}
+                            >
+                                {hasRecordWaveform ? (
+                                    <>
+                                        <div className="tr-waveform-bars">
+                                            {currentWave.map((height, index) => (
+                                                <i key={index} style={{ height: `${height}%` }} />
+                                            ))}
+                                        </div>
+                                        {!isRecording ? (
+                                            <div aria-hidden="true" className="tr-waveform-progress">
+                                                {currentWave.map((height, index) => (
+                                                    <i key={index} style={{ height: `${height}%` }} />
+                                                ))}
+                                            </div>
+                                        ) : null}
+                                        <span className="tr-waveform-time">{formatDurationSeconds(waveformDurationMs)}</span>
+                                    </>
+                                ) : (
+                                    <div className="tr-waveform-empty">녹음 파일 없음</div>
+                                )}
                             </div>
                             <div className="tr-transport">
-                                <button aria-label="이전 대사" onClick={() => selectAdjacentCue(-1)} type="button">
-                                    <StudioCatalogIcon name="chevronLeft" />
-                                </button>
-                                <button aria-label="다음 대사" onClick={() => selectAdjacentCue(1)} type="button">
-                                    <StudioCatalogIcon name="chevronRight" />
-                                </button>
                                 <button
-                                    aria-label={isRecording ? '녹음 정지' : '녹음 시작'}
-                                    className={`tr-record-main ${isRecording ? 'recording' : ''}`}
-                                    disabled={!selectedCue || !selectedArtistId || isSavingRecord}
-                                    onClick={() => void toggleRecording()}
+                                    aria-label={isFocusedRecordPlaying ? '일시정지' : '재생'}
+                                    disabled={!focusedRecord || isRecording}
+                                    onClick={() => toggleRecordPlayback()}
                                     type="button"
                                 >
-                                    <span />
+                                    <StudioCatalogIcon name={isFocusedRecordPlaying ? 'pause' : 'play'} />
+                                    <span>{isFocusedRecordPlaying ? '일시정지' : '재생'}</span>
                                 </button>
-                                <button disabled={!selectedCue || !selectedArtistId || isSavingRecord} onClick={() => void toggleRecording()} type="button">
-                                    {isRecording ? '정지' : isSavingRecord ? '저장' : '녹음'}
+                                <button aria-label="정지" disabled={!isRecording && !playingRecordKey} onClick={stopTransport} type="button">
+                                    <StudioCatalogIcon name="stop" />
+                                    <span>정지</span>
+                                </button>
+                                <button
+                                    aria-label="녹음"
+                                    className={`tr-record-action ${isRecording ? 'recording' : ''}`}
+                                    disabled={!selectedCue || !selectedArtistId || isSavingRecord || isRecording}
+                                    onClick={() => void startRecording()}
+                                    type="button"
+                                >
+                                    <StudioCatalogIcon name="mic" />
+                                    <span>{isSavingRecord ? '저장 중' : '녹음'}</span>
                                 </button>
                             </div>
                             {message ? <p className="tr-record-message">{message}</p> : null}
@@ -782,28 +1086,54 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                     <aside className="tr-take-panel">
                         <div className="tr-panel-head">
                             <div>
-                                <h2>테이크</h2>
+                                <h2>레코드 목록</h2>
                                 <p>{selectedCue ? `${selectedRecords.length}개` : '0개'}</p>
                             </div>
                         </div>
                         <div className="tr-take-list">
                             {selectedRecords.map((record, index) => {
                                 const recordApiId = getMutableRecordApiId(record);
+                                const recordKey = getRecordingTakeKey(record);
 
                                 return (
-                                    <article className={`tr-take-card ${record.isAccepted ? 'accepted' : ''}`} key={`${record.source}-${record.id}`}>
-                                        <button onClick={() => playRecord(record.audioUrl)} type="button">
-                                            <StudioCatalogIcon name="play" />
+                                    <article
+                                        className={`tr-take-card ${record.isAccepted ? 'accepted' : ''} ${recordKey === activeFocusedRecordKey ? 'is-focused' : ''}`}
+                                        key={recordKey}
+                                        onClick={() => {
+                                            stopRecordPlayback();
+                                            setFocusedRecordKey(recordKey);
+                                        }}
+                                        onKeyDown={(event) => {
+                                            if (event.key !== 'Enter' && event.key !== ' ') return;
+
+                                            event.preventDefault();
+                                            stopRecordPlayback();
+                                            setFocusedRecordKey(recordKey);
+                                        }}
+                                        role="button"
+                                        tabIndex={0}
+                                    >
+                                        <button
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                toggleRecordPlayback(record);
+                                            }}
+                                            type="button"
+                                        >
+                                            <StudioCatalogIcon name={playingRecordKey === recordKey && !isRecordPlaybackPaused ? 'pause' : 'play'} />
                                         </button>
                                         <div>
                                             <strong>테이크 {index + 1}</strong>
                                             <small>
-                                                서버 기록 · {formatMs(record.durationMs ?? 0)}
+                                                서버 기록 · {formatDurationSeconds(record.durationMs ?? 0)}
                                             </small>
                                         </div>
                                         <button
                                             disabled={!recordApiId || record.isAccepted || isSavingRecord}
-                                            onClick={() => void acceptRecord(record)}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                void acceptRecord(record);
+                                            }}
                                             type="button"
                                         >
                                             {record.isAccepted ? '채택' : '채택하기'}
@@ -811,7 +1141,10 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                         <button
                                             aria-label="테이크 삭제"
                                             disabled={!recordApiId || isSavingRecord}
-                                            onClick={() => void deleteRecord(record)}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                void deleteRecord(record);
+                                            }}
                                             type="button"
                                         >
                                             <StudioCatalogIcon name="trash" />
@@ -821,22 +1154,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                             })}
                             {selectedRecords.length === 0 ? <div className="tr-empty">아직 테이크가 없습니다.</div> : null}
                         </div>
-                        <dl className="tr-record-stats">
-                            <div>
-                                <dt>완료 대사</dt>
-                                <dd>
-                                    {progress.done}
-                                    <small> / {progress.total}</small>
-                                </dd>
-                            </div>
-                            <div>
-                                <dt>총 녹음 길이</dt>
-                                <dd>{formatMs(totalApiDuration)}</dd>
-                            </div>
-                        </dl>
-                        <Link className="tp-btn primary tr-export" href={`/studio/products/${product.id}/episodes/${episodeId}`}>
-                            완료본 편집기로 전달
-                        </Link>
                     </aside>
                 </main>
             </div>
@@ -889,6 +1206,48 @@ async function requestRecordingUploadUrl(apiBaseUrl: string, request: { key: str
     return uploadUrl;
 }
 
+async function buildRecordWaveformPeaks(audioUrl: string, barCount: number): Promise<number[]> {
+    const response = await fetch(audioUrl, { cache: 'force-cache' });
+    if (!response.ok) {
+        throw new Error(`Waveform audio request failed: ${response.status}`);
+    }
+
+    const AudioContextConstructor =
+        window.AudioContext ?? (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) {
+        throw new Error('AudioContext is not available');
+    }
+
+    const audioContext = new AudioContextConstructor();
+    try {
+        const audioBuffer = await audioContext.decodeAudioData(await response.arrayBuffer());
+        const safeBarCount = Math.max(1, Math.round(barCount));
+        const samplesPerBar = Math.max(1, Math.floor(audioBuffer.length / safeBarCount));
+        const rawPeaks = Array.from({ length: safeBarCount }, (_, barIndex) => {
+            const start = barIndex * samplesPerBar;
+            const end = barIndex === safeBarCount - 1 ? audioBuffer.length : Math.min(audioBuffer.length, start + samplesPerBar);
+            let sumSquares = 0;
+            let sampleCount = 0;
+
+            for (let channelIndex = 0; channelIndex < audioBuffer.numberOfChannels; channelIndex += 1) {
+                const channelData = audioBuffer.getChannelData(channelIndex);
+                for (let sampleIndex = start; sampleIndex < end; sampleIndex += 1) {
+                    const sample = channelData[sampleIndex] ?? 0;
+                    sumSquares += sample * sample;
+                    sampleCount += 1;
+                }
+            }
+
+            return sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
+        });
+        const maxPeak = Math.max(...rawPeaks, 0.001);
+
+        return rawPeaks.map((peak) => Math.round(Math.min(96, Math.max(10, 10 + (peak / maxPeak) * 86))));
+    } finally {
+        void audioContext.close().catch(() => undefined);
+    }
+}
+
 function getStripClipStyle(clip: VisualClip): CSSProperties {
     return {
         background: clip.background,
@@ -897,6 +1256,16 @@ function getStripClipStyle(clip: VisualClip): CSSProperties {
 
 function RecordStripPreview({ clip }: { clip: VisualClip }) {
     if (!clip.mediaUrl) return null;
+
+    if (clip.mediaType === 'video') {
+        return <video muted playsInline preload="metadata" src={clip.mediaUrl} />;
+    }
+
+    return <img alt="" src={clip.mediaUrl} />;
+}
+
+function RecordStagePreview({ clip }: { clip: VisualClip }) {
+    if (!clip.mediaUrl) return <div className="tr-empty">연결된 이미지가 없습니다.</div>;
 
     if (clip.mediaType === 'video') {
         return <video muted playsInline preload="metadata" src={clip.mediaUrl} />;
@@ -939,6 +1308,24 @@ function getMutableRecordApiId(record: RecordingTakeSummary): number | undefined
     return getRecordApiId(record.id);
 }
 
+function getRecordingTakeKey(record: RecordingTakeSummary): string {
+    return `${record.source}-${record.id}`;
+}
+
+function getLatestRecordingTake(records: RecordingTakeSummary[]): RecordingTakeSummary | undefined {
+    return records.reduce<RecordingTakeSummary | undefined>((latestRecord, record) => {
+        if (!latestRecord) return record;
+
+        const recordId = getMutableRecordApiId(record) ?? record.id;
+        const latestRecordId = getMutableRecordApiId(latestRecord) ?? latestRecord.id;
+        return recordId >= latestRecordId ? record : latestRecord;
+    }, undefined);
+}
+
+function getRecordDurationSeconds(record: RecordingTakeSummary): number {
+    return typeof record.durationMs === 'number' && record.durationMs > 0 ? record.durationMs / 1000 : 0;
+}
+
 function stopRecordingStream(stream: MediaStream | null) {
     stream?.getTracks().forEach((track) => track.stop());
 }
@@ -959,6 +1346,17 @@ function formatMs(milliseconds: number): string {
     const tenths = Math.floor((safeMs % 1000) / 100);
 
     return `${minutes}:${String(seconds).padStart(2, '0')}.${tenths}`;
+}
+
+function formatDurationSeconds(milliseconds: number): string {
+    const seconds = Math.max(0, milliseconds) / 1000;
+    const fractionDigits = seconds < 10 ? 3 : 1;
+    const formattedSeconds = seconds
+        .toFixed(fractionDigits)
+        .replace(/(\.\d*?)0+$/, '$1')
+        .replace(/\.$/, '');
+
+    return `${formattedSeconds}초`;
 }
 
 function createWave(seed: string | number, count: number): number[] {

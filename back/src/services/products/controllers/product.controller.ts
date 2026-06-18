@@ -1,4 +1,4 @@
-import { Body, Controller, Dependencies, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Dependencies, Get, Param, ParseIntPipe, Post, Put } from '@nestjs/common';
 import { ProductService } from '../applications/product.service';
 import { ProductCreateDto, ProductUpdateDto } from './dto';
 
@@ -68,6 +68,22 @@ export class ProductController {
 
         // 3. Get result
         await this.productService.update({ productId, title, subtitle, coverImageUrl });
+
+        // 4. Send response
+        return { data: {} };
+    }
+
+    /**
+     * 작품 삭제
+     */
+    @Delete('/products/:productId')
+    async delete(@Param('productId', ParseIntPipe) productId: number) {
+        // 1. Destructure body, params, query
+
+        // 2. Get context
+
+        // 3. Get result
+        await this.productService.delete({ productId });
 
         // 4. Send response
         return { data: {} };

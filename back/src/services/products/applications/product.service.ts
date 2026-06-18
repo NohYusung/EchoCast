@@ -69,4 +69,14 @@ export class ProductService extends DddService {
         product.update({ title, subtitle, coverImageUrl });
         await this.productRepository.save([product]);
     }
+
+    async delete({ productId }: { productId: number }) {
+        const [product] = await this.productRepository.find({ id: productId });
+
+        if (!product) {
+            throw new NotFoundException('작품을 찾을 수 없습니다.');
+        }
+
+        await this.productRepository.softRemove([product]);
+    }
 }

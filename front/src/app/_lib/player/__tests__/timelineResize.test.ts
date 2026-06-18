@@ -3,10 +3,12 @@ import { test } from 'node:test';
 import {
     clampTimelineAudioResizeTiming,
     getTimelineAudioClipMaxDurationSeconds,
+    getTimelineAudioClipResizeMaxDurationSeconds,
     getTimelinePanelResizeHeight,
     getTimelineResizeMinDurationSeconds,
     getTimelineSidebarResizeWidth,
 } from '../timelineResize';
+import { applyCueAudioTimelineEditTiming, toCueTimingUpdateRequest } from '../cueTimelinePersistence';
 
 test('getTimelineSidebarResizeWidth adjusts width by horizontal pointer delta', () => {
     assert.equal(
@@ -88,6 +90,34 @@ test('getTimelineAudioClipMaxDurationSeconds falls back to the source audio dura
     );
 });
 
+test('getTimelineAudioClipResizeMaxDurationSeconds lets start resize restore trimmed front audio', () => {
+    assert.equal(
+        getTimelineAudioClipResizeMaxDurationSeconds(
+            {
+                audioStart: 4,
+                audioEnd: 7,
+                audioDuration: 12,
+            },
+            'start',
+        ),
+        7,
+    );
+});
+
+test('getTimelineAudioClipResizeMaxDurationSeconds lets end resize restore trimmed tail audio', () => {
+    assert.equal(
+        getTimelineAudioClipResizeMaxDurationSeconds(
+            {
+                audioStart: 2,
+                audioEnd: 5,
+                audioDuration: 12,
+            },
+            'end',
+        ),
+        10,
+    );
+});
+
 test('clampTimelineAudioResizeTiming prevents end resize from exceeding source duration', () => {
     assert.deepEqual(
         clampTimelineAudioResizeTiming({
@@ -124,4 +154,81 @@ test('clampTimelineAudioResizeTiming prevents start resize from exceeding source
 
 test('getTimelineResizeMinDurationSeconds does not force short source audio over its max duration', () => {
     assert.equal(getTimelineResizeMinDurationSeconds(0.25, 0.5), 0.25);
+});
+
+test('applyCueAudioTimelineEditTiming trims audio from the front when start is resized', () => {
+    assert.deepEqual(
+        applyCueAudioTimelineEditTiming(
+            {
+                start: 10,
+                duration: 5,
+                audioStart: 2,
+                audioEnd: 7,
+                audioDuration: 12,
+            },
+            {
+                mode: 'resize-start',
+                originalStart: 10,
+                originalDuration: 5,
+            },
+            {
+                start: 12,
+                duration: 3,
+            },
+        ),
+        {
+            start: 12,
+            duration: 3,
+            audioStart: 4,
+            audioEnd: 7,
+            audioDuration: 12,
+        },
+    );
+});
+
+test('applyCueAudioTimelineEditTiming trims audio from the end when end is resized', () => {
+    assert.deepEqual(
+        applyCueAudioTimelineEditTiming(
+            {
+                start: 10,
+                duration: 5,
+                audioStart: 2,
+                audioEnd: 7,
+                audioDuration: 12,
+            },
+            {
+                mode: 'resize-end',
+                originalStart: 10,
+                originalDuration: 5,
+            },
+            {
+                start: 10,
+                duration: 3,
+            },
+        ),
+        {
+            start: 10,
+            duration: 3,
+            audioStart: 2,
+            audioEnd: 5,
+            audioDuration: 12,
+        },
+    );
+});
+
+test('toCueTimingUpdateRequest sends cue audio trim range with timeline range', () => {
+    assert.deepEqual(
+        toCueTimingUpdateRequest({
+            start: 12,
+            duration: 3,
+            audioStart: 4,
+            audioEnd: 7,
+        }),
+        {
+            startTime: 12000,
+            endTime: 15000,
+            audioStartTime: 4000,
+            audioEndTime: 7000,
+        },
+    );
 });

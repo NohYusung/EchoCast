@@ -19,8 +19,10 @@ type TimelineAudioDurationSource = {
     audioDuration?: number;
 };
 
+type TimelineAudioResizeEdge = 'start' | 'end';
+
 type TimelineAudioResizeTimingArgs = {
-    edge: 'start' | 'end';
+    edge: TimelineAudioResizeEdge;
     start: number;
     duration: number;
     itemEnd: number;
@@ -70,6 +72,29 @@ export function getTimelineAudioClipMaxDurationSeconds({
             : undefined;
 
     return toPositiveFiniteDuration(sourceRangeDuration) ?? toPositiveFiniteDuration(audioDuration);
+}
+
+export function getTimelineAudioClipResizeMaxDurationSeconds(
+    { audioStart, audioEnd, audioDuration }: TimelineAudioDurationSource,
+    edge: TimelineAudioResizeEdge,
+) {
+    const normalizedAudioStart =
+        typeof audioStart === 'number' && Number.isFinite(audioStart) && audioStart > 0 ? audioStart : 0;
+    const normalizedAudioEnd =
+        typeof audioEnd === 'number' && Number.isFinite(audioEnd) && audioEnd > 0 ? audioEnd : undefined;
+    const normalizedAudioDuration = toPositiveFiniteDuration(audioDuration);
+
+    if (edge === 'start') {
+        return toPositiveFiniteDuration(normalizedAudioEnd) ?? normalizedAudioDuration;
+    }
+
+    if (normalizedAudioDuration !== undefined) {
+        return toPositiveFiniteDuration(normalizedAudioDuration - normalizedAudioStart);
+    }
+
+    return normalizedAudioEnd !== undefined && normalizedAudioEnd > normalizedAudioStart
+        ? normalizedAudioEnd - normalizedAudioStart
+        : undefined;
 }
 
 export function getTimelineResizeMinDurationSeconds(maxDuration: number | undefined, fallbackMinDuration: number) {

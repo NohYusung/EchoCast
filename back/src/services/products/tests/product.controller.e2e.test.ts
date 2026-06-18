@@ -116,3 +116,58 @@ test('PUT /products/:productId updates product information', async () => {
         await app.close();
     }
 });
+
+test('DELETE /products/:productId soft deletes a product and removes it from product list', async () => {
+    const moduleRef = await Test.createTestingModule({
+        imports: [AppModule],
+    }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+
+    await app.init();
+
+    try {
+        const title = `삭제 대상 작품 ${Date.now()}`;
+        await request(app.getHttpServer())
+            .post('/products')
+            .send({
+                title,
+                subtitle: '삭제 대상 부제목',
+                coverImageUrl: 'https://assets.example.com/product-delete.png',
+            })
+            .expect(201);
+
+        const beforeListResponse = await request(app.getHttpServer()).get('/products').expect(200);
+        const product = beforeListResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.title === title
+        );
+        assert.ok(product);
+
+        const deleteResponse = await request(app.getHttpServer()).delete(`/products/${product.id}`).expect(200);
+
+        assert.deepEqual(deleteResponse.body, { data: {} });
+
+        const afterListResponse = await request(app.getHttpServer()).get('/products').expect(200);
+        const deletedProduct = afterListResponse.body.data.items.find(
+            (item: { id: number; title: string }) => item.id === product.id
+        );
+
+        assert.equal(deletedProduct, undefined);
+    } finally {
+        await app.close();
+    }
+});
+
+test('DELETE /products/:productId returns 404 for a missing product', async () => {
+    const moduleRef = await Test.createTestingModule({
+        imports: [AppModule],
+    }).compile();
+    const app: INestApplication = moduleRef.createNestApplication();
+
+    await app.init();
+
+    try {
+        await request(app.getHttpServer()).delete('/products/999999').expect(404);
+    } finally {
+        await app.close();
+    }
+});

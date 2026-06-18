@@ -30,7 +30,7 @@ test('buildRecordingUploadFileRequest builds an upload key and forwards content 
     );
 });
 
-test('buildRecordCreateRequest maps ids to the records API contract', () => {
+test('buildRecordCreateRequest maps ids to an unaccepted records API contract by default', () => {
     assert.deepEqual(
         buildRecordCreateRequest({
             cueId: 33,
@@ -44,8 +44,21 @@ test('buildRecordCreateRequest maps ids to the records API contract', () => {
             recordUrl: 'https://assets.example.com/record.webm',
             duration: 1340,
             volume: 1,
-            isAccepted: true,
+            isAccepted: false,
         },
+    );
+});
+
+test('buildRecordCreateRequest preserves an explicit accepted state', () => {
+    assert.equal(
+        buildRecordCreateRequest({
+            cueId: 33,
+            artistId: 'artist-7',
+            recordUrl: 'https://assets.example.com/record.webm',
+            durationMs: 1340,
+            isAccepted: true,
+        }).isAccepted,
+        true,
     );
 });
 

@@ -52,6 +52,7 @@ import {
 } from './previewCanvasSelection';
 import { previewModeDefinitions, type PreviewMode } from './previewModes';
 import {
+    applyCueAudioTimelineEditTiming,
     getCueApiIdFromTimelineClipId,
     resolveCueTimelineTrackId,
     toClickedCuePositionRequest,
@@ -100,6 +101,7 @@ import {
 import {
     clampTimelineAudioResizeTiming,
     getTimelineAudioClipMaxDurationSeconds,
+    getTimelineAudioClipResizeMaxDurationSeconds,
     getTimelinePanelResizeHeight,
     getTimelineResizeMinDurationSeconds,
     getTimelineSidebarResizeWidth,
@@ -173,7 +175,6 @@ type IconName =
     | 'bolt'
     | 'caption'
     | 'cursor'
-    | 'download'
     | 'effect'
     | 'fadeIn'
     | 'fadeOut'
@@ -932,13 +933,6 @@ const iconPaths: Record<IconName, ReactNode> = {
         </>
     ),
     cursor: <path d="m4 3 8 18 2.2-7 6.8-2.4z" />,
-    download: (
-        <>
-            <path d="M12 3v12" />
-            <path d="m7 10 5 5 5-5" />
-            <path d="M5 21h14" />
-        </>
-    ),
     effect: (
         <>
             <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" />
@@ -2635,6 +2629,10 @@ function getTimelineEditTiming(
         start: getTimelineEditSeconds(clamp(edit.originalStart + deltaSeconds, 0, maxStart), isSnapEnabled),
         duration: edit.originalDuration,
     };
+}
+
+function shouldSyncTimelinePointerEditPlayhead(edit: TimelinePointerEdit) {
+    return edit.mode === 'move';
 }
 
 function getTimelineAnchorEditRequest(
@@ -7207,6 +7205,22 @@ export function StudioEditor({
         };
     };
 
+    const updateScrollEventAnchors = async (event: ScrollEventClip) => {
+        const anchorRequests = toScrollAnchorMutationRequests(event);
+
+        if (!anchorRequests) {
+            throw new Error('스크롤 앵커 기준 이미지를 확인할 수 없습니다.');
+        }
+        if (typeof event.startAnchorId !== 'number' || typeof event.endAnchorId !== 'number') {
+            throw new Error('스크롤 이벤트의 앵커 ID가 없습니다.');
+        }
+
+        await Promise.all([
+            updateAnchor(resolvedApiBaseUrl, event.track, event.startAnchorId, anchorRequests.start),
+            updateAnchor(resolvedApiBaseUrl, event.track, event.endAnchorId, anchorRequests.end),
+        ]);
+    };
+
     const persistScrollEventUpdate = async (event: ScrollEventClip) => {
         const scrollId = getScrollEventApiId(event);
 
@@ -7215,9 +7229,7 @@ export function StudioEditor({
         }
 
         try {
-            const request = await createScrollEventMutationRequest(event);
-
-            await updateScrollEvent(resolvedApiBaseUrl, event.track, scrollId, request);
+            await updateScrollEventAnchors(event);
             await refreshTimelineTracks();
             setTrackLoadError(null);
         } catch (error) {
@@ -8284,7 +8296,7 @@ export function StudioEditor({
         }
 
         const currentEnd = targetClip.start + targetClip.duration;
-        const maxDuration = getTimelineAudioClipMaxDurationSeconds(targetClip);
+        const maxDuration = getTimelineAudioClipResizeMaxDurationSeconds(targetClip, edge);
         const minDuration = getTimelineResizeMinDurationSeconds(maxDuration, MIN_TIMELINE_ITEM_DURATION_SECONDS);
         const nextClip =
             edge === 'start'
@@ -8302,11 +8314,15 @@ export function StudioEditor({
                           minDuration,
                       });
 
-                      return {
-                          ...targetClip,
-                          start: nextTiming.start,
-                          duration: nextTiming.duration,
-                      };
+                      return applyCueAudioTimelineEditTiming(
+                          targetClip,
+                          {
+                              mode: 'resize-start',
+                              originalStart: targetClip.start,
+                              originalDuration: targetClip.duration,
+                          },
+                          nextTiming
+                      );
                   })()
                 : (() => {
                       const nextEnd = getTimelineEditSeconds(
@@ -8322,10 +8338,15 @@ export function StudioEditor({
                           minDuration,
                       });
 
-                      return {
-                          ...targetClip,
-                          duration: nextTiming.duration,
-                      };
+                      return applyCueAudioTimelineEditTiming(
+                          targetClip,
+                          {
+                              mode: 'resize-end',
+                              originalStart: targetClip.start,
+                              originalDuration: targetClip.duration,
+                          },
+                          nextTiming
+                      );
                   })();
 
         setTimelineData((current) => ({
@@ -8863,7 +8884,9 @@ export function StudioEditor({
             originalStart: item.start,
             originalDuration: item.duration,
             maxDuration: targetAudioClip
-                ? getTimelineAudioClipMaxDurationSeconds(targetAudioClip)
+                ? mode === 'resize-start' || mode === 'resize-end'
+                    ? getTimelineAudioClipResizeMaxDurationSeconds(targetAudioClip, mode === 'resize-start' ? 'start' : 'end')
+                    : getTimelineAudioClipMaxDurationSeconds(targetAudioClip)
                 : targetVideoClip
                   ? getVideoTimelineClipMaxDurationSeconds(targetVideoClip)
                   : undefined,
@@ -8907,13 +8930,15 @@ export function StudioEditor({
                 ...current,
                 timelineClips: current.timelineClips.map((clip) =>
                     clip.id === timelinePointerEdit.itemId
-                        ? { ...clip, start: timing.start, duration: timing.duration }
+                        ? applyCueAudioTimelineEditTiming(clip, timelinePointerEdit, timing)
                         : clip
                 ),
             }));
         }
 
-        setPlayhead(timing.start);
+        if (shouldSyncTimelinePointerEditPlayhead(timelinePointerEdit)) {
+            setPlayhead(timing.start);
+        }
     };
 
     const handleEndTimelinePointerEdit = (event: ReactPointerEvent<HTMLElement>) => {
@@ -8952,7 +8977,9 @@ export function StudioEditor({
                         scrollEvent.id === timelinePointerEdit.itemId ? nextScrollEvent : scrollEvent
                     )
                 );
-                setPlayhead(timing.start);
+                if (shouldSyncTimelinePointerEditPlayhead(timelinePointerEdit)) {
+                    setPlayhead(timing.start);
+                }
                 void persistScrollEventUpdate(nextScrollEvent);
             }
         } else if (timelinePointerEdit.itemKind === 'video') {
@@ -8977,7 +9004,9 @@ export function StudioEditor({
                 );
 
                 setEditableVisualClips(nextVisualClips);
-                setPlayhead(timing.start);
+                if (shouldSyncTimelinePointerEditPlayhead(timelinePointerEdit)) {
+                    setPlayhead(timing.start);
+                }
                 void persistVideoTimelineUpdate(nextClip, nextVisualClips);
             }
         } else {
@@ -8991,11 +9020,7 @@ export function StudioEditor({
                     timelineDurationSeconds,
                     isSnapEnabled
                 );
-                const nextClip = {
-                    ...targetClip,
-                    start: timing.start,
-                    duration: timing.duration,
-                };
+                const nextClip = applyCueAudioTimelineEditTiming(targetClip, timelinePointerEdit, timing);
 
                 setTimelineData((current) => ({
                     ...current,
@@ -9003,7 +9028,9 @@ export function StudioEditor({
                         clip.id === timelinePointerEdit.itemId ? nextClip : clip
                     ),
                 }));
-                setPlayhead(timing.start);
+                if (shouldSyncTimelinePointerEditPlayhead(timelinePointerEdit)) {
+                    setPlayhead(timing.start);
+                }
                 void persistCueTimingUpdate(nextClip);
             }
         }
@@ -9899,14 +9926,6 @@ export function StudioEditor({
                     <span>{formatTime(playhead)}</span>
                 </div>
                 <div className="odx-top-actions">
-                    <button className="odx-top-action" type="button">
-                        <StudioIcon name="mic" size={16} />
-                        음성 합성
-                    </button>
-                    <button className="odx-top-action odx-primary-action" type="button">
-                        <StudioIcon name="download" size={16} />
-                        내보내기
-                    </button>
                     <span className="odx-user">N</span>
                 </div>
             </header>

@@ -78,7 +78,7 @@ export function buildRecordCreateRequest({
     recordUrl,
     durationMs,
     volume = 1,
-    isAccepted = true,
+    isAccepted = false,
 }: RecordCreateInput): RecordCreateRequest {
     const cueApiId = getRecordApiId(cueId);
     const artistApiId = getRecordApiId(artistId);
