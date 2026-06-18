@@ -20,5 +20,8 @@ front/coverage/
 
 .env
 .env.*
+!.env.example
+!back/.env.example
+!front/.env.example
 .DS_Store
 AGENTS.md

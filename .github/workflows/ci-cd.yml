@@ -1,0 +1,241 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      common: ${{ steps.filter.outputs.common }}
+      back: ${{ steps.filter.outputs.back }}
+      front: ${{ steps.filter.outputs.front }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            common:
+              - ".github/workflows/**"
+              - "package.json"
+              - "package-lock.json"
+              - "tsconfig.base.json"
+              - ".prettierrc"
+            back:
+              - "back/**"
+            front:
+              - "front/**"
+
+  back_ci:
+    name: Back CI
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.common == 'true' || needs.changes.outputs.back == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck back
+        run: npm run typecheck --workspace @new-dubright/back
+
+      - name: Test back
+        run: npm run test --workspace @new-dubright/back
+
+  front_ci:
+    name: Front CI
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.common == 'true' || needs.changes.outputs.front == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck front
+        run: npm run typecheck --workspace @new-dubright/front
+
+      - name: Test front
+        run: npm run test --workspace @new-dubright/front
+
+      - name: Build front
+        run: npm run build --workspace @new-dubright/front
+
+  backend_delivery:
+    name: Backend delivery artifact
+    needs:
+      - changes
+      - back_ci
+    if: ${{ github.event_name != 'pull_request' && needs.back_ci.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.common == 'true' || needs.changes.outputs.back == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build backend
+        run: npm run build --workspace @new-dubright/back
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: new-dubright-backend
+          path: |
+            back/dist
+            back/package.json
+          if-no-files-found: error
+          retention-days: 14
+
+  frontend_delivery:
+    name: Frontend delivery artifact
+    needs:
+      - changes
+      - front_ci
+    if: ${{ github.event_name != 'pull_request' && needs.front_ci.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.common == 'true' || needs.changes.outputs.front == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build --workspace @new-dubright/front
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: new-dubright-frontend
+          path: |
+            front/.next
+            front/public
+            front/package.json
+          if-no-files-found: error
+          retention-days: 14
+
+  backend_deploy:
+    name: Backend deploy
+    needs: backend_delivery
+    if: ${{ vars.BACKEND_DEPLOY_ENABLED == 'true' && needs.backend_delivery.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: backend-production
+    steps:
+      - name: Deployment is not configured
+        run: |
+          echo "Configure the backend deployment command before setting BACKEND_DEPLOY_ENABLED=true."
+          exit 1
+
+  frontend_deploy:
+    name: Frontend deploy
+    needs: frontend_delivery
+    if: ${{ vars.FRONTEND_DEPLOY_ENABLED == 'true' && needs.frontend_delivery.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: frontend-production
+    steps:
+      - name: Deployment is not configured
+        run: |
+          echo "Configure the frontend deployment command before setting FRONTEND_DEPLOY_ENABLED=true."
+          exit 1
+
+  ci_cd_summary:
+    name: CI/CD summary
+    needs:
+      - changes
+      - back_ci
+      - front_ci
+      - backend_delivery
+      - frontend_delivery
+      - backend_deploy
+      - frontend_deploy
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI/CD result
+        run: |
+          echo "changes=${{ needs.changes.result }}"
+          echo "back_ci=${{ needs.back_ci.result }}"
+          echo "front_ci=${{ needs.front_ci.result }}"
+          echo "backend_delivery=${{ needs.backend_delivery.result }}"
+          echo "frontend_delivery=${{ needs.frontend_delivery.result }}"
+          echo "backend_deploy=${{ needs.backend_deploy.result }}"
+          echo "frontend_deploy=${{ needs.frontend_deploy.result }}"
+
+          if [ "${{ needs.changes.result }}" = "failure" ] || [ "${{ needs.changes.result }}" = "cancelled" ]; then
+            exit 1
+          fi
+
+          if [ "${{ needs.back_ci.result }}" = "failure" ] || [ "${{ needs.back_ci.result }}" = "cancelled" ]; then
+            exit 1
+          fi
+
+          if [ "${{ needs.front_ci.result }}" = "failure" ] || [ "${{ needs.front_ci.result }}" = "cancelled" ]; then
+            exit 1
+          fi
+
+          if [ "${{ needs.backend_delivery.result }}" = "failure" ] || [ "${{ needs.backend_delivery.result }}" = "cancelled" ]; then
+            exit 1
+          fi
+
+          if [ "${{ needs.frontend_delivery.result }}" = "failure" ] || [ "${{ needs.frontend_delivery.result }}" = "cancelled" ]; then
+            exit 1
+          fi
+
+          if [ "${{ needs.backend_deploy.result }}" = "failure" ] || [ "${{ needs.backend_deploy.result }}" = "cancelled" ]; then
+            exit 1
+          fi
+
+          if [ "${{ needs.frontend_deploy.result }}" = "failure" ] || [ "${{ needs.frontend_deploy.result }}" = "cancelled" ]; then
+            exit 1
+          fi

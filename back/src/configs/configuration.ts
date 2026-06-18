@@ -18,16 +18,6 @@ export interface AppConfig {
     aws?: AwsConfig;
 }
 
-type DatabaseMode = 'memory' | 'file' | 'mysql' | 'mariadb';
-
-function resolveDatabaseMode(env: Record<string, string | undefined>): DatabaseMode {
-    const mode = readEnv(env, 'NEW_DUBRIGHT_DATABASE_MODE', 'TEST_PLAYER_DATABASE_MODE');
-    if (mode === 'file' || mode === 'mysql' || mode === 'mariadb') {
-        return mode;
-    }
-    return 'memory';
-}
-
 function readEnv(env: Record<string, string | undefined>, key: string, legacyKey?: string): string | undefined {
     return env[key] ?? (legacyKey ? env[legacyKey] : undefined);
 }
@@ -40,20 +30,6 @@ function parseNumberEnv(env: Record<string, string | undefined>, key: string, de
     return value;
 }
 
-function parseBooleanEnv(env: Record<string, string | undefined>, key: string, defaultValue: boolean, legacyKey?: string): boolean {
-    const value = readEnv(env, key, legacyKey);
-    if (value === undefined) {
-        return defaultValue;
-    }
-    if (value === 'true') {
-        return true;
-    }
-    if (value === 'false') {
-        return false;
-    }
-    throw new Error(`${key} 설정 값은 true 또는 false여야 합니다.`);
-}
-
 function requireEnv(env: Record<string, string | undefined>, key: string, legacyKey?: string): string {
     const value = readEnv(env, key, legacyKey);
     if (value === undefined || value === '') {
@@ -63,27 +39,17 @@ function requireEnv(env: Record<string, string | undefined>, key: string, legacy
 }
 
 function resolveDatabaseConfig(env: Record<string, string | undefined>): DataSourceOptions {
-    const mode = resolveDatabaseMode(env);
     const isProduction = env.NODE_ENV === 'production';
-
-    if (mode === 'mysql' || mode === 'mariadb') {
-        return {
-            type: mode,
-            host: readEnv(env, 'NEW_DUBRIGHT_DB_HOST', 'TEST_PLAYER_DB_HOST') ?? '127.0.0.1',
-            port: parseNumberEnv(env, 'NEW_DUBRIGHT_DB_PORT', 3306, 'TEST_PLAYER_DB_PORT'),
-            username: requireEnv(env, 'NEW_DUBRIGHT_DB_USERNAME', 'TEST_PLAYER_DB_USERNAME'),
-            password: readEnv(env, 'NEW_DUBRIGHT_DB_PASSWORD', 'TEST_PLAYER_DB_PASSWORD') ?? '',
-            database: requireEnv(env, 'NEW_DUBRIGHT_DB_DATABASE', 'TEST_PLAYER_DB_DATABASE'),
-            synchronize: isProduction ? false : parseBooleanEnv(env, 'NEW_DUBRIGHT_DB_SYNCHRONIZE', false, 'TEST_PLAYER_DB_SYNCHRONIZE'),
-            logging: parseBooleanEnv(env, 'NEW_DUBRIGHT_DB_LOGGING', false, 'TEST_PLAYER_DB_LOGGING'),
-        };
-    }
+    const synchronize = !isProduction;
 
     return {
-        type: 'sqljs',
-        location: mode === 'file' ? (readEnv(env, 'NEW_DUBRIGHT_DB_PATH', 'TEST_PLAYER_DB_PATH') ?? 'new-dubright.sqlite') : undefined,
-        autoSave: mode === 'file',
-        synchronize: isProduction ? false : true,
+        type: 'mariadb',
+        host: readEnv(env, 'NEW_DUBRIGHT_DB_HOST', 'TEST_PLAYER_DB_HOST') ?? '127.0.0.1',
+        port: parseNumberEnv(env, 'NEW_DUBRIGHT_DB_PORT', 3306, 'TEST_PLAYER_DB_PORT'),
+        username: requireEnv(env, 'NEW_DUBRIGHT_DB_USERNAME', 'TEST_PLAYER_DB_USERNAME'),
+        password: readEnv(env, 'NEW_DUBRIGHT_DB_PASSWORD', 'TEST_PLAYER_DB_PASSWORD') ?? '',
+        database: requireEnv(env, 'NEW_DUBRIGHT_DB_DATABASE', 'TEST_PLAYER_DB_DATABASE'),
+        synchronize,
         logging: false,
     };
 }
