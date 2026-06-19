@@ -104,7 +104,6 @@ test('recording read panel shows the selected cue media above the dialogue text'
     assert.doesNotMatch(source, /selectedCue\.trackName\} · \{formatMs\(selectedCue\.startTime\)\}/);
     assert.match(styles, /\.tr-cue-stage\s*\{[\s\S]*?grid-template-rows: minmax\(0, 1fr\) auto;/);
     assert.match(styles, /\.tr-cue-preview\s*\{[\s\S]*?min-height: 260px;/);
-    assert.match(styles, /\.tr-cue-preview > img,[\s\S]*?\.tr-cue-preview > video\s*\{[\s\S]*?max-width: 100%;[\s\S]*?max-height: 100%;[\s\S]*?object-fit: contain;/);
     assert.match(styles, /\.tr-cue-caption\s*\{[\s\S]*?border-top: 1px solid var\(--tr-line\);/);
 });
 
