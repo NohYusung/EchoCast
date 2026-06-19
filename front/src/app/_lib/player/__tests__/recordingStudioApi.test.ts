@@ -62,6 +62,24 @@ test('buildRecordCreateRequest preserves an explicit accepted state', () => {
     );
 });
 
+test('buildRecordCreateRequest omits artist id when recording without an artist', () => {
+    assert.deepEqual(
+        buildRecordCreateRequest({
+            cueId: 33,
+            recordUrl: 'https://assets.example.com/record.webm',
+            durationMs: 1340,
+            isAccepted: true,
+        }),
+        {
+            cueId: 33,
+            recordUrl: 'https://assets.example.com/record.webm',
+            duration: 1340,
+            volume: 1,
+            isAccepted: true,
+        },
+    );
+});
+
 test('getRecordApiId rejects ids without numeric api identity', () => {
     assert.equal(getRecordApiId('cue-local'), undefined);
     assert.equal(getRecordApiId(undefined), undefined);

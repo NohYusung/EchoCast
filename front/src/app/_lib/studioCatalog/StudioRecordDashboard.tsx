@@ -132,10 +132,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
                 setArtists(nextArtists);
                 setSelectedArtistId((current) => current || String(nextArtists[0]?.id ?? ''));
-
-                if (nextArtists.length === 0) {
-                    setMessage('등록된 성우가 없습니다. 성우 등록 화면에서 먼저 성우를 추가하세요.');
-                }
             } catch (error) {
                 if (!isMounted) return;
                 setMessage(toRecordErrorMessage(error, '성우 목록을 불러오지 못했습니다.'));
@@ -339,11 +335,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     async function startRecording() {
         if (!selectedCue) return;
 
-        if (!selectedArtistId) {
-            setMessage('녹음할 성우를 먼저 선택하세요.');
-            return;
-        }
-
         if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
             setMessage('현재 브라우저가 녹음을 지원하지 않습니다.');
             return;
@@ -361,7 +352,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             recordingStreamRef.current = stream;
             recordingChunksRef.current = [];
             recordingCueRef.current = selectedCue;
-            recordingArtistIdRef.current = selectedArtistId;
+            recordingArtistIdRef.current = selectedArtistId || undefined;
             recordingStartedAtRef.current = startedAt;
 
             recorder.ondataavailable = (event) => {
@@ -412,7 +403,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         setRecordingMs(0);
 
         try {
-            if (!cue || !artistId || chunks.length === 0) return;
+            if (!cue || chunks.length === 0) return;
 
             setIsSavingRecord(true);
             const uploadRequest = buildRecordingUploadFileRequest({
@@ -1070,7 +1061,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                 <button
                                     aria-label="녹음"
                                     className={`tr-record-action ${isRecording ? 'recording' : ''}`}
-                                    disabled={!selectedCue || !selectedArtistId || isSavingRecord || isRecording}
+                                    disabled={!selectedCue || isSavingRecord || isRecording}
                                     onClick={() => void startRecording()}
                                     type="button"
                                 >

@@ -76,6 +76,15 @@ test('recording console exposes playback, stop, and record controls', () => {
     assert.doesNotMatch(styles, /\.tr-record-main/);
 });
 
+test('recording can start and save without a selected artist', () => {
+    assert.doesNotMatch(source, /녹음할 성우를 먼저 선택하세요/);
+    assert.doesNotMatch(source, /if \(!cue \|\| !artistId \|\| chunks\.length === 0\) return;/);
+    assert.match(source, /if \(!cue \|\| chunks\.length === 0\) return;/);
+    assert.match(source, /recordingArtistIdRef\.current = selectedArtistId \|\| undefined;/);
+    assert.match(source, /disabled=\{!selectedCue \|\| isSavingRecord \|\| isRecording\}/);
+    assert.doesNotMatch(source, /disabled=\{!selectedCue \|\| !selectedArtistId \|\| isSavingRecord \|\| isRecording\}/);
+});
+
 test('recording screen focuses the latest saved take until the user clicks another take', () => {
     assert.match(source, /const \[focusedRecordKey, setFocusedRecordKey\]/);
     assert.match(source, /const nextRecord = getLatestRecordingTake\(nextCue\?\.records \?\? \[\]\)/);
@@ -95,6 +104,7 @@ test('recording read panel shows the selected cue media above the dialogue text'
     assert.doesNotMatch(source, /selectedCue\.trackName\} · \{formatMs\(selectedCue\.startTime\)\}/);
     assert.match(styles, /\.tr-cue-stage\s*\{[\s\S]*?grid-template-rows: minmax\(0, 1fr\) auto;/);
     assert.match(styles, /\.tr-cue-preview\s*\{[\s\S]*?min-height: 260px;/);
+    assert.match(styles, /\.tr-cue-preview > img,[\s\S]*?\.tr-cue-preview > video\s*\{[\s\S]*?max-width: 100%;[\s\S]*?max-height: 100%;[\s\S]*?object-fit: contain;/);
     assert.match(styles, /\.tr-cue-caption\s*\{[\s\S]*?border-top: 1px solid var\(--tr-line\);/);
 });
 

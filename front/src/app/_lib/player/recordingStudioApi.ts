@@ -13,7 +13,7 @@ export interface RecordingUploadFileRequest {
 
 export interface RecordCreateInput {
     cueId: number;
-    artistId: string;
+    artistId?: number | string | null;
     recordUrl: string;
     durationMs: number;
     volume?: number;
@@ -22,14 +22,14 @@ export interface RecordCreateInput {
 
 export interface RecordCreateRequest {
     cueId: number;
-    artistId: number;
+    artistId?: number;
     recordUrl: string;
     duration: number;
     volume: number;
     isAccepted: boolean;
 }
 
-export function getRecordApiId(value?: number | string): number | undefined {
+export function getRecordApiId(value?: number | string | null): number | undefined {
     if (typeof value === 'number') return Number.isInteger(value) && value > 0 ? value : undefined;
     if (!value) return undefined;
 
@@ -87,18 +87,19 @@ export function buildRecordCreateRequest({
         throw new Error('녹음할 큐의 API ID를 확인할 수 없습니다.');
     }
 
-    if (!artistApiId) {
-        throw new Error('성우 API ID를 확인할 수 없습니다.');
-    }
-
-    return {
+    const request: RecordCreateRequest = {
         cueId: cueApiId,
-        artistId: artistApiId,
         recordUrl,
         duration: Math.max(0, Math.round(durationMs)),
         volume,
         isAccepted,
     };
+
+    if (artistApiId) {
+        request.artistId = artistApiId;
+    }
+
+    return request;
 }
 
 function sanitizePathSegment(value: string): string {
