@@ -16,7 +16,6 @@ export interface RecordCreateInput {
     artistId?: number | string | null;
     recordUrl: string;
     durationMs: number;
-    volume?: number;
     isAccepted?: boolean;
 }
 
@@ -25,7 +24,6 @@ export interface RecordCreateRequest {
     artistId?: number;
     recordUrl: string;
     duration: number;
-    volume: number;
     isAccepted: boolean;
 }
 
@@ -77,7 +75,6 @@ export function buildRecordCreateRequest({
     artistId,
     recordUrl,
     durationMs,
-    volume = 1,
     isAccepted = false,
 }: RecordCreateInput): RecordCreateRequest {
     const cueApiId = getRecordApiId(cueId);
@@ -91,7 +88,6 @@ export function buildRecordCreateRequest({
         cueId: cueApiId,
         recordUrl,
         duration: Math.max(0, Math.round(durationMs)),
-        volume,
         isAccepted,
     };
 

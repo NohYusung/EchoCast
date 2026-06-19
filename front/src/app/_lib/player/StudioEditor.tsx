@@ -62,6 +62,7 @@ import {
     toCueTimingUpdateRequest,
     type CueStripPositionRequest,
 } from './cueTimelinePersistence';
+import { applyAcceptedRecordsToTimelineClips } from './recordTimelinePlayback';
 import type { PlayerDraft } from './playerDraft.types';
 import type { PlayerManifest } from './playerManifest.types';
 import {
@@ -588,9 +589,9 @@ type RecordListItem = {
     id: number;
     cueId: number;
     artistId?: number | null;
-    recordUrl: string;
+    audioId?: number | null;
+    recordUrl?: string;
     duration?: number;
-    volume: number;
     isAccepted: boolean;
 };
 type RecordListResponse = {
@@ -5362,8 +5363,13 @@ function InspectorPanel({
                                                 typeof record.duration === 'number'
                                                     ? formatTime(toTimelineSeconds(record.duration))
                                                     : '길이 없음';
-                                            const recordName = record.recordUrl.split('/').filter(Boolean).pop() ?? record.recordUrl;
+                                            const recordName = record.recordUrl
+                                                ? (record.recordUrl.split('/').filter(Boolean).pop() ?? record.recordUrl)
+                                                : `record ${record.id}`;
                                             const isTargetImporting = recordImportState.importingRecordId === record.id;
+                                            const canImportRecord =
+                                                Boolean(record.recordUrl) &&
+                                                typeof record.duration === 'number';
 
                                             return (
                                                 <div className="odx-record-import-row" key={record.id}>
@@ -5376,7 +5382,7 @@ function InspectorPanel({
                                                     <button
                                                         disabled={
                                                             recordImportState.isImporting ||
-                                                            typeof record.duration !== 'number'
+                                                            !canImportRecord
                                                         }
                                                         onClick={() => void onImportAcceptedRecord(item.id, record.id)}
                                                         type="button"
@@ -6680,6 +6686,15 @@ export function StudioEditor({
         () => new Map(timelineData.audioTracks.map((track) => [track.id, track])),
         [timelineData.audioTracks]
     );
+    const playbackTimelineClips = useMemo(
+        () =>
+            applyAcceptedRecordsToTimelineClips({
+                clips: timelineData.timelineClips,
+                records: recordItems,
+                tracks: timelineData.audioTracks,
+            }),
+        [recordItems, timelineData.audioTracks, timelineData.timelineClips]
+    );
     const cutCueTracks = useMemo(
         () => timelineData.audioTracks.filter((track) => !isScrollTrackKind(track.kind) && Boolean(track.characterId)),
         [timelineData.audioTracks]
@@ -7185,7 +7200,7 @@ export function StudioEditor({
     useEffect(() => {
         syncStudioTimelineAudioPlayback({
             audioByClipId: timelineAudioPlaybackRef.current,
-            clips: timelineData.timelineClips,
+            clips: playbackTimelineClips,
             createAudio: (url) => {
                 const audio = new Audio(url);
                 audio.preload = 'auto';
@@ -7196,7 +7211,7 @@ export function StudioEditor({
             playhead,
             soloTrackIds,
         });
-    }, [isPlaying, isPreviewAudioEnabled, mutedTrackIds, playhead, soloTrackIds, timelineData.timelineClips]);
+    }, [isPlaying, isPreviewAudioEnabled, mutedTrackIds, playhead, playbackTimelineClips, soloTrackIds]);
 
     useEffect(
         () => () => {
@@ -9677,6 +9692,10 @@ export function StudioEditor({
             setRecordImportError('녹음 길이가 없는 record는 큐 길이에 반영할 수 없습니다.');
             return;
         }
+        if (!record.recordUrl) {
+            setRecordImportError('녹음 파일이 없는 record는 가져올 수 없습니다.');
+            return;
+        }
 
         const selectedCue = tracks.flatMap((track) => track.cues ?? []).find((cue) => String(cue.id) === cueId);
         const cueTrackId = resolveCueTimelineTrackId({
@@ -9709,8 +9728,8 @@ export function StudioEditor({
                               audioStart: undefined,
                               audioEnd: undefined,
                               audioDuration: durationSeconds,
-                              sublabel: `record ${record.id} · vol ${record.volume}`,
-                              volume: (selectedClip.volume ?? 1) * record.volume,
+                              sublabel: `record ${record.id}`,
+                              volume: selectedClip.volume,
                           }
                         : clip
                 ),

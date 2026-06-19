@@ -7,7 +7,7 @@ export type RecordingCueStatus = 'pending' | 'done';
 export interface RecordingTakeSummary {
     id: number;
     cueId: number;
-    audioUrl: string;
+    audioUrl?: string;
     durationMs?: number;
     volume: number;
     isAccepted: boolean;
@@ -250,7 +250,7 @@ function toRecordingTake(record: DraftRecord | RecordManifest, source: Recording
         cueId: record.cueId,
         audioUrl: record.recordUrl,
         durationMs: record.duration,
-        volume: record.volume,
+        volume: 1,
         isAccepted: record.isAccepted,
         source,
     };

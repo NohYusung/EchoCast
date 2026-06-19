@@ -58,21 +58,28 @@ describe('Record', () => {
                 })
             );
             const artist = await dataSource.manager.save(new Artist({ name: 'Record artist' }));
+            const audio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'record',
+                    name: 'record.wav',
+                    audioUrl: 'https://assets.example.com/record.wav',
+                    duration: 2000,
+                })
+            );
 
             const record = await dataSource.manager.save(
                 new Record({
                     cueId: cue.id,
                     artistId: artist.id,
-                    recordUrl: 'https://assets.example.com/record.wav',
-                    duration: 2000,
-                    volume: 0.8,
+                    audioId: audio.id,
                     isAccepted: true,
                 })
             );
 
             const storedRecord = await dataSource.manager.findOneOrFail(Record, {
                 where: { id: record.id },
-                relations: { cue: true, artist: true },
+                relations: { cue: true, artist: true, audio: true },
             });
 
             assert.equal(storedRecord.cueId, cue.id);
@@ -81,9 +88,11 @@ describe('Record', () => {
             assert.ok(storedRecord.artist);
             assert.equal(storedRecord.artist.id, artist.id);
             assert.equal(storedRecord.artist.name, 'Record artist');
-            assert.equal(storedRecord.recordUrl, 'https://assets.example.com/record.wav');
-            assert.equal(storedRecord.duration, 2000);
-            assert.equal(storedRecord.volume, 0.8);
+            assert.equal(storedRecord.audioId, audio.id);
+            assert.ok(storedRecord.audio);
+            assert.equal(storedRecord.audio.audioType, 'record');
+            assert.equal(storedRecord.audio.audioUrl, 'https://assets.example.com/record.wav');
+            assert.equal(storedRecord.audio.duration, 2000);
             assert.equal(storedRecord.isAccepted, true);
         } finally {
             await dataSource.destroy();
@@ -130,18 +139,30 @@ describe('Record', () => {
                     endTime: 3000,
                 })
             );
+            const audio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'record',
+                    name: 'record-without-duration.wav',
+                    audioUrl: 'https://assets.example.com/record-without-duration.wav',
+                })
+            );
 
             const record = await dataSource.manager.save(
                 new Record({
                     cueId: cue.id,
-                    recordUrl: 'https://assets.example.com/record-without-duration.wav',
+                    audioId: audio.id,
                 })
             );
 
-            const storedRecord = await dataSource.manager.findOneByOrFail(Record, { id: record.id });
+            const storedRecord = await dataSource.manager.findOneOrFail(Record, {
+                where: { id: record.id },
+                relations: { audio: true },
+            });
 
             assert.equal(storedRecord.artistId, null);
-            assert.equal(storedRecord.duration, null);
+            assert.ok(storedRecord.audio);
+            assert.equal(storedRecord.audio.duration, null);
             assert.equal(storedRecord.isAccepted, false);
         } finally {
             await dataSource.destroy();

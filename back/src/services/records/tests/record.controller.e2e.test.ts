@@ -6,6 +6,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../../app.module';
 import { Artist } from '../../artists/domain/artist.entity';
+import { Audio } from '../../audios/domain/audio.entity';
 import { Character } from '../../characters/domain/character.entity';
 import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
@@ -63,7 +64,6 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
                 artistId: artist.id,
                 recordUrl: 'https://assets.example.com/record-api.wav',
                 duration: 1200,
-                volume: 0.75,
                 isAccepted: true,
             })
             .expect(201);
@@ -75,13 +75,27 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
                 cueId: cue.id,
                 artistId: artist.id,
             },
+            relations: {
+                audio: true,
+            },
         });
 
         assert.equal(storedRecords.length, 1);
-        assert.equal(storedRecords[0].recordUrl, 'https://assets.example.com/record-api.wav');
-        assert.equal(storedRecords[0].duration, 1200);
-        assert.equal(storedRecords[0].volume, 0.75);
+        assert.ok(storedRecords[0].audio);
+        assert.equal(storedRecords[0].audio.audioType, 'record');
+        assert.equal(storedRecords[0].audio.audioUrl, 'https://assets.example.com/record-api.wav');
+        assert.equal(storedRecords[0].audio.duration, 1200);
         assert.equal(storedRecords[0].isAccepted, true);
+        assert.equal(await dataSource.manager.count(Audio, { where: { audioType: 'record' } }), 1);
+        assert.ok(storedRecords[0].audioId);
+        await request(app.getHttpServer())
+            .post('/records')
+            .send({
+                cueId: cue.id,
+                artistId: artist.id,
+                audioId: storedRecords[0].audioId,
+            })
+            .expect(400);
 
         const recordId = storedRecords[0].id;
         await request(app.getHttpServer())
@@ -91,7 +105,6 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
                 artistId: artist.id,
                 recordUrl: 'https://assets.example.com/record-api-second.wav',
                 duration: 900,
-                volume: 0.9,
                 isAccepted: true,
             })
             .expect(201);
@@ -115,9 +128,10 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
         assert.ok(listedRecord);
         assert.equal(listedRecord.cueId, cue.id);
         assert.equal(listedRecord.artistId, artist.id);
+        assert.equal(listedRecord.audioId, storedRecords[0].audioId);
         assert.equal(listedRecord.recordUrl, 'https://assets.example.com/record-api.wav');
         assert.equal(listedRecord.duration, 1200);
-        assert.equal(listedRecord.volume, 0.75);
+        assert.equal('volume' in listedRecord, false);
         assert.equal(listedRecord.isAccepted, false);
 
         const updateResponse = await request(app.getHttpServer())
@@ -125,17 +139,19 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
             .send({
                 recordUrl: 'https://assets.example.com/record-api-updated.wav',
                 duration: 1500,
-                volume: 0.5,
                 isAccepted: true,
             })
             .expect(200);
 
         assert.deepEqual(updateResponse.body, { data: {} });
 
-        const updatedRecord = await dataSource.manager.findOneByOrFail(Record, { id: recordId });
-        assert.equal(updatedRecord.recordUrl, 'https://assets.example.com/record-api-updated.wav');
-        assert.equal(updatedRecord.duration, 1500);
-        assert.equal(updatedRecord.volume, 0.5);
+        const updatedRecord = await dataSource.manager.findOneOrFail(Record, {
+            where: { id: recordId },
+            relations: { audio: true },
+        });
+        assert.ok(updatedRecord.audio);
+        assert.equal(updatedRecord.audio.audioUrl, 'https://assets.example.com/record-api-updated.wav');
+        assert.equal(updatedRecord.audio.duration, 1500);
         assert.equal(updatedRecord.isAccepted, true);
         const acceptedAfterUpdate = await dataSource.manager.find(Record, {
             where: {
@@ -228,11 +244,16 @@ test('records API creates a record without an artist', async () => {
             where: {
                 cueId: cue.id,
             },
+            relations: {
+                audio: true,
+            },
         });
 
         assert.ok(storedRecord);
         assert.equal(storedRecord.artistId, null);
-        assert.equal(storedRecord.recordUrl, 'https://assets.example.com/record-api-no-artist.wav');
+        assert.ok(storedRecord.audio);
+        assert.equal(storedRecord.audio.audioType, 'record');
+        assert.equal(storedRecord.audio.audioUrl, 'https://assets.example.com/record-api-no-artist.wav');
 
         const listResponse = await request(app.getHttpServer()).get('/records').expect(200);
         const listedRecord = listResponse.body.data.items.find((item: { id: number }) => item.id === storedRecord.id);

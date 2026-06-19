@@ -20,18 +20,18 @@ test('buildPlaybackEvents uses the accepted record when a cue has multiple recor
                 id: 6101,
                 cueId: 5001,
                 artistId: 1,
+                audioId: 6101,
                 recordUrl: '/audio/record-5001-draft.wav',
                 duration: 2000,
-                volume: 1,
                 isAccepted: false,
             },
             {
                 id: 6102,
                 cueId: 5001,
                 artistId: 1,
+                audioId: 6102,
                 recordUrl: '/audio/record-5001-accepted.wav',
                 duration: 2100,
-                volume: 0.8,
                 isAccepted: true,
             },
         ],
@@ -40,7 +40,7 @@ test('buildPlaybackEvents uses the accepted record when a cue has multiple recor
 
     assert.equal(recordEvent?.sourceId, 6102);
     assert.equal(recordEvent?.url, '/audio/record-5001-accepted.wav');
-    assert.equal(recordEvent?.volume, 0.8);
+    assert.equal(recordEvent?.volume, 1);
 });
 
 test('buildPlaybackEvents ignores unaccepted records and falls back to tts', () => {
@@ -51,9 +51,9 @@ test('buildPlaybackEvents ignores unaccepted records and falls back to tts', () 
                 id: 6202,
                 cueId: 5002,
                 artistId: 1,
+                audioId: 6202,
                 recordUrl: '/audio/record-5002-draft.wav',
                 duration: 2100,
-                volume: 1,
                 isAccepted: false,
             },
         ],

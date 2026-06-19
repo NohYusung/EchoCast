@@ -65,9 +65,9 @@ export interface RecordManifest {
     id: number;
     cueId: number;
     artistId: number | null;
-    recordUrl: string;
+    audioId: number;
+    recordUrl?: string;
     duration?: number;
-    volume: number;
     isAccepted: boolean;
 }
 

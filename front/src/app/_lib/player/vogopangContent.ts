@@ -98,7 +98,7 @@ function resolveVogopangRecord({
     cue: PlayerDraft['cues'][number];
     record?: PlayerDraft['records'][number];
 }): VogopangContentRecord {
-    if (record) {
+    if (record?.recordUrl) {
         return {
             src: record.recordUrl,
             artist_no: record.artistId ?? 0,

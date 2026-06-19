@@ -3,7 +3,7 @@ import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColum
 import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 
-export type AudioType = 'audio' | 'bgm' | 'effect' | 'tts';
+export type AudioType = 'audio' | 'bgm' | 'effect' | 'tts' | 'record';
 
 type Ctor = {
     episodeId: number;

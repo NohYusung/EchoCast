@@ -43,7 +43,6 @@ test('buildRecordCreateRequest maps ids to an unaccepted records API contract by
             artistId: 7,
             recordUrl: 'https://assets.example.com/record.webm',
             duration: 1340,
-            volume: 1,
             isAccepted: false,
         },
     );
@@ -74,7 +73,6 @@ test('buildRecordCreateRequest omits artist id when recording without an artist'
             cueId: 33,
             recordUrl: 'https://assets.example.com/record.webm',
             duration: 1340,
-            volume: 1,
             isAccepted: true,
         },
     );

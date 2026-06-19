@@ -13,12 +13,12 @@ export class RecordController {
     @Post('/records')
     async create(@Body() body: RecordCreateDto) {
         // 1. Destructure body, params, query
-        const { cueId, artistId, recordUrl, duration, volume, isAccepted } = body;
+        const { cueId, artistId, audioId, recordUrl, duration, isAccepted } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.recordService.create({ cueId, artistId, recordUrl, duration, volume, isAccepted });
+        await this.recordService.create({ cueId, artistId, audioId, recordUrl, duration, isAccepted });
 
         // 4. Send response
         return { data: {} };
@@ -46,12 +46,12 @@ export class RecordController {
     @Put('/records/:recordId')
     async update(@Param('recordId', ParseIntPipe) recordId: number, @Body() body: RecordUpdateDto) {
         // 1. Destructure body, params, query
-        const { cueId, artistId, recordUrl, duration, volume, isAccepted } = body;
+        const { cueId, artistId, audioId, recordUrl, duration, isAccepted } = body;
 
         // 2. Get context
 
         // 3. Get result
-        await this.recordService.update({ recordId, cueId, artistId, recordUrl, duration, volume, isAccepted });
+        await this.recordService.update({ recordId, cueId, artistId, audioId, recordUrl, duration, isAccepted });
 
         // 4. Send response
         return { data: {} };

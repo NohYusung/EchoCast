@@ -14884,6 +14884,14 @@ p {
     box-shadow: 0 0 20px rgba(255, 91, 107, 0.28);
 }
 
+.tr-import-record-action {
+    color: #cfe0ff !important;
+}
+
+.tr-external-record-input {
+    display: none;
+}
+
 .tr-record-message {
     margin: 10px auto 0;
     max-width: 640px;

@@ -85,9 +85,9 @@ export interface PlayerDraft {
         id: number;
         cueId: number;
         artistId: number | null;
-        recordUrl: string;
+        audioId: number;
+        recordUrl?: string;
         duration?: number;
-        volume: number;
         isAccepted: boolean;
     }>;
     // screenEffects는 현재 getPlayerDraft에서 빈 배열로만 생성되고 Vogopang export에서만 읽는다.

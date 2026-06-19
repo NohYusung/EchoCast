@@ -26,7 +26,7 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
     const cuePlaybackEvents = manifest.cues
         .flatMap((cue): PlaybackEvent[] => {
             const record = acceptedRecordByCueId.get(cue.id);
-            if (record) {
+            if (record?.recordUrl) {
                 return [
                     {
                         id: `record-event-${record.id}`,
@@ -37,7 +37,7 @@ export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
                         startTime: cue.startTime,
                         endTime: cue.startTime + (record.duration ?? Math.max(0, cue.endTime - cue.startTime)),
                         sourceStartTime: 0,
-                        volume: record.volume * cue.volume,
+                        volume: cue.volume,
                     },
                 ];
             }

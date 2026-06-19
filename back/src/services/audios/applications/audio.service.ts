@@ -48,11 +48,9 @@ export class AudioService extends DddService {
     }
 
     async list({ episodeId }: { episodeId: number }) {
-        const [audios, total] = await Promise.all([
-            this.audioRepository.findByEpisodeId(episodeId),
-            this.audioRepository.countByEpisodeId(episodeId),
-        ]);
-        const items = audios.map((audio) => {
+        const audios = await this.audioRepository.findByEpisodeId(episodeId);
+        const visibleAudios = audios.filter((audio) => audio.audioType !== 'record');
+        const items = visibleAudios.map((audio) => {
             const cueId = audio.cues?.[0]?.id;
 
             return {
@@ -66,7 +64,7 @@ export class AudioService extends DddService {
             };
         });
 
-        return { items, total };
+        return { items, total: items.length };
     }
 
     async dropToTrack({

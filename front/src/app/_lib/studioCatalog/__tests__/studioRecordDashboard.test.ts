@@ -76,6 +76,22 @@ test('recording console exposes playback, stop, and record controls', () => {
     assert.doesNotMatch(styles, /\.tr-record-main/);
 });
 
+test('recording console can import an external audio file as a record', () => {
+    assert.match(source, /import \{ getAudioDuration \} from '\.\.\/player\/audioDuration';/);
+    assert.match(source, /const EXTERNAL_RECORD_ACCEPT = 'audio\/\*,\.mp3,\.m4a,\.wav,\.ogg,\.webm';/);
+    assert.match(source, /const externalRecordInputRef = useRef<HTMLInputElement \| null>\(null\);/);
+    assert.match(source, /async function importExternalRecordFile\(file: File\)/);
+    assert.match(source, /const durationMs = await getAudioDuration\(file\);/);
+    assert.match(source, /recordFile: file/);
+    assert.match(source, /contentType: getExternalRecordContentType\(file\)/);
+    assert.match(source, /aria-label="외부 녹음 파일 가져오기"/);
+    assert.match(source, /<span>파일 가져오기<\/span>/);
+    assert.match(source, /accept=\{EXTERNAL_RECORD_ACCEPT\}/);
+    assert.match(source, /onChange=\{handleExternalRecordFileChange\}/);
+    assert.match(source, /setMessage\('외부 녹음 파일을 등록했습니다\.'\)/);
+    assert.match(styles, /\.tr-external-record-input\s*\{[\s\S]*?display: none;/);
+});
+
 test('recording can start and save without a selected artist', () => {
     assert.doesNotMatch(source, /녹음할 성우를 먼저 선택하세요/);
     assert.doesNotMatch(source, /if \(!cue \|\| !artistId \|\| chunks\.length === 0\) return;/);
@@ -112,10 +128,12 @@ test('recording waveform decodes focused take audio and caches rendered peaks', 
     assert.match(source, /const \[recordWaveforms, setRecordWaveforms\]/);
     assert.match(source, /const activeRecordWaveform = activeFocusedRecordKey \? recordWaveforms\[activeFocusedRecordKey\] : undefined;/);
     assert.match(source, /buildRecordWaveformPeaks\(focusedRecord\.audioUrl, RECORD_WAVEFORM_BAR_COUNT\)/);
+    assert.match(source, /if \(!focusedRecord\?\.audioUrl \|\| !activeFocusedRecordKey \|\| activeRecordWaveform\) return;/);
     assert.match(source, /audioContext\.decodeAudioData\(await response\.arrayBuffer\(\)\)/);
     assert.match(source, /setRecordWaveforms\(\(current\) =>/);
-    assert.match(source, /const hasRecordWaveform = isRecording \|\| Boolean\(focusedRecord\);/);
-    assert.match(source, /focusedRecord\s*\?\s*activeRecordWaveform \?\? createWave\(focusedRecord\.audioUrl, RECORD_WAVEFORM_BAR_COUNT\)\s*:\s*\[\]/);
+    assert.match(source, /const hasRecordWaveform = isRecording \|\| Boolean\(focusedRecord\?\.audioUrl\);/);
+    assert.match(source, /focusedRecord\?\.audioUrl\s*\?\s*activeRecordWaveform \?\? createWave\(focusedRecord\.audioUrl, RECORD_WAVEFORM_BAR_COUNT\)\s*:\s*\[\]/);
+    assert.match(source, /function createWave\(seed: string \| number \| undefined, count: number\): number\[\]/);
     assert.doesNotMatch(source, /createWave\(focusedRecord\?\.audioUrl \?\? selectedCue\?\.cueId \?\? 'empty', RECORD_WAVEFORM_BAR_COUNT\)/);
     assert.match(source, /\{hasRecordWaveform \? \(/);
     assert.match(source, /<div className="tr-waveform-empty">녹음 파일 없음<\/div>/);

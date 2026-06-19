@@ -6,6 +6,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../../app.module';
 import { Artist } from '../../artists/domain/artist.entity';
+import { Audio } from '../../audios/domain/audio.entity';
 import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Canvas } from '../../canvases/domain/canvas.entity';
 import { Character } from '../../characters/domain/character.entity';
@@ -69,12 +70,20 @@ test('GET player manifest endpoint exposes episode playback content without draf
             })
         );
         const artist = await dataSource.manager.save(new Artist({ name: 'API 성우' }));
+        const recordAudio = await dataSource.manager.save(
+            new Audio({
+                episodeId: episode.id,
+                audioType: 'record',
+                name: 'api-record.wav',
+                audioUrl: 'https://assets.example.com/api-record.wav',
+                duration: 1700,
+            })
+        );
         await dataSource.manager.save(
             new RecordEntity({
                 cueId: cue.id,
                 artistId: artist.id,
-                recordUrl: 'https://assets.example.com/api-record.wav',
-                duration: 1700,
+                audioId: recordAudio.id,
                 isAccepted: true,
             })
         );

@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { ChangeEvent as ReactChangeEvent, CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { ToonedBrand } from '../brand/ToonedBrand';
 import { uploadFileToPresignedUrl } from '../player/mediaUploadBatch';
+import { getAudioDuration } from '../player/audioDuration';
 import type { StudioEpisodeDetails } from '../player/getEpisodeDetails';
 import { getPlayerDraft } from '../player/getPlayerDraft';
 import { getPlayerManifest } from '../player/getPlayerManifest';
@@ -59,6 +60,7 @@ const filterLabels: Record<RecordingCueFilter, string> = {
 
 const RECORDING_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/wav'];
 const RECORD_WAVEFORM_BAR_COUNT = 300;
+const EXTERNAL_RECORD_ACCEPT = 'audio/*,.mp3,.m4a,.wav,.ogg,.webm';
 
 export function StudioRecordDashboard({ productId, episodeId, draft, manifest, episode }: StudioRecordDashboardProps) {
     const apiBaseUrl = useMemo(() => getClientApiBaseUrl(), []);
@@ -98,6 +100,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const [loadingWaveformKey, setLoadingWaveformKey] = useState<string | undefined>();
     const [message, setMessage] = useState('');
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const externalRecordInputRef = useRef<HTMLInputElement | null>(null);
     const waveformRef = useRef<HTMLDivElement | null>(null);
     const recordPlaybackRef = useRef<HTMLAudioElement | null>(null);
     const recordPlaybackFrameRef = useRef<number | undefined>(undefined);
@@ -237,10 +240,10 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         return counts;
     }, [allQueue]);
     const isAllCharactersSelected = availableCharacters.length > 0 && selectedAvailableCharacterIds.length === availableCharacters.length;
-    const hasRecordWaveform = isRecording || Boolean(focusedRecord);
+    const hasRecordWaveform = isRecording || Boolean(focusedRecord?.audioUrl);
     const currentWave = isRecording
         ? liveWave
-        : focusedRecord
+        : focusedRecord?.audioUrl
           ? activeRecordWaveform ?? createWave(focusedRecord.audioUrl, RECORD_WAVEFORM_BAR_COUNT)
           : [];
     const waveformDurationMs = isRecording ? recordingMs : (focusedRecord?.durationMs ?? 0);
@@ -271,7 +274,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }, [activeFocusedRecordKey]);
 
     useEffect(() => {
-        if (!focusedRecord || !activeFocusedRecordKey || activeRecordWaveform) return;
+        if (!focusedRecord?.audioUrl || !activeFocusedRecordKey || activeRecordWaveform) return;
 
         let isCancelled = false;
         setLoadingWaveformKey(activeFocusedRecordKey);
@@ -392,6 +395,61 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         recorder.stop();
     }
 
+    async function uploadRecordFile({
+        cue,
+        artistId,
+        recordFile,
+        durationMs,
+        contentType,
+    }: {
+        cue: RecordingCueQueueItem;
+        artistId?: string;
+        recordFile: Blob;
+        durationMs: number;
+        contentType: string;
+    }) {
+        const uploadRequest = buildRecordingUploadFileRequest({
+            productId,
+            episodeId,
+            cueId: cue.cueId,
+            recordedAtMs: Date.now(),
+            contentType,
+        });
+        const uploadUrl = await requestRecordingUploadUrl(apiBaseUrl, uploadRequest);
+
+        await uploadFileToPresignedUrl(uploadUrl.presignedUrl, recordFile, uploadUrl.mimetype || uploadRequest.contentType);
+
+        const createRequest = buildRecordCreateRequest({
+            cueId: cue.cueId,
+            artistId,
+            recordUrl: uploadUrl.publicUrl,
+            durationMs,
+            isAccepted: true,
+        });
+        const createResponse = await fetch(`${apiBaseUrl}/records`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(createRequest),
+        });
+
+        if (!createResponse.ok) {
+            throw new Error(`Record create failed: ${createResponse.status}`);
+        }
+    }
+
+    async function focusLatestRecordForCue(cueId: number) {
+        const nextData = await refreshRecordingData();
+        const nextCue = buildRecordingCueQueue({ draft: nextData.draft, manifest: nextData.manifest }).find(
+            (item) => item.cueId === cueId,
+        );
+        const nextRecord = getLatestRecordingTake(nextCue?.records ?? []);
+
+        if (nextRecord) {
+            setFocusedRecordKey(getRecordingTakeKey(nextRecord));
+        }
+        setSelectedCueId(cueId);
+    }
+
     async function saveRecordedChunks(contentType: string) {
         const chunks = recordingChunksRef.current;
         const cue = recordingCueRef.current;
@@ -406,44 +464,14 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             if (!cue || chunks.length === 0) return;
 
             setIsSavingRecord(true);
-            const uploadRequest = buildRecordingUploadFileRequest({
-                productId,
-                episodeId,
-                cueId: cue.cueId,
-                recordedAtMs: Date.now(),
+            await uploadRecordFile({
+                cue,
+                artistId,
+                recordFile: new Blob(chunks, { type: contentType.trim() || 'audio/webm' }),
+                durationMs,
                 contentType,
             });
-            const recordBlob = new Blob(chunks, { type: uploadRequest.contentType });
-            const uploadUrl = await requestRecordingUploadUrl(apiBaseUrl, uploadRequest);
-
-            await uploadFileToPresignedUrl(uploadUrl.presignedUrl, recordBlob, uploadUrl.mimetype || uploadRequest.contentType);
-
-            const createRequest = buildRecordCreateRequest({
-                cueId: cue.cueId,
-                artistId,
-                recordUrl: uploadUrl.publicUrl,
-                durationMs,
-                isAccepted: true,
-            });
-            const createResponse = await fetch(`${apiBaseUrl}/records`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(createRequest),
-            });
-
-            if (!createResponse.ok) {
-                throw new Error(`Record create failed: ${createResponse.status}`);
-            }
-
-            const nextData = await refreshRecordingData();
-            const nextCue = buildRecordingCueQueue({ draft: nextData.draft, manifest: nextData.manifest }).find(
-                (item) => item.cueId === cue.cueId,
-            );
-            const nextRecord = getLatestRecordingTake(nextCue?.records ?? []);
-            if (nextRecord) {
-                setFocusedRecordKey(getRecordingTakeKey(nextRecord));
-            }
-            setSelectedCueId(cue.cueId);
+            await focusLatestRecordForCue(cue.cueId);
             setMessage('녹음이 서버에 저장되었습니다.');
         } catch (error) {
             setMessage(toRecordErrorMessage(error, '녹음 저장에 실패했습니다.'));
@@ -457,6 +485,56 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             stopRecordingStream(recordingStreamRef.current);
             recordingStreamRef.current = null;
         }
+    }
+
+    async function importExternalRecordFile(file: File) {
+        if (!selectedCue) {
+            setMessage('녹음을 등록할 대사를 먼저 선택해 주세요.');
+            return;
+        }
+
+        try {
+            setIsSavingRecord(true);
+            setMessage('');
+            stopRecordPlayback();
+
+            const durationMs = await getAudioDuration(file);
+            if (typeof durationMs !== 'number' || durationMs <= 0) {
+                throw new Error('파일 길이를 확인할 수 없습니다.');
+            }
+
+            await uploadRecordFile({
+                cue: selectedCue,
+                artistId: selectedArtistId || undefined,
+                recordFile: file,
+                durationMs,
+                contentType: getExternalRecordContentType(file),
+            });
+            await focusLatestRecordForCue(selectedCue.cueId);
+            setMessage('외부 녹음 파일을 등록했습니다.');
+        } catch (error) {
+            setMessage(toRecordErrorMessage(error, '외부 녹음 파일 등록에 실패했습니다.'));
+        } finally {
+            setIsSavingRecord(false);
+        }
+    }
+
+    function openExternalRecordPicker() {
+        if (!selectedCue) {
+            setMessage('녹음을 등록할 대사를 먼저 선택해 주세요.');
+            return;
+        }
+
+        externalRecordInputRef.current?.click();
+    }
+
+    function handleExternalRecordFileChange(event: ReactChangeEvent<HTMLInputElement>) {
+        const file = event.currentTarget.files?.[0];
+        event.currentTarget.value = '';
+
+        if (!file) return;
+
+        void importExternalRecordFile(file);
     }
 
     async function acceptRecord(record: RecordingTakeSummary) {
@@ -517,6 +595,10 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
     function toggleRecordPlayback(record: RecordingTakeSummary | undefined = focusedRecord) {
         if (!record) return;
+        if (!record.audioUrl) {
+            setMessage('녹음 파일이 없는 테이크는 재생할 수 없습니다.');
+            return;
+        }
 
         const recordKey = getRecordingTakeKey(record);
         const currentAudio = recordPlaybackRef.current;
@@ -1068,6 +1150,23 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                     <StudioCatalogIcon name="mic" />
                                     <span>{isSavingRecord ? '저장 중' : '녹음'}</span>
                                 </button>
+                                <button
+                                    aria-label="외부 녹음 파일 가져오기"
+                                    className="tr-import-record-action"
+                                    disabled={!selectedCue || isSavingRecord || isRecording}
+                                    onClick={openExternalRecordPicker}
+                                    type="button"
+                                >
+                                    <StudioCatalogIcon name="download" />
+                                    <span>파일 가져오기</span>
+                                </button>
+                                <input
+                                    accept={EXTERNAL_RECORD_ACCEPT}
+                                    className="tr-external-record-input"
+                                    onChange={handleExternalRecordFileChange}
+                                    ref={externalRecordInputRef}
+                                    type="file"
+                                />
                             </div>
                             {message ? <p className="tr-record-message">{message}</p> : null}
                         </div>
@@ -1103,10 +1202,11 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                         role="button"
                                         tabIndex={0}
                                     >
-                                        <button
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                toggleRecordPlayback(record);
+                                            <button
+                                                disabled={!record.audioUrl}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    toggleRecordPlayback(record);
                                             }}
                                             type="button"
                                         >
@@ -1316,6 +1416,18 @@ function getRecordDurationSeconds(record: RecordingTakeSummary): number {
     return typeof record.durationMs === 'number' && record.durationMs > 0 ? record.durationMs / 1000 : 0;
 }
 
+function getExternalRecordContentType(file: File): string {
+    if (file.type.trim()) return file.type.trim();
+
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (extension === 'mp3') return 'audio/mpeg';
+    if (extension === 'm4a' || extension === 'mp4') return 'audio/mp4';
+    if (extension === 'wav') return 'audio/wav';
+    if (extension === 'ogg') return 'audio/ogg';
+
+    return 'audio/webm';
+}
+
 function stopRecordingStream(stream: MediaStream | null) {
     stream?.getTracks().forEach((track) => track.stop());
 }
@@ -1349,11 +1461,13 @@ function formatDurationSeconds(milliseconds: number): string {
     return `${formattedSeconds}초`;
 }
 
-function createWave(seed: string | number, count: number): number[] {
+function createWave(seed: string | number | undefined, count: number): number[] {
     const numericSeed =
         typeof seed === 'number'
             ? seed
-            : seed.split('').reduce((sum, character, index) => sum + character.charCodeAt(0) * (index + 1), 0);
+            : (seed ?? 'missing-record-audio')
+                  .split('')
+                  .reduce((sum, character, index) => sum + character.charCodeAt(0) * (index + 1), 0);
 
     return Array.from({ length: count }, (_, index) => {
         const phase = numericSeed * 0.017 + index * 0.72;

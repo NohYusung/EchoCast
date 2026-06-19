@@ -203,20 +203,22 @@ export class PlayerInfoResponseDto {
                     ? { durationMs: canvasMedia.media.duration }
                     : {}),
             })),
-            ...audios.map((audio) => ({
-                id: audio.id,
-                kind: audio.audioType === 'effect' ? ('effect' as const) : ('audio' as const),
-                url: audio.audioUrl,
-                durationMs: audio.duration,
-            })),
+            ...audios
+                .filter((audio) => audio.audioType !== 'record')
+                .map((audio) => ({
+                    id: audio.id,
+                    kind: audio.audioType === 'effect' ? ('effect' as const) : ('audio' as const),
+                    url: audio.audioUrl,
+                    durationMs: audio.duration,
+                })),
         ];
         const playerRecords = records.map((record) => ({
             id: record.id,
             cueId: record.cueId,
             artistId: record.artistId,
-            recordUrl: record.recordUrl,
-            duration: record.duration ?? undefined,
-            volume: record.volume,
+            audioId: record.audioId,
+            recordUrl: record.audio?.audioUrl,
+            duration: record.audio?.duration ?? undefined,
             isAccepted: record.isAccepted,
         }));
         const acceptedRecordByCueId = new Map<number, (typeof playerRecords)[number]>();

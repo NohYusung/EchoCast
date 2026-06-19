@@ -100,7 +100,7 @@ export class PlayerService extends DddService {
             cueIds.length > 0
                 ? await this.recordRepository.find(
                       { cueId: checkInValue(cueIds) },
-                      { options: { sort: 'cueId', order: 'ASC' } }
+                      { relations: { audio: true }, options: { sort: 'cueId', order: 'ASC' } }
                   )
                 : [];
         records.sort((a, b) => a.cueId - b.cueId || a.id - b.id);

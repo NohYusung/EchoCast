@@ -154,23 +154,37 @@ describe('PlayerService', () => {
                 })
             );
             const artist = await dataSource.manager.save(new Artist({ name: '성우' }));
-            await dataSource.manager.save(
-                new RecordEntity({
-                    cueId: cue.id,
-                    artistId: artist.id,
-                    recordUrl: 'https://assets.example.com/record-draft.wav',
+            const draftRecordAudio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'record',
+                    name: 'record-draft.wav',
+                    audioUrl: 'https://assets.example.com/record-draft.wav',
                     duration: 1900,
-                    volume: 0.8,
-                    isAccepted: false,
                 })
             );
             await dataSource.manager.save(
                 new RecordEntity({
                     cueId: cue.id,
                     artistId: artist.id,
-                    recordUrl: 'https://assets.example.com/record.wav',
+                    audioId: draftRecordAudio.id,
+                    isAccepted: false,
+                })
+            );
+            const acceptedRecordAudio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'record',
+                    name: 'record.wav',
+                    audioUrl: 'https://assets.example.com/record.wav',
                     duration: 1700,
-                    volume: 0.7,
+                })
+            );
+            await dataSource.manager.save(
+                new RecordEntity({
+                    cueId: cue.id,
+                    artistId: artist.id,
+                    audioId: acceptedRecordAudio.id,
                     isAccepted: true,
                 })
             );
@@ -1153,11 +1167,19 @@ describe('PlayerService', () => {
                     endTime: 2000,
                 })
             );
+            const recordAudio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'record',
+                    name: 'unaccepted.wav',
+                    audioUrl: 'https://assets.example.com/unaccepted.wav',
+                    duration: 1800,
+                })
+            );
             await dataSource.manager.save(
                 new RecordEntity({
                     cueId: cue.id,
-                    recordUrl: 'https://assets.example.com/unaccepted.wav',
-                    duration: 1800,
+                    audioId: recordAudio.id,
                     isAccepted: false,
                 })
             );

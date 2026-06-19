@@ -1,14 +1,13 @@
 import { DddAggregate } from '../../../libs/ddd';
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Artist } from '../../artists/domain/artist.entity';
+import { Audio } from '../../audios/domain/audio.entity';
 import { Cue } from '../../cues/domain/cue.entity';
 
 type Ctor = {
     cueId: number;
     artistId?: number | null;
-    recordUrl: string;
-    duration?: number;
-    volume?: number;
+    audioId: number;
     isAccepted?: boolean;
 };
 
@@ -23,14 +22,8 @@ export class Record extends DddAggregate {
     @Column({ comment: '아티스트 id', nullable: true })
     artistId!: number | null;
 
-    @Column({ comment: '녹음 파일 URL' })
-    recordUrl!: string;
-
-    @Column({ comment: '녹음 파일 길이(ms)', nullable: true })
-    duration?: number;
-
-    @Column({ type: 'real', comment: '녹음 볼륨', default: 1 })
-    volume!: number;
+    @Column({ comment: '녹음 오디오 id', nullable: true })
+    audioId?: number | null;
 
     @Column({ comment: '채택 여부', default: false })
     isAccepted!: boolean;
@@ -43,14 +36,16 @@ export class Record extends DddAggregate {
     @JoinColumn({ name: 'artistId' })
     artist!: Artist | null;
 
+    @OneToOne(() => Audio, { nullable: true })
+    @JoinColumn({ name: 'audioId' })
+    audio?: Audio | null;
+
     constructor(args?: Ctor) {
         super();
         if (args) {
             this.cueId = args.cueId;
             this.artistId = args.artistId ?? null;
-            this.recordUrl = args.recordUrl;
-            this.duration = args.duration;
-            this.volume = args.volume ?? 1;
+            this.audioId = args.audioId;
             this.isAccepted = args.isAccepted ?? false;
         }
     }
@@ -58,24 +53,18 @@ export class Record extends DddAggregate {
     update({
         cueId,
         artistId,
-        recordUrl,
-        duration,
-        volume,
+        audioId,
         isAccepted,
     }: {
         cueId?: number;
         artistId?: number | null;
-        recordUrl?: string;
-        duration?: number;
-        volume?: number;
+        audioId?: number;
         isAccepted?: boolean;
     }) {
         const changedArgs = this.stripUnchanged({
             cueId,
             artistId,
-            recordUrl,
-            duration,
-            volume,
+            audioId,
             isAccepted,
         });
 

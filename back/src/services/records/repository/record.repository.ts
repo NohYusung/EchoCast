@@ -14,9 +14,7 @@ export class RecordRepository extends DddRepository<Record> {
             id?: number;
             cueId?: number | FindOperator<number>;
             artistId?: number;
-            recordUrl?: string;
-            duration?: number;
-            volume?: number;
+            audioId?: number;
             isAccepted?: boolean;
         },
         options?: TypeormRelationOptions<Record>
@@ -26,9 +24,7 @@ export class RecordRepository extends DddRepository<Record> {
                 id: conditions.id,
                 cueId: conditions.cueId,
                 artistId: conditions.artistId,
-                recordUrl: conditions.recordUrl,
-                duration: conditions.duration,
-                volume: conditions.volume,
+                audioId: conditions.audioId,
                 isAccepted: conditions.isAccepted,
             }),
             ...convertOptions(options),
@@ -39,9 +35,7 @@ export class RecordRepository extends DddRepository<Record> {
         id?: number;
         cueId?: number;
         artistId?: number;
-        recordUrl?: string;
-        duration?: number;
-        volume?: number;
+        audioId?: number;
         isAccepted?: boolean;
     }) {
         return this.entityManager.count(this.entityClass, {
@@ -49,9 +43,7 @@ export class RecordRepository extends DddRepository<Record> {
                 id: conditions.id,
                 cueId: conditions.cueId,
                 artistId: conditions.artistId,
-                recordUrl: conditions.recordUrl,
-                duration: conditions.duration,
-                volume: conditions.volume,
+                audioId: conditions.audioId,
                 isAccepted: conditions.isAccepted,
             }),
         });
