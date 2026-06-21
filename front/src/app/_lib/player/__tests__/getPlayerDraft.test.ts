@@ -54,6 +54,7 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
                             productId: 1,
                             name: '엘렌 예거',
                             role: 'starring',
+                            imageUrl: 'https://assets.example.com/characters/eren.png',
                         },
                     ],
                     total: 1,
@@ -167,6 +168,7 @@ test('getPlayerDraft builds recording draft from production APIs instead of samp
     ]);
     assert.equal(draft.episodes[0]?.title, '실제 에피소드');
     assert.equal(draft.characters[0]?.name, '엘렌 예거');
+    assert.equal(draft.characters[0]?.imageUrl, 'https://assets.example.com/characters/eren.png');
     assert.equal(draft.scripts[0]?.text, '실제 API 대사입니다.');
     assert.equal(draft.cues[0]?.id, 31);
     assert.equal(draft.cues[0]?.audioId, 88);

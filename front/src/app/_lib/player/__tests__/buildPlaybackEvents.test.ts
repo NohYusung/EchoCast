@@ -3,18 +3,53 @@ import { test } from 'node:test';
 import { buildPlaybackEvents } from '../buildPlaybackEvents';
 import { sampleManifest } from '../sampleManifest';
 
-test('buildPlaybackEvents schedules cue records before tts fallback for the same cue', () => {
+test('buildPlaybackEvents schedules cue audio before tts fallback for the same cue', () => {
     const events = buildPlaybackEvents(sampleManifest);
-    const recordEvent = events.find((event) => event.sourceId === 6001);
+    const recordEvent = events.find((event) => event.cueId === 5001);
     const ttsEvent = events.find((event) => event.sourceId === 7001);
 
-    assert.equal(recordEvent?.kind, 'record');
+    assert.equal(recordEvent?.kind, 'audio');
+    assert.equal(recordEvent?.sourceId, 6001);
+    assert.equal(recordEvent?.url, '/audio/record-5001.wav');
     assert.equal(ttsEvent, undefined);
 });
 
-test('buildPlaybackEvents uses the accepted record when a cue has multiple records', () => {
+test('buildPlaybackEvents uses cue audioId instead of accepted records when cue has audio', () => {
     const events = buildPlaybackEvents({
         ...sampleManifest,
+        items: [
+            {
+                id: 5001,
+                trackId: 2,
+                kind: 'audio',
+                startTime: 0,
+                endTime: 2200,
+                mediaId: 6102,
+                cueId: 5001,
+                layerId: 1,
+                volume: 1,
+            },
+        ],
+        cues: [
+            {
+                id: 5001,
+                scriptId: 5001,
+                characterId: 1,
+                trackId: 2,
+                audioId: 6102,
+                startTime: 0,
+                endTime: 2200,
+                volume: 1,
+            },
+        ],
+        media: [
+            {
+                id: 6102,
+                kind: 'audio',
+                url: '/audio/record-5001-accepted.wav',
+                durationMs: 2100,
+            },
+        ],
         records: [
             {
                 id: 6101,
@@ -35,12 +70,15 @@ test('buildPlaybackEvents uses the accepted record when a cue has multiple recor
                 isAccepted: true,
             },
         ],
+        tts: [],
     });
-    const recordEvent = events.find((event) => event.cueId === 5001);
+    const cueAudioEvent = events.find((event) => event.cueId === 5001);
 
-    assert.equal(recordEvent?.sourceId, 6102);
-    assert.equal(recordEvent?.url, '/audio/record-5001-accepted.wav');
-    assert.equal(recordEvent?.volume, 1);
+    assert.equal(events.length, 1);
+    assert.equal(cueAudioEvent?.kind, 'audio');
+    assert.equal(cueAudioEvent?.sourceId, 6102);
+    assert.equal(cueAudioEvent?.url, '/audio/record-5001-accepted.wav');
+    assert.equal(cueAudioEvent?.volume, 1);
 });
 
 test('buildPlaybackEvents ignores unaccepted records and falls back to tts', () => {
@@ -63,6 +101,38 @@ test('buildPlaybackEvents ignores unaccepted records and falls back to tts', () 
 
     assert.equal(draftRecordEvent, undefined);
     assert.equal(fallbackEvent?.kind, 'tts');
+});
+
+test('buildPlaybackEvents does not play accepted records without cue audioId', () => {
+    const events = buildPlaybackEvents({
+        ...sampleManifest,
+        items: [],
+        cues: [
+            {
+                id: 5001,
+                scriptId: 5001,
+                characterId: 1,
+                trackId: 2,
+                startTime: 0,
+                endTime: 2200,
+                volume: 1,
+            },
+        ],
+        records: [
+            {
+                id: 6102,
+                cueId: 5001,
+                artistId: 1,
+                audioId: 6102,
+                recordUrl: '/audio/record-5001-accepted.wav',
+                duration: 2100,
+                isAccepted: true,
+            },
+        ],
+        tts: [],
+    });
+
+    assert.deepEqual(events, []);
 });
 
 test('buildPlaybackEvents schedules tts fallback when a cue has no record', () => {

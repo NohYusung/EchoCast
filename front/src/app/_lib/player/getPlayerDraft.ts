@@ -19,6 +19,7 @@ type EpisodeRetrieveItem = {
 type CharacterListItem = {
     id: number | string;
     name: string;
+    imageUrl?: string;
 };
 
 type TrackApiType = PlayerTrackKind;
@@ -176,6 +177,7 @@ function toPlayerDraft({
             id: toNumericId(character.id),
             name: character.name,
             color: getCharacterColor(toNumericId(character.id)),
+            imageUrl: character.imageUrl,
         })),
         scripts: recordingCueEntries.map(({ track, cue }, index) => ({
             id: toNumericId(cue.id),

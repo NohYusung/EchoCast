@@ -188,6 +188,8 @@ describe('PlayerService', () => {
                     isAccepted: true,
                 })
             );
+            cue.update({ audioId: acceptedRecordAudio.id });
+            await dataSource.manager.save(cue);
 
             const playerService = new PlayerService(
                 new EpisodeRepository(dataSource),
@@ -206,8 +208,18 @@ describe('PlayerService', () => {
             assert.equal(playerInfo.totalDuration, 3000);
             assert.equal(playerInfo.media[0].id, media.id);
             assert.equal(playerInfo.media[0].kind, 'image');
-            assert.equal(playerInfo.media.some((item) => item.id === secondMedia.id), true);
-            assert.equal(playerInfo.items.some((item) => item.kind === 'visual' && item.mediaId === media.id), true);
+            assert.equal(
+                playerInfo.media.some((item) => item.id === secondMedia.id),
+                true
+            );
+            assert.equal(
+                playerInfo.media.some((item) => item.id === acceptedRecordAudio.id && item.kind === 'audio'),
+                true
+            );
+            assert.equal(
+                playerInfo.items.some((item) => item.kind === 'visual' && item.mediaId === media.id),
+                true
+            );
             assert.equal(
                 playerInfo.items.some((item) => item.kind === 'visual' && item.mediaId === secondMedia.id),
                 true
@@ -218,8 +230,14 @@ describe('PlayerService', () => {
             assert.equal(playerInfo.records[0].isAccepted, false);
             assert.equal(playerInfo.records[1].recordUrl, 'https://assets.example.com/record.wav');
             assert.equal(playerInfo.records[1].isAccepted, true);
-            assert.equal(playerInfo.items.find((item) => item.mediaId === media.id)?.canvasId, canvas.id);
-            assert.equal(playerInfo.items.find((item) => item.mediaId === secondMedia.id)?.index, 1);
+            assert.equal(
+                playerInfo.items.find((item) => item.kind === 'visual' && item.mediaId === media.id)?.canvasId,
+                canvas.id
+            );
+            assert.equal(
+                playerInfo.items.find((item) => item.kind === 'visual' && item.mediaId === secondMedia.id)?.index,
+                1
+            );
             const playerCanvasManifest = playerInfo as typeof playerInfo & {
                 previewCanvasId?: number;
                 canvases?: Array<{
@@ -428,7 +446,10 @@ describe('PlayerService', () => {
             const cueItem = manifest.items.find((item) => item.cueId === cue.id);
             const visualItem = manifest.items.find((item) => item.kind === 'visual');
 
-            assert.equal(manifest.tracks.some((track) => (track.kind as string) === 'visual'), false);
+            assert.equal(
+                manifest.tracks.some((track) => (track.kind as string) === 'visual'),
+                false
+            );
             assert.ok(manifestDialogueTrack);
             assert.ok(cueItem);
             assert.ok(visualItem);
@@ -483,7 +504,9 @@ describe('PlayerService', () => {
                     mediaUrl: 'https://assets.example.com/missing-index.png',
                 })
             );
-            const canvasMedia = await dataSource.manager.save(new CanvasMedia({ canvasId: canvas.id, mediaId: media.id }));
+            const canvasMedia = await dataSource.manager.save(
+                new CanvasMedia({ canvasId: canvas.id, mediaId: media.id })
+            );
             const playerService = new PlayerService(
                 new EpisodeRepository(dataSource),
                 new TrackRepository(dataSource),
@@ -581,7 +604,10 @@ describe('PlayerService', () => {
             );
 
             const manifest = await playerService.getPlayerInfo({ episodeId: episode.id });
-            const filteredManifest = await playerService.getPlayerInfo({ episodeId: episode.id, canvasId: secondCanvas.id });
+            const filteredManifest = await playerService.getPlayerInfo({
+                episodeId: episode.id,
+                canvasId: secondCanvas.id,
+            });
             const visualMediaIds = manifest.items.filter((item) => item.kind === 'visual').map((item) => item.mediaId);
             const filteredVisualMediaIds = filteredManifest.items
                 .filter((item) => item.kind === 'visual')
@@ -669,9 +695,7 @@ describe('PlayerService', () => {
 
             const manifest = await playerService.getPlayerInfo({ episodeId: episode.id });
             const manifestVisualTrack = manifest.tracks.find((track) => track.id === visualTrack.id);
-            const visualLayerIds = manifest.items
-                .filter((item) => item.kind === 'visual')
-                .map((item) => item.layerId);
+            const visualLayerIds = manifest.items.filter((item) => item.kind === 'visual').map((item) => item.layerId);
 
             assert.equal(manifestVisualTrack?.kind, 'scroll');
             assert.equal(manifestVisualTrack?.layerId, 0);
@@ -705,7 +729,9 @@ describe('PlayerService', () => {
         await dataSource.initialize();
 
         try {
-            const product = await dataSource.manager.save(new Product({ title: 'No synthetic visual windows product' }));
+            const product = await dataSource.manager.save(
+                new Product({ title: 'No synthetic visual windows product' })
+            );
             const episode = await dataSource.manager.save(
                 new Episode({
                     productId: product.id,
@@ -847,15 +873,17 @@ describe('PlayerService', () => {
 
             assert.equal(manifest.totalDuration, 3000);
             assert.deepEqual(
-                (manifest as typeof manifest & {
-                    anchors?: Array<{
-                        trackId: number;
-                        canvasId: number;
-                        time: number;
-                        index: number;
-                        position: number;
-                    }>;
-                }).anchors?.map((anchor) => ({
+                (
+                    manifest as typeof manifest & {
+                        anchors?: Array<{
+                            trackId: number;
+                            canvasId: number;
+                            time: number;
+                            index: number;
+                            position: number;
+                        }>;
+                    }
+                ).anchors?.map((anchor) => ({
                     trackId: anchor.trackId,
                     canvasId: anchor.canvasId,
                     time: anchor.time,
@@ -1059,7 +1087,7 @@ describe('PlayerService', () => {
 
             const manifest = await playerService.getPlayerInfo({ episodeId: episode.id });
             const manifestCue = manifest.cues.find((item) => item.id === cue.id) as
-                | (typeof manifest.cues[number] & {
+                | ((typeof manifest.cues)[number] & {
                       startCanvasMediaId?: number;
                       endCanvasMediaId?: number;
                       audioStartTime?: number;
@@ -1331,9 +1359,7 @@ describe('PlayerService', () => {
 
             const manifest = await playerService.getPlayerInfo({ episodeId: episode.id });
             const visualByMediaId = new Map(
-                manifest.items
-                    .filter((item) => item.kind === 'visual')
-                    .map((item) => [item.mediaId, item])
+                manifest.items.filter((item) => item.kind === 'visual').map((item) => [item.mediaId, item])
             );
 
             assert.equal(visualByMediaId.get(firstMedia.id)?.startTime, 0);

@@ -87,10 +87,10 @@ test('GET player manifest endpoint exposes episode playback content without draf
                 isAccepted: true,
             })
         );
+        cue.update({ audioId: recordAudio.id });
+        await dataSource.manager.save(cue);
 
-        const manifestResponse = await request(app.getHttpServer())
-            .get(`/player/manifest/${episode.id}`)
-            .expect(200);
+        const manifestResponse = await request(app.getHttpServer()).get(`/player/manifest/${episode.id}`).expect(200);
 
         assert.equal(manifestResponse.body.data.episodeId, episode.id);
         assert.equal(manifestResponse.body.data.records[0].cueId, cue.id);

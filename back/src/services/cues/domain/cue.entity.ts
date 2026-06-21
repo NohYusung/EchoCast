@@ -9,7 +9,7 @@ type Ctor = {
     script: string;
     characterId?: number;
     trackId: number;
-    audioId?: number;
+    audioId?: number | null;
     startCanvasMediaId?: number;
     endCanvasMediaId?: number;
     startTime?: number;
@@ -36,7 +36,7 @@ export class Cue extends DddAggregate {
     trackId!: number;
 
     @Column({ comment: '오디오 id', nullable: true })
-    audioId?: number;
+    audioId?: number | null;
 
     @Column({ comment: '큐 시작 위치가 속한 캔버스 미디어 id', nullable: true })
     startCanvasMediaId?: number;
@@ -75,7 +75,7 @@ export class Cue extends DddAggregate {
 
     @ManyToOne(() => Audio, (audio) => audio.cues, { nullable: true })
     @JoinColumn({ name: 'audioId' })
-    audio?: Audio;
+    audio?: Audio | null;
 
     @ManyToOne(() => CanvasMedia, { nullable: true })
     @JoinColumn({ name: 'startCanvasMediaId' })
@@ -120,7 +120,7 @@ export class Cue extends DddAggregate {
     }: {
         script?: string;
         characterId?: number;
-        audioId?: number;
+        audioId?: number | null;
         startCanvasMediaId?: number;
         endCanvasMediaId?: number;
         startTime?: number;

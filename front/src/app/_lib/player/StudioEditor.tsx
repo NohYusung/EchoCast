@@ -62,7 +62,6 @@ import {
     toCueTimingUpdateRequest,
     type CueStripPositionRequest,
 } from './cueTimelinePersistence';
-import { applyAcceptedRecordsToTimelineClips } from './recordTimelinePlayback';
 import type { PlayerDraft } from './playerDraft.types';
 import type { PlayerManifest } from './playerManifest.types';
 import {
@@ -783,8 +782,6 @@ type CueScriptPanelState = {
 };
 type RecordImportPanelState = {
     isLoading: boolean;
-    isImporting: boolean;
-    importingRecordId: number | null;
     error: string | null;
 };
 type TimelineTickKind = 'minor' | 'mid' | 'major';
@@ -4851,7 +4848,6 @@ function InspectorPanel({
     onDeleteAnchor,
     onCueScriptDraftChange,
     onSaveCueScript,
-    onImportAcceptedRecord,
     onUpdateVideoClipControls,
     onStepTimelineItem,
     onNudgeScrollPosition,
@@ -4876,7 +4872,6 @@ function InspectorPanel({
     onDeleteAnchor: () => Promise<void> | void;
     onCueScriptDraftChange: (script: string) => void;
     onSaveCueScript: () => Promise<void> | void;
-    onImportAcceptedRecord: (cueClipId: string, recordId: number) => Promise<void> | void;
     onUpdateVideoClipControls: (clipId: string, patch: VideoClipControlPatch, options?: { persist?: boolean }) => void;
     onStepTimelineItem: (
         itemKind: TimelineItemKind,
@@ -5366,10 +5361,6 @@ function InspectorPanel({
                                             const recordName = record.recordUrl
                                                 ? (record.recordUrl.split('/').filter(Boolean).pop() ?? record.recordUrl)
                                                 : `record ${record.id}`;
-                                            const isTargetImporting = recordImportState.importingRecordId === record.id;
-                                            const canImportRecord =
-                                                Boolean(record.recordUrl) &&
-                                                typeof record.duration === 'number';
 
                                             return (
                                                 <div className="odx-record-import-row" key={record.id}>
@@ -5379,16 +5370,6 @@ function InspectorPanel({
                                                             record {record.id} · {durationLabel}
                                                         </small>
                                                     </span>
-                                                    <button
-                                                        disabled={
-                                                            recordImportState.isImporting ||
-                                                            !canImportRecord
-                                                        }
-                                                        onClick={() => void onImportAcceptedRecord(item.id, record.id)}
-                                                        type="button"
-                                                    >
-                                                        {isTargetImporting ? '가져오는 중' : '가져오기'}
-                                                    </button>
                                                 </div>
                                             );
                                         })}
@@ -6562,7 +6543,6 @@ export function StudioEditor({
     const [recordItems, setRecordItems] = useState<RecordListItem[]>([]);
     const [isRecordListLoading, setIsRecordListLoading] = useState(false);
     const [recordImportError, setRecordImportError] = useState<string | null>(null);
-    const [importingRecordId, setImportingRecordId] = useState<number | null>(null);
     const [mediaContextMenu, setMediaContextMenu] = useState<MediaContextMenuState | null>(null);
     const [deletingMediaId, setDeletingMediaId] = useState<number | null>(null);
     const [trackContextMenu, setTrackContextMenu] = useState<TrackContextMenuState | null>(null);
@@ -6686,15 +6666,7 @@ export function StudioEditor({
         () => new Map(timelineData.audioTracks.map((track) => [track.id, track])),
         [timelineData.audioTracks]
     );
-    const playbackTimelineClips = useMemo(
-        () =>
-            applyAcceptedRecordsToTimelineClips({
-                clips: timelineData.timelineClips,
-                records: recordItems,
-                tracks: timelineData.audioTracks,
-            }),
-        [recordItems, timelineData.audioTracks, timelineData.timelineClips]
-    );
+    const playbackTimelineClips = timelineData.timelineClips;
     const cutCueTracks = useMemo(
         () => timelineData.audioTracks.filter((track) => !isScrollTrackKind(track.kind) && Boolean(track.characterId)),
         [timelineData.audioTracks]
@@ -6788,8 +6760,6 @@ export function StudioEditor({
     };
     const recordImportState: RecordImportPanelState = {
         error: recordImportError,
-        importingRecordId,
-        isImporting: importingRecordId !== null,
         isLoading: isRecordListLoading,
     };
     const characterCreateState: CharacterCreatePanelState = {
@@ -9662,106 +9632,6 @@ export function StudioEditor({
         }
     };
 
-    const handleImportAcceptedRecord = async (cueClipId: string, recordId: number) => {
-        const selectedClip = audioClipById.get(cueClipId);
-        const record = recordItems.find((item) => item.id === recordId);
-
-        if (!selectedClip) {
-            setRecordImportError('녹음을 가져올 큐를 선택해 주세요.');
-            return;
-        }
-
-        const targetTrack = audioTrackById.get(selectedClip.track);
-        if (targetTrack?.kind !== 'record') {
-            setRecordImportError('채택 녹음은 보이스 트랙 큐에만 가져올 수 있습니다.');
-            return;
-        }
-
-        const cueId = getCueApiIdFromTimelineClipId(selectedClip.id);
-        if (!cueId) {
-            setRecordImportError('선택한 큐 ID를 확인할 수 없습니다.');
-            return;
-        }
-
-        if (!record || !record.isAccepted || String(record.cueId) !== cueId) {
-            setRecordImportError('선택한 큐에 연결된 채택 녹음만 가져올 수 있습니다.');
-            return;
-        }
-
-        if (typeof record.duration !== 'number' || record.duration <= 0) {
-            setRecordImportError('녹음 길이가 없는 record는 큐 길이에 반영할 수 없습니다.');
-            return;
-        }
-        if (!record.recordUrl) {
-            setRecordImportError('녹음 파일이 없는 record는 가져올 수 없습니다.');
-            return;
-        }
-
-        const selectedCue = tracks.flatMap((track) => track.cues ?? []).find((cue) => String(cue.id) === cueId);
-        const cueTrackId = resolveCueTimelineTrackId({
-            parentTrackId: selectedClip.track,
-            cueTrackId: selectedCue?.trackId,
-        });
-        const fallbackStartTime = toTimelineMilliseconds(selectedClip.start) ?? 0;
-        const startTime = selectedCue?.startTime ?? fallbackStartTime;
-        const endTime = startTime + record.duration;
-        const startSeconds = toTimelineSeconds(startTime);
-        const durationSeconds = toTimelineSeconds(record.duration);
-
-        try {
-            setImportingRecordId(record.id);
-            setRecordImportError(null);
-            await updateCue(resolvedApiBaseUrl, cueTrackId, cueId, {
-                startTime,
-                endTime,
-            });
-
-            setTimelineData((current) => ({
-                ...current,
-                timelineClips: current.timelineClips.map((clip) =>
-                    clip.id === selectedClip.id
-                        ? {
-                              ...clip,
-                              start: startSeconds,
-                              duration: durationSeconds,
-                              audioUrl: record.recordUrl,
-                              audioStart: undefined,
-                              audioEnd: undefined,
-                              audioDuration: durationSeconds,
-                              sublabel: `record ${record.id}`,
-                              volume: selectedClip.volume,
-                          }
-                        : clip
-                ),
-            }));
-            setTracks((current) =>
-                current.map((track) =>
-                    String(track.id) === cueTrackId || (track.cues ?? []).some((cue) => String(cue.id) === cueId)
-                        ? {
-                              ...track,
-                              cues: (track.cues ?? []).map((cue) =>
-                                  String(cue.id) === cueId ? { ...cue, startTime, endTime } : cue
-                              ),
-                          }
-                        : track
-                )
-            );
-            setDialogueCues((current) =>
-                current.map((cue) => (String(cue.id) === cueId ? { ...cue, startTime, endTime } : cue))
-            );
-            setManualTimelineDurationSeconds((current) => Math.max(current, Math.ceil(endTime / 1000)));
-            setTrackLoadError(null);
-        } catch (error) {
-            setRecordImportError(
-                error instanceof Error
-                    ? `채택 녹음을 가져오지 못했습니다: ${error.message}`
-                    : '채택 녹음을 가져오지 못했습니다.'
-            );
-        } finally {
-            setImportingRecordId(null);
-        }
-    };
-
     const handleAddCue = async () => {
         const selectedClip = audioClipById.get(selectedId);
         const fallbackTrack = timelineData.audioTracks.find(
@@ -10333,7 +10203,6 @@ export function StudioEditor({
                     onDeleteAnchor={handleDeleteAnchor}
                     onDeleteAnchorEvent={handleDeleteAnchorEvent}
                     onCueScriptDraftChange={setCueScriptDraft}
-                    onImportAcceptedRecord={handleImportAcceptedRecord}
                     onSaveCueScript={handleSaveCueScript}
                     onSaveAnchorEvent={handleSaveAnchorEvent}
                     onDeleteTimelineItem={handleDeleteTimelineItem}

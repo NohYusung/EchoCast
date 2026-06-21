@@ -1,6 +1,6 @@
 import type { PlayerManifest } from './playerManifest.types';
 
-export type PlaybackEventKind = 'audio' | 'record' | 'tts';
+export type PlaybackEventKind = 'audio' | 'tts';
 
 export interface PlaybackEvent {
     id: string;
@@ -15,54 +15,36 @@ export interface PlaybackEvent {
 }
 
 export function buildPlaybackEvents(manifest: PlayerManifest): PlaybackEvent[] {
-    const acceptedRecordByCueId = new Map<number, PlayerManifest['records'][number]>();
-    for (const record of manifest.records) {
-        if (record.isAccepted) {
-            acceptedRecordByCueId.set(record.cueId, record);
-        }
-    }
     const ttsByCueId = new Map(manifest.tts.map((tts) => [tts.cueId, tts]));
 
-    const cuePlaybackEvents = manifest.cues
-        .flatMap((cue): PlaybackEvent[] => {
-            const record = acceptedRecordByCueId.get(cue.id);
-            if (record?.recordUrl) {
-                return [
-                    {
-                        id: `record-event-${record.id}`,
-                        cueId: cue.id,
-                        kind: 'record',
-                        sourceId: record.id,
-                        url: record.recordUrl,
-                        startTime: cue.startTime,
-                        endTime: cue.startTime + (record.duration ?? Math.max(0, cue.endTime - cue.startTime)),
-                        sourceStartTime: 0,
-                        volume: cue.volume,
-                    },
-                ];
-            }
+    const cuePlaybackEvents = manifest.cues.flatMap((cue): PlaybackEvent[] => {
+        if (typeof cue.audioId === 'number') {
+            return [];
+        }
 
-            const tts = ttsByCueId.get(cue.id);
-            if (!tts) return [];
+        const tts = ttsByCueId.get(cue.id);
+        if (!tts) return [];
 
-            return [
-                {
-                    id: `tts-event-${tts.id}`,
-                    cueId: cue.id,
-                    kind: 'tts',
-                    sourceId: tts.id,
-                    url: tts.audioUrl,
-                    startTime: cue.startTime,
-                    endTime: cue.endTime,
-                    sourceStartTime: 0,
-                    volume: cue.volume,
-                },
-            ];
-        });
+        return [
+            {
+                id: `tts-event-${tts.id}`,
+                cueId: cue.id,
+                kind: 'tts',
+                sourceId: tts.id,
+                url: tts.audioUrl,
+                startTime: cue.startTime,
+                endTime: cue.endTime,
+                sourceStartTime: 0,
+                volume: cue.volume,
+            },
+        ];
+    });
     const audioPlaybackEvents = manifest.items.flatMap((item): PlaybackEvent[] => {
         if ((item.kind !== 'audio' && item.kind !== 'effect') || !item.mediaId) return [];
 
-        const media = manifest.media.find((media) => media.id === item.mediaId && (media.kind === 'audio' || media.kind === 'effect'));
+        const media = manifest.media.find(
+            (media) => media.id === item.mediaId && (media.kind === 'audio' || media.kind === 'effect')
+        );
         if (!media || (media.kind !== 'audio' && media.kind !== 'effect')) return [];
 
         return [

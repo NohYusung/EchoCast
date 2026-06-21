@@ -15,7 +15,7 @@ const draft: PlayerDraft = {
     products: [{ id: 1, title: '학원의 비밀' }],
     episodes: [{ id: 1, productId: 1, episodeNumber: 1, title: '전학생' }],
     characters: [
-        { id: 1, name: '지후', color: '#3b82f6' },
+        { id: 1, name: '지후', color: '#3b82f6', imageUrl: 'https://assets.example.com/characters/jihu.png' },
         { id: 2, name: '서연', color: '#10b981' },
     ],
     scripts: [
@@ -111,6 +111,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
             status: item.status,
             takeCount: item.takeCount,
             latestRecordUrl: item.latestRecordUrl,
+            characterImageUrl: item.characterImageUrl,
             isAccepted: item.records.at(-1)?.isAccepted,
         })),
         [
@@ -120,6 +121,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
                 status: 'done',
                 takeCount: 1,
                 latestRecordUrl: '/record-1.wav',
+                characterImageUrl: 'https://assets.example.com/characters/jihu.png',
                 isAccepted: true,
             },
             {
@@ -128,6 +130,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
                 status: 'done',
                 takeCount: 1,
                 latestRecordUrl: '/record-2.wav',
+                characterImageUrl: 'https://assets.example.com/characters/jihu.png',
                 isAccepted: true,
             },
         ],

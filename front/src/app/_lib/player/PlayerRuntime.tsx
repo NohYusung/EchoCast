@@ -294,13 +294,11 @@ export function PlayerRuntime({ episodeId, manifest }: { episodeId: string; mani
     }, []);
 
     const activeLabel =
-        activeEvents[0]?.kind === 'record'
-            ? '녹음 재생'
-            : activeEvents[0]?.kind === 'tts'
-              ? 'TTS 재생'
-              : activeEvents[0]?.kind === 'audio'
-                ? '오디오 재생'
-                : '대기 중';
+        activeEvents[0]?.kind === 'tts'
+            ? 'TTS 재생'
+            : activeEvents[0]?.kind === 'audio'
+              ? '오디오 재생'
+              : '대기 중';
 
     return (
         <div className="vpp-player" data-testid="tooned-player-runtime">

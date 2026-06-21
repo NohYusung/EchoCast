@@ -21,6 +21,7 @@ export interface RecordingCueQueueItem {
     characterId: number;
     characterName: string;
     characterColor: string;
+    characterImageUrl?: string;
     trackId: number;
     trackName: string;
     text: string;
@@ -142,6 +143,7 @@ export function buildRecordingCueQueue({
                 characterId: resolvedCharacterId,
                 characterName: character?.name ?? '미지정',
                 characterColor: character?.color ?? '#64748b',
+                characterImageUrl: character?.imageUrl,
                 trackId: cue.trackId,
                 trackName: track?.name ?? 'Dialogue',
                 text: script?.text ?? `대사 ${cue.id}`,

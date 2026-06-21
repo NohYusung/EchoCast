@@ -88,6 +88,8 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
         assert.equal(storedRecords[0].isAccepted, true);
         assert.equal(await dataSource.manager.count(Audio, { where: { audioType: 'record' } }), 1);
         assert.ok(storedRecords[0].audioId);
+        const cueAfterFirstCreate = await dataSource.manager.findOneByOrFail(Cue, { id: cue.id });
+        assert.equal(cueAfterFirstCreate.audioId, storedRecords[0].audioId);
         await request(app.getHttpServer())
             .post('/records')
             .send({
@@ -120,6 +122,8 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
         assert.equal(acceptedAfterSecondCreate.length, 2);
         assert.equal(acceptedAfterSecondCreate[0].isAccepted, false);
         assert.equal(acceptedAfterSecondCreate[1].isAccepted, true);
+        const cueAfterSecondCreate = await dataSource.manager.findOneByOrFail(Cue, { id: cue.id });
+        assert.equal(cueAfterSecondCreate.audioId, acceptedAfterSecondCreate[1].audioId);
 
         const listResponse = await request(app.getHttpServer()).get('/records').expect(200);
         const listedRecord = listResponse.body.data.items.find((item: { id: number }) => item.id === recordId);
@@ -163,6 +167,8 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
         });
         assert.equal(acceptedAfterUpdate[0].isAccepted, true);
         assert.equal(acceptedAfterUpdate[1].isAccepted, false);
+        const cueAfterUpdate = await dataSource.manager.findOneByOrFail(Cue, { id: cue.id });
+        assert.equal(cueAfterUpdate.audioId, updatedRecord.audioId);
 
         const deleteResponse = await request(app.getHttpServer()).delete(`/records/${recordId}`).expect(200);
 
@@ -182,6 +188,8 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
 
         assert.equal(remainingRecords.length, 1);
         assert.ok(deletedRecord.deletedAt);
+        const cueAfterDelete = await dataSource.manager.findOneByOrFail(Cue, { id: cue.id });
+        assert.equal(cueAfterDelete.audioId, null);
     } finally {
         await app.close();
     }

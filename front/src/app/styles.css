@@ -14428,6 +14428,18 @@ p {
     border-radius: 8px;
     background: rgba(77, 141, 255, 0.14);
     color: var(--tr-blue);
+    overflow: hidden;
+}
+
+.tr-cue-status.has-image {
+    background: #090b10;
+}
+
+.tr-cue-status img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .tr-cue-copy {
@@ -14676,33 +14688,16 @@ p {
 .tr-cue-stage {
     display: grid;
     min-height: 0;
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: 16px;
-}
-
-.tr-cue-preview {
-    position: relative;
-    display: grid;
-    min-height: 260px;
+    min-height: 100%;
     place-items: center;
-    overflow: hidden;
-    border: 1px solid var(--tr-line);
-    border-radius: 10px;
-    background: #090b10;
-}
-
-.tr-cue-preview > img,
-.tr-cue-preview > video {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
 }
 
 .tr-cue-caption {
-    border-top: 1px solid var(--tr-line);
-    padding-top: 16px;
-    text-align: left;
+    display: grid;
+    width: min(760px, 100%);
+    justify-items: center;
+    padding: 28px;
+    text-align: center;
 }
 
 .tr-character-pill {
@@ -14718,11 +14713,11 @@ p {
 }
 
 .tr-cue-caption h1 {
-    max-width: 760px;
-    margin: 14px 0 9px;
+    max-width: 720px;
+    margin: 18px 0 12px;
     color: var(--tr-text);
-    font-size: 25px;
-    line-height: 1.18;
+    font-size: 36px;
+    line-height: 1.22;
     letter-spacing: 0;
 }
 

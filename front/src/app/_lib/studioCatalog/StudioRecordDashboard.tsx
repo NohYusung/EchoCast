@@ -212,18 +212,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         [stripCueMarkers],
     );
     const selectedCueMarker = stripCueMarkers.find((marker) => marker.isSelected);
-    const selectedCueClip = useMemo(() => {
-        if (!selectedCue) return undefined;
-
-        const selectedCanvasMediaId =
-            typeof selectedCue.startCanvasMediaId === 'number' ? selectedCue.startCanvasMediaId : selectedCueMarker?.canvasMediaId;
-        if (typeof selectedCanvasMediaId === 'number') {
-            const placedClip = stripClips.find((clip) => clip.canvasMediaId === selectedCanvasMediaId);
-            if (placedClip) return placedClip;
-        }
-
-        return stripClips[0];
-    }, [selectedCue, selectedCueMarker?.canvasMediaId, stripClips]);
     const recordingStripSize = toRecordingStripSize(recordingStripScale);
     const recordWorkspaceStyle = {
         '--tr-record-strip-panel-width': `${recordingStripSize.panelWidth}px`,
@@ -959,8 +947,12 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                         style={{ borderColor: item.cueId === selectedCue?.cueId ? item.characterColor : undefined }}
                                         type="button"
                                     >
-                                        <span className="tr-cue-status">
-                                            <StudioCatalogIcon name={item.status === 'done' ? 'check' : 'mic'} />
+                                        <span className={`tr-cue-status ${item.characterImageUrl ? 'has-image' : ''}`}>
+                                            {item.characterImageUrl ? (
+                                                <img alt="" src={item.characterImageUrl} />
+                                            ) : (
+                                                <StudioCatalogIcon name={item.status === 'done' ? 'check' : 'mic'} />
+                                            )}
                                         </span>
                                         <span className="tr-cue-copy">
                                             <strong>{item.text}</strong>
@@ -1073,13 +1065,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                         <div className="tr-read-content">
                             {selectedCue ? (
                                 <div className="tr-cue-stage">
-                                    <div className="tr-cue-preview" style={selectedCueClip ? getStripClipStyle(selectedCueClip) : undefined}>
-                                        {selectedCueClip ? (
-                                            <RecordStagePreview clip={selectedCueClip} />
-                                        ) : (
-                                            <div className="tr-empty">연결된 이미지가 없습니다.</div>
-                                        )}
-                                    </div>
                                     <div className="tr-cue-caption">
                                         <span className="tr-character-pill" style={{ borderColor: selectedCue.characterColor, color: selectedCue.characterColor }}>
                                             {selectedCue.characterName}
@@ -1346,16 +1331,6 @@ function getStripClipStyle(clip: VisualClip): CSSProperties {
 
 function RecordStripPreview({ clip }: { clip: VisualClip }) {
     if (!clip.mediaUrl) return null;
-
-    if (clip.mediaType === 'video') {
-        return <video muted playsInline preload="metadata" src={clip.mediaUrl} />;
-    }
-
-    return <img alt="" src={clip.mediaUrl} />;
-}
-
-function RecordStagePreview({ clip }: { clip: VisualClip }) {
-    if (!clip.mediaUrl) return <div className="tr-empty">연결된 이미지가 없습니다.</div>;
 
     if (clip.mediaType === 'video') {
         return <video muted playsInline preload="metadata" src={clip.mediaUrl} />;

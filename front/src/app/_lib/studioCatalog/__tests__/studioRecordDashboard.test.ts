@@ -110,17 +110,26 @@ test('recording screen focuses the latest saved take until the user clicks anoth
     assert.match(styles, /\.tr-take-card\.is-focused\s*\{/);
 });
 
-test('recording read panel shows the selected cue media above the dialogue text', () => {
-    assert.match(source, /const selectedCueClip = useMemo/);
+test('recording cue list shows the character thumbnail when imageUrl is available', () => {
+    assert.match(source, /item\.characterImageUrl \? 'has-image' : ''/);
+    assert.match(source, /<img alt="" src=\{item\.characterImageUrl\} \/>/);
+    assert.match(source, /<StudioCatalogIcon name=\{item\.status === 'done' \? 'check' : 'mic'\} \/>/);
+    assert.match(styles, /\.tr-cue-status\.has-image\s*\{/);
+    assert.match(styles, /\.tr-cue-status img\s*\{[\s\S]*?object-fit: cover;/);
+});
+
+test('recording read panel centers the selected cue dialogue without media preview', () => {
     assert.match(source, /<div className="tr-cue-stage">/);
-    assert.match(source, /<div className="tr-cue-preview" style=\{selectedCueClip \? getStripClipStyle\(selectedCueClip\) : undefined\}>/);
-    assert.match(source, /<RecordStagePreview clip=\{selectedCueClip\} \/>/);
     assert.match(source, /<div className="tr-cue-caption">/);
     assert.match(source, /<p>\{selectedCue\.trackName\}<\/p>/);
+    assert.doesNotMatch(source, /const selectedCueClip = useMemo/);
+    assert.doesNotMatch(source, /className="tr-cue-preview"/);
+    assert.doesNotMatch(source, /RecordStagePreview/);
     assert.doesNotMatch(source, /selectedCue\.trackName\} · \{formatMs\(selectedCue\.startTime\)\}/);
-    assert.match(styles, /\.tr-cue-stage\s*\{[\s\S]*?grid-template-rows: minmax\(0, 1fr\) auto;/);
-    assert.match(styles, /\.tr-cue-preview\s*\{[\s\S]*?min-height: 260px;/);
-    assert.match(styles, /\.tr-cue-caption\s*\{[\s\S]*?border-top: 1px solid var\(--tr-line\);/);
+    assert.match(styles, /\.tr-cue-stage\s*\{[\s\S]*?place-items: center;/);
+    assert.match(styles, /\.tr-cue-caption\s*\{[\s\S]*?justify-items: center;/);
+    assert.match(styles, /\.tr-cue-caption\s*\{[\s\S]*?text-align: center;/);
+    assert.doesNotMatch(styles, /\.tr-cue-preview/);
 });
 
 test('recording waveform decodes focused take audio and caches rendered peaks', () => {

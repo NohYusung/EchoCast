@@ -30,9 +30,7 @@ function toPlayerCanvasMediaTimelineControls(canvasMedia: CanvasMedia | undefine
 
 function toPlayerCanvases(canvases: Canvas[]) {
     return canvases.map((canvas) => {
-        const canvasMedias = [...canvas.canvasMedias].sort(
-            (a, b) => a.index! - b.index! || a.media.id - b.media.id
-        );
+        const canvasMedias = [...canvas.canvasMedias].sort((a, b) => a.index! - b.index! || a.media.id - b.media.id);
         const [canvasMedia] = canvasMedias;
         const media = canvasMedia?.media;
 
@@ -143,6 +141,8 @@ export class PlayerInfoResponseDto {
         const layerIdByTrackId = new Map(orderedTracks.map((track) => [track.id, track.layerId]));
         const trackKindById = new Map(orderedTracks.map((track) => [track.id, track.kind]));
         const visualLayerId = typeof visualTrack?.id === 'number' ? (layerIdByTrackId.get(visualTrack.id) ?? 0) : 0;
+        const audioById = new Map(audios.map((audio) => [audio.id, audio]));
+        const cueAudioIds = new Set(cues.flatMap((cue) => (typeof cue.audioId === 'number' ? [cue.audioId] : [])));
         const items = [
             ...visualMediaItems.map(({ canvas, canvasMedia, media }, index) => {
                 const mediaIndex = canvasMedia.index!;
@@ -199,12 +199,10 @@ export class PlayerInfoResponseDto {
                 id: canvasMedia.media.id,
                 kind: canvasMedia.media.mediaType,
                 url: canvasMedia.media.mediaUrl,
-                ...(typeof canvasMedia.media.duration === 'number'
-                    ? { durationMs: canvasMedia.media.duration }
-                    : {}),
+                ...(typeof canvasMedia.media.duration === 'number' ? { durationMs: canvasMedia.media.duration } : {}),
             })),
             ...audios
-                .filter((audio) => audio.audioType !== 'record')
+                .filter((audio) => audio.audioType !== 'record' || cueAudioIds.has(audio.id))
                 .map((audio) => ({
                     id: audio.id,
                     kind: audio.audioType === 'effect' ? ('effect' as const) : ('audio' as const),
@@ -221,12 +219,6 @@ export class PlayerInfoResponseDto {
             duration: record.audio?.duration ?? undefined,
             isAccepted: record.isAccepted,
         }));
-        const acceptedRecordByCueId = new Map<number, (typeof playerRecords)[number]>();
-        for (const record of playerRecords) {
-            if (record.isAccepted) {
-                acceptedRecordByCueId.set(record.cueId, record);
-            }
-        }
         const playerCues = cues.map((cue) => ({
             id: cue.id,
             scriptId: cue.id,
@@ -241,7 +233,10 @@ export class PlayerInfoResponseDto {
             audioEndTime: cue.audioEndTime,
             startPosition: cue.startPosition,
             endPosition: cue.endPosition,
-            approvedRecordUrl: acceptedRecordByCueId.get(cue.id)?.recordUrl,
+            approvedRecordUrl:
+                typeof cue.audioId === 'number' && audioById.get(cue.audioId)?.audioType === 'record'
+                    ? audioById.get(cue.audioId)?.audioUrl
+                    : undefined,
             ttsUrl: undefined as string | undefined,
             volume: cue.volume,
         }));
@@ -276,8 +271,13 @@ export class PlayerInfoResponseDto {
             ...playerScrolls.map((scroll) => scroll.endTime),
             ...playerAnchors.map((anchor) => anchor.time),
             ...playerCues.map((cue) => {
-                const record = acceptedRecordByCueId.get(cue.id);
-                return record ? cue.startTime + (record.duration ?? cue.endTime - cue.startTime) : 0;
+                if (typeof cue.audioId !== 'number') {
+                    return 0;
+                }
+                const audio = audioById.get(cue.audioId);
+                return audio?.audioType === 'record'
+                    ? cue.startTime + (audio.duration ?? cue.endTime - cue.startTime)
+                    : 0;
             })
         );
 

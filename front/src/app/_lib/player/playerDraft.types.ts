@@ -19,6 +19,7 @@ export interface PlayerDraft {
         id: number;
         name: string;
         color: string;
+        imageUrl?: string;
         defaultTtsVoiceId?: number;
     }>;
     scripts: Array<{
