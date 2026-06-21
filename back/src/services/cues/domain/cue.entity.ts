@@ -26,6 +26,12 @@ export class Cue extends DddAggregate {
     @PrimaryGeneratedColumn()
     id!: number;
 
+    /*
+    AGENT
+    - cue도메인에서 script칼럼을 없애고, scripts도메인을 새로만들어서, 관리하려고함. 
+    - /Users/nes0903/Documents/dobedub/new-dubright/back/src/services/scripts 이미 이 경로에 파일을 만들어둠. 
+    - cue 도메인에서는 scriptId를 참조하도록 수정. 
+    */
     @Column({ comment: '큐 대사' })
     script!: string;
 
