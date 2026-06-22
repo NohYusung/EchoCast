@@ -235,6 +235,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const [tracks, setTracks] = useState<TrackListItem[]>([]);
     const [selectedMediaIds, setSelectedMediaIds] = useState<number[]>([]);
     const [canvasResourceSelectionIds, setCanvasResourceSelectionIds] = useState<number[]>([]);
+    const [previewMedia, setPreviewMedia] = useState<MediaCatalogItem | null>(null);
     const [selectedCanvasId, setSelectedCanvasId] = useState<number | null>(null);
     const [activeStep, setActiveStep] = useState<SetupStepId>('media');
     const [selectedSpeakerId, setSelectedSpeakerId] = useState('all');
@@ -268,6 +269,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         setCanvases([]);
         setTracks([]);
         setCanvasResourceSelectionIds([]);
+        setPreviewMedia(null);
         setSelectedEpisodeId('');
         setActiveStep('media');
         setSelectedSpeakerId('all');
@@ -322,6 +324,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             setSelectedCanvasId(null);
             setSelectedMediaIds([]);
             setCanvasResourceSelectionIds([]);
+            setPreviewMedia(null);
             setCueScriptDrafts({});
             setSelectedCuePosition(null);
             return;
@@ -351,6 +354,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                 });
                 setSelectedMediaIds([]);
                 setCanvasResourceSelectionIds([]);
+                setPreviewMedia(null);
                 setSelectedCuePosition(null);
             })
             .catch(() => {
@@ -366,6 +370,17 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             ignore = true;
         };
     }, [selectedEpisodeId]);
+
+    useEffect(() => {
+        if (!previewMedia) return;
+
+        const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+            if (event.key === 'Escape') setPreviewMedia(null);
+        };
+
+        window.addEventListener('keydown', closeOnEscape);
+        return () => window.removeEventListener('keydown', closeOnEscape);
+    }, [previewMedia]);
 
     const selectedEpisode = episodes.find((episode) => String(episode.id) === selectedEpisodeId) ?? null;
     const selectedCanvas = canvases.find((canvas) => canvas.id === selectedCanvasId) ?? null;
@@ -504,6 +519,17 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
             return [...current, mediaId];
         });
+    };
+
+    const openMediaPreview = (media: MediaCatalogItem) => {
+        setPreviewMedia(media);
+    };
+
+    const openMediaPreviewOnKeyDown = (event: KeyboardEvent<HTMLElement>, media: MediaCatalogItem) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+
+        event.preventDefault();
+        openMediaPreview(media);
     };
 
     const selectCanvasMedia = () => {
@@ -1097,46 +1123,38 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
                                             <div className="tp-media-grid tp-media-grid-setup">
                                                 {visibleMedia.length > 0 ? (
-                                                    visibleMedia.map((media) => {
-                                                        const isMediaSource = media.source === 'media';
-                                                        const isSelected =
-                                                            isMediaSource && selectedMediaIds.includes(media.id);
-
-                                                        return (
-                                                            <article
-                                                                className={`tp-media-card ${media.mediaType} ${isSelected ? 'is-selected' : ''}`}
-                                                                key={media.catalogKey}
-                                                                onClick={() => {
-                                                                    if (isMediaSource) toggleMediaSelection(media.id);
-                                                                }}
-                                                            >
-                                                                <MediaPreview media={media} compact />
-                                                                {isSelected ? (
-                                                                    <span className="tp-media-selected">선택</span>
-                                                                ) : null}
-                                                                <span className="tp-media-meta">
-                                                                    <strong>{media.mediaName}</strong>
-                                                                    <small>
-                                                                        {mediaLabels[media.mediaType]} ·{' '}
-                                                                        {formatDuration(media.duration)}
-                                                                    </small>
-                                                                </span>
-                                                                {isMediaSource ? (
-                                                                    <button
-                                                                        aria-label={`${media.mediaName} 삭제`}
-                                                                        className="tp-card-icon danger"
-                                                                        onClick={(event) => {
-                                                                            event.stopPropagation();
-                                                                            deleteMediaItem(media.id);
-                                                                        }}
-                                                                        type="button"
-                                                                    >
-                                                                        <StudioCatalogIcon name="trash" />
-                                                                    </button>
-                                                                ) : null}
-                                                            </article>
-                                                        );
-                                                    })
+                                                    visibleMedia.map((media) => (
+                                                        <article
+                                                            className={`tp-media-card ${media.mediaType}`}
+                                                            key={media.catalogKey}
+                                                            onClick={() => openMediaPreview(media)}
+                                                            onKeyDown={(event) => openMediaPreviewOnKeyDown(event, media)}
+                                                            role="button"
+                                                            tabIndex={0}
+                                                        >
+                                                            <MediaPreview media={media} compact />
+                                                            <span className="tp-media-meta">
+                                                                <strong>{media.mediaName}</strong>
+                                                                <small>
+                                                                    {mediaLabels[media.mediaType]} ·{' '}
+                                                                    {formatDuration(media.duration)}
+                                                                </small>
+                                                            </span>
+                                                            {media.source === 'media' ? (
+                                                                <button
+                                                                    aria-label={`${media.mediaName} 삭제`}
+                                                                    className="tp-card-icon danger"
+                                                                    onClick={(event) => {
+                                                                        event.stopPropagation();
+                                                                        deleteMediaItem(media.id);
+                                                                    }}
+                                                                    type="button"
+                                                                >
+                                                                    <StudioCatalogIcon name="trash" />
+                                                                </button>
+                                                            ) : null}
+                                                        </article>
+                                                    ))
                                                 ) : (
                                                     <div className="tp-empty compact">
                                                         <StudioCatalogIcon name="image" />
@@ -1903,7 +1921,52 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                     )}
                 </section>
             </div>
+
+            {previewMedia ? (
+                <MediaPreviewModal media={previewMedia} onClose={() => setPreviewMedia(null)} />
+            ) : null}
         </main>
+    );
+}
+
+function MediaPreviewModal({ media, onClose }: { media: MediaCatalogItem; onClose: () => void }) {
+    return (
+        <div className="tp-modal-overlay compact" onClick={onClose} role="presentation">
+            <section
+                aria-label={`${media.mediaName} 미디어 미리보기`}
+                aria-modal="true"
+                className="tp-media-preview-modal"
+                onClick={(event) => event.stopPropagation()}
+                role="dialog"
+            >
+                <div className="tp-modal-head">
+                    <span>
+                        <StudioCatalogIcon name={media.mediaType === 'audio' ? 'play' : 'image'} />
+                    </span>
+                    <div>
+                        <h2>{media.mediaName}</h2>
+                        <p>
+                            {mediaLabels[media.mediaType]} · {formatDuration(media.duration)}
+                        </p>
+                    </div>
+                    <button aria-label="미디어 미리보기 닫기" onClick={onClose} type="button">
+                        <StudioCatalogIcon name="close" />
+                    </button>
+                </div>
+                <div className={`tp-media-preview-body ${media.mediaType}`}>
+                    {media.mediaType === 'image' ? <img alt={media.mediaName} src={media.mediaUrl} /> : null}
+                    {media.mediaType === 'video' ? (
+                        <video controls playsInline preload="metadata" src={media.mediaUrl} />
+                    ) : null}
+                    {media.mediaType === 'audio' ? (
+                        <div className="tp-media-preview-audio">
+                            <AudioWave />
+                            <audio controls preload="metadata" src={media.mediaUrl} />
+                        </div>
+                    ) : null}
+                </div>
+            </section>
+        </div>
     );
 }
 

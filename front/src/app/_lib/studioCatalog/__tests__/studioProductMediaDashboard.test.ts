@@ -34,6 +34,21 @@ test('media registration view includes registered audios but excludes record aud
     assert.match(source, /catalogKey:\s*`audio-\$\{audio\.id\}`/);
 });
 
+test('media registration cards open a media preview modal instead of selecting canvas media', () => {
+    const mediaGridMatch = source.match(
+        /<div className="tp-media-grid tp-media-grid-setup">([\s\S]*?)<\/div>\s*<\/section>\s*\) : null}/
+    );
+
+    assert.ok(mediaGridMatch);
+    assert.match(source, /const \[previewMedia,\s*setPreviewMedia\] = useState<MediaCatalogItem \| null>\(null\);/);
+    assert.match(mediaGridMatch[1] ?? '', /onClick=\{\(\) => openMediaPreview\(media\)\}/);
+    assert.doesNotMatch(mediaGridMatch[1] ?? '', /toggleMediaSelection/);
+    assert.doesNotMatch(mediaGridMatch[1] ?? '', /tp-media-selected/);
+    assert.match(source, /function MediaPreviewModal/);
+    assert.match(source, /<video controls playsInline preload="metadata" src=\{media\.mediaUrl\} \/>/);
+    assert.match(source, /<audio controls preload="metadata" src=\{media\.mediaUrl\} \/>/);
+});
+
 test('setup panes do not render bottom step navigation actions', () => {
     assert.doesNotMatch(source, /tp-setup-footnav/);
     assert.doesNotMatch(source, />\s*이전\s*<\/button>/);
