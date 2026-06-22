@@ -222,6 +222,10 @@ const characterRoleLabels: Record<CharacterRole, string> = {
     unknown: '역할 미정',
 };
 const defaultDialogueDurationSeconds = '1';
+const canvasStripBaseWidth = 236;
+const canvasStripMinScale = 60;
+const canvasStripMaxScale = 220;
+const canvasStripScaleStep = 10;
 
 export function StudioProductMediaDashboard({ productId }: { productId: string }) {
     const dialogueStripRef = useRef<HTMLDivElement | null>(null);
@@ -234,6 +238,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const [canvases, setCanvases] = useState<CanvasListItem[]>([]);
     const [tracks, setTracks] = useState<TrackListItem[]>([]);
     const [selectedMediaIds, setSelectedMediaIds] = useState<number[]>([]);
+    const [canvasStripScale, setCanvasStripScale] = useState(100);
     const [canvasResourceSelectionIds, setCanvasResourceSelectionIds] = useState<number[]>([]);
     const [previewMedia, setPreviewMedia] = useState<MediaCatalogItem | null>(null);
     const [selectedCanvasId, setSelectedCanvasId] = useState<number | null>(null);
@@ -512,6 +517,10 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         '--tp-dialogue-strip-panel-width': `${dialogueStripSize.panelWidth}px`,
         '--tp-dialogue-strip-width': `${dialogueStripSize.width}px`,
     } as CSSProperties;
+    const canvasStripWidth = Math.round((canvasStripBaseWidth * canvasStripScale) / 100);
+    const canvasStripStyle = {
+        '--tp-canvas-strip-width': `${canvasStripWidth}px`,
+    } as CSSProperties;
 
     const toggleMediaSelection = (mediaId: number) => {
         setSelectedMediaIds((current) => {
@@ -530,6 +539,13 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
         event.preventDefault();
         openMediaPreview(media);
+    };
+
+    const updateCanvasStripScale = (value: string) => {
+        const scale = Math.round(Number(value));
+        if (!Number.isFinite(scale)) return;
+
+        setCanvasStripScale(Math.min(canvasStripMaxScale, Math.max(canvasStripMinScale, scale)));
     };
 
     const selectCanvasMedia = () => {
@@ -1235,10 +1251,68 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                     : '캔버스를 선택하세요'}
                                                             </p>
                                                         </div>
+                                                        <div
+                                                            aria-label="캔버스 확대 축소"
+                                                            className="tp-canvas-zoom"
+                                                            role="group"
+                                                        >
+                                                            <button
+                                                                aria-label="캔버스 축소"
+                                                                disabled={canvasStripScale <= canvasStripMinScale}
+                                                                onClick={() =>
+                                                                    updateCanvasStripScale(
+                                                                        String(canvasStripScale - canvasStripScaleStep)
+                                                                    )
+                                                                }
+                                                                type="button"
+                                                            >
+                                                                <StudioCatalogIcon name="minus" />
+                                                            </button>
+                                                            <label>
+                                                                <span>크기</span>
+                                                                <input
+                                                                    aria-label="캔버스 크기"
+                                                                    max={canvasStripMaxScale}
+                                                                    min={canvasStripMinScale}
+                                                                    onChange={(event) =>
+                                                                        updateCanvasStripScale(
+                                                                            event.currentTarget.value
+                                                                        )
+                                                                    }
+                                                                    step={canvasStripScaleStep}
+                                                                    type="range"
+                                                                    value={canvasStripScale}
+                                                                />
+                                                            </label>
+                                                            <input
+                                                                aria-label="캔버스 크기 숫자"
+                                                                max={canvasStripMaxScale}
+                                                                min={canvasStripMinScale}
+                                                                onChange={(event) =>
+                                                                    updateCanvasStripScale(event.currentTarget.value)
+                                                                }
+                                                                step={canvasStripScaleStep}
+                                                                type="number"
+                                                                value={canvasStripScale}
+                                                            />
+                                                            <button
+                                                                aria-label="캔버스 확대"
+                                                                disabled={canvasStripScale >= canvasStripMaxScale}
+                                                                onClick={() =>
+                                                                    updateCanvasStripScale(
+                                                                        String(canvasStripScale + canvasStripScaleStep)
+                                                                    )
+                                                                }
+                                                                type="button"
+                                                            >
+                                                                <StudioCatalogIcon name="plus" />
+                                                            </button>
+                                                            <span>{canvasStripScale}%</span>
+                                                        </div>
                                                     </div>
                                                     <div className="tp-strip-stage">
                                                         {canvasDraftItems.length > 0 ? (
-                                                            <div className="tp-strip-stack">
+                                                            <div className="tp-strip-stack" style={canvasStripStyle}>
                                                                 {canvasDraftItems.map((media, index) => (
                                                                     <div
                                                                         className={`tp-strip-block ${media.mediaType}`}

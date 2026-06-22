@@ -11,6 +11,7 @@ export type StudioCatalogIconName =
     | 'edit'
     | 'image'
     | 'mic'
+    | 'minus'
     | 'more'
     | 'panel'
     | 'pause'
@@ -54,6 +55,7 @@ const iconPaths: Record<StudioCatalogIconName, ReactNode> = {
             <path d="M19 11a7 7 0 0 1-14 0M12 18v3" />
         </>
     ),
+    minus: <path d="M5 12h14" />,
     more: (
         <>
             <circle cx="5" cy="12" r="2" />
