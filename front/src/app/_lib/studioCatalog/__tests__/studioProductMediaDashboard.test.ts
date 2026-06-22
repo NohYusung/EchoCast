@@ -7,14 +7,15 @@ const iconSource = readFileSync(new URL('../StudioCatalogIcon.tsx', import.meta.
 const styles = readFileSync(new URL('../../../styles.css', import.meta.url), 'utf8');
 
 test('canvas media source list renders every visual media item', () => {
-    const sourceListMatch = source.match(
-        /<div className="tp-canvas-source-list">([\s\S]*?)<\/div>\s*<\/div>\s*<\/aside>/
-    );
+    const sourceListStart = source.indexOf('<div className="tp-canvas-source-list">');
+    const sourceListEnd = source.indexOf('</aside>', sourceListStart);
+    const sourceListSnippet =
+        sourceListStart >= 0 && sourceListEnd > sourceListStart ? source.slice(sourceListStart, sourceListEnd) : '';
 
-    assert.ok(sourceListMatch);
+    assert.ok(sourceListSnippet);
     assert.match(source, /return mediaItems\.filter\(\(media\) => media\.mediaType !== 'audio'\);/);
-    assert.match(sourceListMatch[1] ?? '', /canvasSourceMediaItems\.map/);
-    assert.doesNotMatch(sourceListMatch[1] ?? '', /\.slice\(0,\s*8\)/);
+    assert.match(sourceListSnippet, /canvasSourceMediaItems\.map/);
+    assert.doesNotMatch(sourceListSnippet, /\.slice\(0,\s*8\)/);
 });
 
 test('canvas media source list supports batch resource selection', () => {
@@ -40,6 +41,33 @@ test('canvas stage exposes zoom controls for the strip preview', () => {
     assert.match(iconSource, /\|\s*'minus'/);
     assert.match(styles, /\.tp-canvas-zoom/);
     assert.match(styles, /width:\s*var\(--tp-canvas-strip-width,\s*236px\);/);
+});
+
+test('canvas stage exposes dialogue cue placement and inspector fields', () => {
+    const stageHeadStart = source.indexOf('<div className="tp-canvas-stage-head">');
+    const stageHeadEnd = source.indexOf('<div\n                                                        className={', stageHeadStart);
+    const stageHeadSnippet =
+        stageHeadStart >= 0 && stageHeadEnd > stageHeadStart ? source.slice(stageHeadStart, stageHeadEnd) : '';
+
+    assert.ok(stageHeadSnippet);
+    assert.match(source, /const \[isCanvasDialogueMode,\s*setIsCanvasDialogueMode\] = useState\(false\);/);
+    assert.match(source, /const canvasDialogueStripRef = useRef<HTMLDivElement \| null>\(null\);/);
+    assert.match(source, /toggleCanvasDialogueMode/);
+    assert.match(source, /selectCanvasDialogueCuePosition/);
+    assert.match(source, /stripRoot\?\.matches\('\[data-dialogue-strip-stack\]'\)/);
+    assert.match(stageHeadSnippet, /className="tp-canvas-tools" role="toolbar"[\s\S]*?>\s*대사\s*<\/button>/);
+    assert.ok(stageHeadSnippet.indexOf('className="tp-canvas-tools"') < stageHeadSnippet.indexOf('className="tp-canvas-zoom"'));
+    assert.doesNotMatch(stageHeadSnippet, /<h1>|스트립 \{canvases\.findIndex/);
+    assert.match(source, /className="tp-canvas-dialogue-form"/);
+    assert.match(source, /aria-label="캔버스 대사 삽입 컷"/);
+    assert.match(source, /aria-label="캔버스 대사 삽입 위치값"/);
+    assert.match(source, /aria-label="캔버스 대사 녹음 길이"/);
+    assert.match(source, /data-dialogue-strip-stack/);
+    assert.match(source, /ref=\{canvasDialogueStripRef\}/);
+    assert.match(source, /onClick=\{selectCanvasDialogueCuePosition\}/);
+    assert.match(styles, /\.tp-canvas-tool\.is-active/);
+    assert.match(styles, /\.tp-canvas-dialogue-form/);
+    assert.match(styles, /\.tp-strip-block\.is-dialogue-target/);
 });
 
 test('media registration view includes registered audios but excludes record audios', () => {

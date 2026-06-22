@@ -229,6 +229,7 @@ const canvasStripScaleStep = 10;
 
 export function StudioProductMediaDashboard({ productId }: { productId: string }) {
     const dialogueStripRef = useRef<HTMLDivElement | null>(null);
+    const canvasDialogueStripRef = useRef<HTMLDivElement | null>(null);
     const [product, setProduct] = useState(() => getInitialProduct(productId));
     const [episodes, setEpisodes] = useState<EpisodeListItem[]>([]);
     const [selectedEpisodeId, setSelectedEpisodeId] = useState('');
@@ -239,6 +240,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const [tracks, setTracks] = useState<TrackListItem[]>([]);
     const [selectedMediaIds, setSelectedMediaIds] = useState<number[]>([]);
     const [canvasStripScale, setCanvasStripScale] = useState(100);
+    const [isCanvasDialogueMode, setIsCanvasDialogueMode] = useState(false);
     const [canvasResourceSelectionIds, setCanvasResourceSelectionIds] = useState<number[]>([]);
     const [previewMedia, setPreviewMedia] = useState<MediaCatalogItem | null>(null);
     const [selectedCanvasId, setSelectedCanvasId] = useState<number | null>(null);
@@ -274,6 +276,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         setCanvases([]);
         setTracks([]);
         setCanvasResourceSelectionIds([]);
+        setIsCanvasDialogueMode(false);
         setPreviewMedia(null);
         setSelectedEpisodeId('');
         setActiveStep('media');
@@ -329,6 +332,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             setSelectedCanvasId(null);
             setSelectedMediaIds([]);
             setCanvasResourceSelectionIds([]);
+            setIsCanvasDialogueMode(false);
             setPreviewMedia(null);
             setCueScriptDrafts({});
             setSelectedCuePosition(null);
@@ -359,6 +363,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                 });
                 setSelectedMediaIds([]);
                 setCanvasResourceSelectionIds([]);
+                setIsCanvasDialogueMode(false);
                 setPreviewMedia(null);
                 setSelectedCuePosition(null);
             })
@@ -548,6 +553,25 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         setCanvasStripScale(Math.min(canvasStripMaxScale, Math.max(canvasStripMinScale, scale)));
     };
 
+    const toggleCanvasDialogueMode = () => {
+        setIsCanvasDialogueMode((current) => {
+            const next = !current;
+            if (next) {
+                setCanvasResourceSelectionIds([]);
+                setMessage(
+                    selectedCanvasMediaItems.length > 0
+                        ? '캔버스에서 대사를 넣을 위치를 선택해 주세요.'
+                        : '대사 위치를 찍으려면 저장된 캔버스 컷이 필요합니다.'
+                );
+            } else {
+                setSelectedCuePosition(null);
+                setMessage('');
+            }
+
+            return next;
+        });
+    };
+
     const selectCanvasMedia = () => {
         setSelectedMediaIds((selectedCanvas?.medias ?? []).map((media) => media.mediaId));
         setCanvasResourceSelectionIds([]);
@@ -666,9 +690,13 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         applyManualDialogueCuePosition({ canvasMediaId, position });
     };
 
-    const selectDialogueCuePosition = (event: MouseEvent<HTMLButtonElement>) => {
-        const stripStack = dialogueStripRef.current?.querySelector<HTMLElement>('[data-dialogue-strip-stack]');
-
+    const selectDialogueCuePositionFromStrip = (
+        event: MouseEvent<HTMLElement>,
+        stripRoot: HTMLDivElement | null,
+    ) => {
+        const stripStack = stripRoot?.matches('[data-dialogue-strip-stack]')
+            ? stripRoot
+            : stripRoot?.querySelector<HTMLElement>('[data-dialogue-strip-stack]');
         if (!selectedCanvas || !stripStack || selectedCanvasMediaItems.length === 0) {
             setMessage('위치를 선택할 캔버스 스트립이 없습니다.');
             return;
@@ -707,6 +735,14 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
         setSelectedCuePosition(position);
         setMessage('대사 위치를 선택했습니다.');
+    };
+
+    const selectDialogueCuePosition = (event: MouseEvent<HTMLButtonElement>) => {
+        selectDialogueCuePositionFromStrip(event, dialogueStripRef.current);
+    };
+
+    const selectCanvasDialogueCuePosition = (event: MouseEvent<HTMLButtonElement>) => {
+        selectDialogueCuePositionFromStrip(event, canvasDialogueStripRef.current);
     };
 
     const refreshTracks = async () => {
@@ -1239,17 +1275,20 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
                                                 <section className="tp-canvas-stage">
                                                     <div className="tp-canvas-stage-head">
-                                                        <div>
-                                                            <h1>
-                                                                {selectedCanvas
-                                                                    ? `스트립 ${canvases.findIndex((canvas) => canvas.id === selectedCanvas.id) + 1}`
-                                                                    : '스트립'}
-                                                            </h1>
-                                                            <p>
-                                                                {selectedCanvas
-                                                                    ? `${selectedCanvas.medias?.length ?? 0}개 미디어 · ID ${selectedCanvas.id}`
-                                                                    : '캔버스를 선택하세요'}
-                                                            </p>
+                                                        <div className="tp-canvas-tools" role="toolbar">
+                                                            <button
+                                                                className={
+                                                                    isCanvasDialogueMode
+                                                                        ? 'tp-canvas-tool is-active'
+                                                                        : 'tp-canvas-tool'
+                                                                }
+                                                                disabled={!selectedCanvas}
+                                                                onClick={toggleCanvasDialogueMode}
+                                                                type="button"
+                                                            >
+                                                                <StudioCatalogIcon name="mic" />
+                                                                대사
+                                                            </button>
                                                         </div>
                                                         <div
                                                             aria-label="캔버스 확대 축소"
@@ -1310,8 +1349,83 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                             <span>{canvasStripScale}%</span>
                                                         </div>
                                                     </div>
-                                                    <div className="tp-strip-stage">
-                                                        {canvasDraftItems.length > 0 ? (
+                                                    <div
+                                                        className={
+                                                            isCanvasDialogueMode
+                                                                ? 'tp-strip-stage is-dialogue-placement'
+                                                                : 'tp-strip-stage'
+                                                        }
+                                                    >
+                                                        {isCanvasDialogueMode ? (
+                                                            selectedCanvasMediaItems.length > 0 ? (
+                                                                <div
+                                                                    className="tp-strip-stack is-dialogue-placement"
+                                                                    data-dialogue-strip-stack
+                                                                    ref={canvasDialogueStripRef}
+                                                                    style={canvasStripStyle}
+                                                                >
+                                                                    {selectedCanvasMediaItems.map((media, index) => {
+                                                                        const visualId = toDialogueVisualId(media);
+                                                                        const isSelectedPosition =
+                                                                            selectedCuePosition?.startCanvasMediaId ===
+                                                                            media.canvasMediaId;
+                                                                        const selectedPositionPercent =
+                                                                            isSelectedPosition
+                                                                                ? selectedCuePosition?.startPosition
+                                                                                : undefined;
+
+                                                                        return (
+                                                                            <button
+                                                                                className={
+                                                                                    isSelectedPosition
+                                                                                        ? `tp-strip-block ${media.mediaType} is-dialogue-target is-selected`
+                                                                                        : `tp-strip-block ${media.mediaType} is-dialogue-target`
+                                                                                }
+                                                                                data-dialogue-index={
+                                                                                    media.index ?? index
+                                                                                }
+                                                                                data-dialogue-visual-id={visualId}
+                                                                                key={`${media.canvasMediaId ?? media.mediaId}-${index}`}
+                                                                                onClick={selectCanvasDialogueCuePosition}
+                                                                                type="button"
+                                                                            >
+                                                                                <span className="tp-strip-label">
+                                                                                    {media.mediaType === 'video'
+                                                                                        ? '영상'
+                                                                                        : '컷'}
+                                                                                </span>
+                                                                                <MediaPreview
+                                                                                    media={toMediaListItem(
+                                                                                        media,
+                                                                                        selectedCanvas?.episodeId ??
+                                                                                            Number(selectedEpisodeId)
+                                                                                    )}
+                                                                                    compact={false}
+                                                                                />
+                                                                                <strong>{media.mediaName}</strong>
+                                                                                {typeof selectedPositionPercent ===
+                                                                                'number' ? (
+                                                                                    <i
+                                                                                        className="tp-dialogue-position-marker is-draft"
+                                                                                        style={{
+                                                                                            top: `${selectedPositionPercent}%`,
+                                                                                        }}
+                                                                                    />
+                                                                                ) : null}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="tp-empty compact">
+                                                                    <StudioCatalogIcon name="image" />
+                                                                    <p>
+                                                                        저장된 캔버스 컷이 없습니다. 캔버스 구성을 먼저
+                                                                        저장해 주세요.
+                                                                    </p>
+                                                                </div>
+                                                            )
+                                                        ) : canvasDraftItems.length > 0 ? (
                                                             <div className="tp-strip-stack" style={canvasStripStyle}>
                                                                 {canvasDraftItems.map((media, index) => (
                                                                     <div
@@ -1378,10 +1492,173 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
                                                 <aside className="tp-canvas-col tp-canvas-col-insp">
                                                     <div className="tp-canvas-colhead">
-                                                        <h2>구성</h2>
-                                                        <span>{canvasDraftMediaIds.length}선택</span>
+                                                        <h2>{isCanvasDialogueMode ? '대사' : '구성'}</h2>
+                                                        <span>
+                                                            {isCanvasDialogueMode
+                                                                ? selectedCuePosition
+                                                                    ? '위치 선택'
+                                                                    : '위치 미선택'
+                                                                : `${canvasDraftMediaIds.length}선택`}
+                                                        </span>
                                                     </div>
                                                     <div className="tp-canvas-inspector">
+                                                        {isCanvasDialogueMode ? (
+                                                            <form
+                                                                className="tp-canvas-dialogue-form"
+                                                                onSubmit={createDialogueCue}
+                                                            >
+                                                                <div className="tp-canvas-dialogue-note">
+                                                                    <StudioCatalogIcon name="mic" />
+                                                                    <span>
+                                                                        캔버스에서 위치를 찍고 대사 정보를 입력하세요.
+                                                                    </span>
+                                                                </div>
+                                                                <label>
+                                                                    <span>화자</span>
+                                                                    <select
+                                                                        disabled={
+                                                                            characters.length === 0 ||
+                                                                            isSavingDialogue ||
+                                                                            isCreatingDialogueCharacter
+                                                                        }
+                                                                        onChange={(event) => {
+                                                                            const characterId =
+                                                                                event.currentTarget.value;
+                                                                            setDialogueDraft((current) => ({
+                                                                                ...current,
+                                                                                characterId,
+                                                                            }));
+                                                                        }}
+                                                                        value={dialogueDraft.characterId}
+                                                                    >
+                                                                        {characters.map((character) => (
+                                                                            <option
+                                                                                key={character.id}
+                                                                                value={character.id}
+                                                                            >
+                                                                                {character.name}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </label>
+                                                                <label>
+                                                                    <span>삽입 컷</span>
+                                                                    <select
+                                                                        aria-label="캔버스 대사 삽입 컷"
+                                                                        disabled={
+                                                                            selectedCanvasMediaItems.length === 0 ||
+                                                                            isSavingDialogue
+                                                                        }
+                                                                        onChange={(event) =>
+                                                                            selectManualDialogueCueMedia(
+                                                                                event.currentTarget.value
+                                                                            )
+                                                                        }
+                                                                        value={selectedCuePositionCanvasMediaId}
+                                                                    >
+                                                                        {typeof firstSelectableCanvasMediaId !==
+                                                                        'number' ? (
+                                                                            <option value="">컷 없음</option>
+                                                                        ) : null}
+                                                                        {selectedCanvasMediaItems
+                                                                            .filter(
+                                                                                (media) =>
+                                                                                    typeof media.canvasMediaId ===
+                                                                                    'number'
+                                                                            )
+                                                                            .map((media, index) => (
+                                                                                <option
+                                                                                    key={media.canvasMediaId}
+                                                                                    value={media.canvasMediaId}
+                                                                                >
+                                                                                    {index + 1}. {media.mediaName}
+                                                                                </option>
+                                                                            ))}
+                                                                    </select>
+                                                                </label>
+                                                                <label>
+                                                                    <span>위치</span>
+                                                                    <input
+                                                                        aria-label="캔버스 대사 삽입 위치값"
+                                                                        disabled={
+                                                                            selectedCanvasMediaItems.length === 0 ||
+                                                                            isSavingDialogue
+                                                                        }
+                                                                        max={100}
+                                                                        min={0}
+                                                                        onChange={(event) =>
+                                                                            updateManualDialogueCuePosition(
+                                                                                event.currentTarget.value
+                                                                            )
+                                                                        }
+                                                                        placeholder="%"
+                                                                        step={1}
+                                                                        type="number"
+                                                                        value={selectedCuePosition?.startPosition ?? ''}
+                                                                    />
+                                                                    <small>{selectedCuePositionLabel}</small>
+                                                                </label>
+                                                                <label>
+                                                                    <span>녹음 길이</span>
+                                                                    <input
+                                                                        aria-label="캔버스 대사 녹음 길이"
+                                                                        disabled={
+                                                                            characters.length === 0 ||
+                                                                            isSavingDialogue ||
+                                                                            isCreatingDialogueCharacter
+                                                                        }
+                                                                        min={0.1}
+                                                                        onChange={(event) => {
+                                                                            const durationSeconds =
+                                                                                event.currentTarget.value;
+                                                                            setDialogueDraft((current) => ({
+                                                                                ...current,
+                                                                                durationSeconds,
+                                                                            }));
+                                                                        }}
+                                                                        step={0.1}
+                                                                        type="number"
+                                                                        value={dialogueDraft.durationSeconds}
+                                                                    />
+                                                                    <small>초</small>
+                                                                </label>
+                                                                <label>
+                                                                    <span>대사</span>
+                                                                    <textarea
+                                                                        disabled={
+                                                                            characters.length === 0 ||
+                                                                            isSavingDialogue ||
+                                                                            isCreatingDialogueCharacter
+                                                                        }
+                                                                        onChange={(event) => {
+                                                                            const script = event.currentTarget.value;
+                                                                            setDialogueDraft((current) => ({
+                                                                                ...current,
+                                                                                script,
+                                                                            }));
+                                                                        }}
+                                                                        placeholder="대사를 입력하세요..."
+                                                                        value={dialogueDraft.script}
+                                                                    />
+                                                                </label>
+                                                                <button
+                                                                    className="tp-btn primary"
+                                                                    disabled={
+                                                                        characters.length === 0 ||
+                                                                        isSavingDialogue ||
+                                                                        isCreatingDialogueCharacter ||
+                                                                        !dialogueDraft.script.trim() ||
+                                                                        !isDialogueDurationValid ||
+                                                                        !selectedCuePosition
+                                                                    }
+                                                                    type="submit"
+                                                                >
+                                                                    <StudioCatalogIcon name="plus" />
+                                                                    {isSavingDialogue ? '추가 중' : '대사 추가'}
+                                                                </button>
+                                                            </form>
+                                                        ) : (
+                                                            <>
                                                         <button
                                                             className="tp-btn primary"
                                                             disabled={canvasDraftMediaIds.length === 0}
@@ -1499,6 +1776,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                 );
                                                             })}
                                                         </div>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </aside>
                                             </div>
