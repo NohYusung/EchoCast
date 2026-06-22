@@ -1373,6 +1373,14 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                             isSelectedPosition
                                                                                 ? selectedCuePosition?.startPosition
                                                                                 : undefined;
+                                                                        const mediaCueRows = visibleDialogueRows.filter(
+                                                                            ({ cue }) =>
+                                                                                cue.startCanvasMediaId ===
+                                                                                media.canvasMediaId
+                                                                        );
+                                                                        const visibleMediaCueRows = mediaCueRows.slice(0, 6);
+                                                                        const hiddenMediaCueCount =
+                                                                            mediaCueRows.length - visibleMediaCueRows.length;
 
                                                                         return (
                                                                             <button
@@ -1411,6 +1419,38 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                                             top: `${selectedPositionPercent}%`,
                                                                                         }}
                                                                                     />
+                                                                                ) : null}
+                                                                                {visibleMediaCueRows.map(
+                                                                                    ({ cue, character, track }) => {
+                                                                                        const speakerName =
+                                                                                            character?.name ?? track.name;
+
+                                                                                        return (
+                                                                                            <span
+                                                                                                className="tp-dialogue-strip-cue"
+                                                                                                key={cue.id}
+                                                                                                style={{
+                                                                                                    '--tp-dialogue-cue-top': `${toDialogueCueOverlayTop(cue.startPosition)}%`,
+                                                                                                } as CSSProperties}
+                                                                                                title={`${speakerName}: ${cue.script}`}
+                                                                                            >
+                                                                                                <i>
+                                                                                                    {getCharacterInitial(
+                                                                                                        speakerName
+                                                                                                    )}
+                                                                                                </i>
+                                                                                                <span>
+                                                                                                    <b>{speakerName}</b>
+                                                                                                    <em>{cue.script}</em>
+                                                                                                </span>
+                                                                                            </span>
+                                                                                        );
+                                                                                    }
+                                                                                )}
+                                                                                {hiddenMediaCueCount > 0 ? (
+                                                                                    <span className="tp-dialogue-strip-more">
+                                                                                        +{hiddenMediaCueCount}
+                                                                                    </span>
                                                                                 ) : null}
                                                                             </button>
                                                                         );

@@ -65,6 +65,10 @@ test('canvas stage exposes dialogue cue placement and inspector fields', () => {
     assert.match(source, /data-dialogue-strip-stack/);
     assert.match(source, /ref=\{canvasDialogueStripRef\}/);
     assert.match(source, /onClick=\{selectCanvasDialogueCuePosition\}/);
+    assert.match(source, /const mediaCueRows = visibleDialogueRows\.filter/);
+    assert.match(source, /className="tp-dialogue-strip-cue"/);
+    assert.match(source, /toDialogueCueOverlayTop\(cue\.startPosition\)/);
+    assert.match(source, /className="tp-dialogue-strip-more"/);
     assert.match(styles, /\.tp-canvas-tool\.is-active/);
     assert.match(styles, /\.tp-canvas-dialogue-form/);
     assert.match(styles, /\.tp-strip-block\.is-dialogue-target/);
