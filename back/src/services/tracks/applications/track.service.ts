@@ -46,12 +46,41 @@ export class TrackService extends DddService {
         const [tracks, total] = await Promise.all([
             this.trackRepository.find(
                 { episodeId },
-                { relations: { cues: { audio: true }, scrolls: { startAnchor: true, endAnchor: true } } }
+                { relations: { cues: { audio: true, scriptRef: true }, scrolls: { startAnchor: true, endAnchor: true } } }
             ),
             this.trackRepository.count({ episodeId }),
         ]);
         const items = tracks.map((track) => {
             const item = track.toInstance(TrackResponseDto);
+            item.cues = [...(track.cues ?? [])]
+                .sort((a, b) => (a.startTime ?? Number.MAX_SAFE_INTEGER) - (b.startTime ?? Number.MAX_SAFE_INTEGER) || a.id - b.id)
+                .map((cue) => ({
+                    id: cue.id,
+                    scriptId: cue.scriptId ?? undefined,
+                    script: cue.scriptRef?.line ?? '',
+                    duration: cue.scriptRef?.duration ?? undefined,
+                    characterId: cue.characterId,
+                    trackId: cue.trackId,
+                    audioId: cue.audioId ?? undefined,
+                    startCanvasMediaId: cue.startCanvasMediaId,
+                    endCanvasMediaId: cue.endCanvasMediaId,
+                    audio: cue.audio
+                        ? {
+                              id: cue.audio.id,
+                              audioType: cue.audio.audioType,
+                              name: cue.audio.name,
+                              audioUrl: cue.audio.audioUrl,
+                              duration: cue.audio.duration,
+                          }
+                        : undefined,
+                    startTime: cue.startTime,
+                    endTime: cue.endTime,
+                    audioStartTime: cue.audioStartTime,
+                    audioEndTime: cue.audioEndTime,
+                    startPosition: cue.startPosition,
+                    endPosition: cue.endPosition,
+                    volume: cue.volume,
+                }));
             item.scrolls = [...(track.scrolls ?? [])]
                 .sort((a, b) => (a.startAnchor?.time ?? 0) - (b.startAnchor?.time ?? 0) || a.id - b.id)
                 .map((scroll) => ({

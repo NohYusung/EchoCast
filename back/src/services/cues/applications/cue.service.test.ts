@@ -13,6 +13,8 @@ import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
+import { Script } from '../../scripts/domain/script.entity';
+import { ScriptRepository } from '../../scripts/repository/script.repository';
 import { Track } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
 import { Cue } from '../domain/cue.entity';
@@ -22,7 +24,7 @@ import { CueService } from './cue.service';
 async function createCueServiceDataSource() {
     const dataSource = new DataSource({
         type: 'sqljs',
-        entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+        entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Script, Track],
         synchronize: true,
         logging: false,
     });
@@ -34,7 +36,8 @@ function createCueService(dataSource: DataSource) {
     return new CueService(
         new CueRepository(dataSource),
         new TrackRepository(dataSource),
-        new CanvasMediaRepository(dataSource)
+        new CanvasMediaRepository(dataSource),
+        new ScriptRepository(dataSource)
     );
 }
 
@@ -82,6 +85,7 @@ describe('CueService', () => {
             const created = await cueService.create({
                 trackId: track.id,
                 script: '새 큐 대사',
+                duration: 2300,
                 startCanvasMediaId: canvasMedia.id,
                 startPosition: 12.5,
                 endPosition: 64,
@@ -94,12 +98,13 @@ describe('CueService', () => {
                 },
             });
             assert.equal(created.script, '새 큐 대사');
+            assert.equal(created.duration, 2300);
             assert.equal(created.startCanvasMediaId, canvasMedia.id);
             assert.equal(created.endCanvasMediaId, canvasMedia.id);
             assert.equal(created.startPosition, 12.5);
             assert.equal(created.endPosition, 64);
             assert.equal(storedCue.trackId, track.id);
-            assert.equal(storedCue.script, '새 큐 대사');
+            assert.equal(typeof storedCue.scriptId, 'number');
             assert.equal(storedCue.characterId, character.id);
             assert.equal(storedCue.startCanvasMediaId, canvasMedia.id);
             assert.equal(storedCue.endCanvasMediaId, canvasMedia.id);
@@ -109,14 +114,27 @@ describe('CueService', () => {
             assert.equal(storedCue.endPosition, 64);
             assert.equal(storedCue.volume, 0.8);
 
+            const storedScriptId = storedCue.scriptId;
+            if (typeof storedScriptId !== 'number') {
+                throw new Error('created cue should reference a script row');
+            }
+            const storedScript = await dataSource.manager.findOneByOrFail(Script, { id: storedScriptId });
+            assert.equal(storedScript.line, '새 큐 대사');
+            assert.equal(storedScript.duration, 2300);
+
             await cueService.update({
                 trackId: track.id,
                 cueId: created.id,
                 script: '시간 미배정 큐 수정',
+                duration: 1800,
             });
 
-            const updatedCue = await dataSource.manager.findOneByOrFail(Cue, { id: created.id });
-            assert.equal(updatedCue.script, '시간 미배정 큐 수정');
+            const updatedCue = await dataSource.manager.findOneOrFail(Cue, {
+                where: { id: created.id },
+                relations: { scriptRef: true },
+            });
+            assert.equal(updatedCue.scriptRef?.line, '시간 미배정 큐 수정');
+            assert.equal(updatedCue.scriptRef?.duration, 1800);
             assert.equal(updatedCue.startTime ?? undefined, undefined);
             assert.equal(updatedCue.endTime ?? undefined, undefined);
         } finally {
@@ -207,16 +225,20 @@ describe('CueService', () => {
                     characterId: character.id,
                 })
             );
+            const [secondScript, firstScript] = await dataSource.manager.save([
+                new Script({ line: '두 번째 큐' }),
+                new Script({ line: '첫 번째 큐' }),
+            ]);
             await dataSource.manager.save([
                 new Cue({
-                    script: '두 번째 큐',
+                    scriptId: secondScript.id,
                     characterId: character.id,
                     trackId: track.id,
                     startTime: 2000,
                     endTime: 3000,
                 }),
                 new Cue({
-                    script: '첫 번째 큐',
+                    scriptId: firstScript.id,
                     characterId: character.id,
                     trackId: track.id,
                     startTime: 500,
@@ -277,9 +299,12 @@ describe('CueService', () => {
             const canvasMedia = await dataSource.manager.save(
                 new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 })
             );
+            const script = await dataSource.manager.save(
+                new Script({ line: '수정 전 대사' })
+            );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: '수정 전 대사',
+                    scriptId: script.id,
                     characterId: character.id,
                     trackId: track.id,
                     startTime: 1000,
@@ -305,8 +330,11 @@ describe('CueService', () => {
                 where: {
                     id: cue.id,
                 },
+                relations: {
+                    scriptRef: true,
+                },
             });
-            assert.equal(storedCue.script, '수정 후 대사');
+            assert.equal(storedCue.scriptRef?.line, '수정 후 대사');
             assert.equal(storedCue.characterId, character.id);
             assert.equal(storedCue.trackId, track.id);
             assert.equal(storedCue.startCanvasMediaId, canvasMedia.id);
@@ -349,9 +377,10 @@ describe('CueService', () => {
                     type: 'audio',
                 })
             );
+            const script = await dataSource.manager.save(new Script({ line: '긴 오디오 큐' }));
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: '긴 오디오 큐',
+                    scriptId: script.id,
                     trackId: track.id,
                     audioId: audio.id,
                     startTime: 1000,
@@ -445,7 +474,6 @@ describe('CueService', () => {
             );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: '삭제할 큐',
                     characterId: character.id,
                     trackId: track.id,
                     startTime: 1000,
@@ -469,6 +497,120 @@ describe('CueService', () => {
             });
             assert.equal(storedCues.length, 0);
             assert.ok(deletedCue.deletedAt);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('soft deletes the linked script when the deleted cue is the only active reference', async () => {
+        const dataSource = await createCueServiceDataSource();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Cue script delete product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Cue script delete episode',
+                })
+            );
+            const character = await dataSource.manager.save(
+                new Character({
+                    productId: product.id,
+                    name: 'Cue script delete character',
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Cue script delete track',
+                    type: 'record',
+                    characterId: character.id,
+                })
+            );
+            const script = await dataSource.manager.save(new Script({ line: '삭제할 스크립트' }));
+            const cue = await dataSource.manager.save(
+                new Cue({
+                    scriptId: script.id,
+                    characterId: character.id,
+                    trackId: track.id,
+                    startTime: 1000,
+                    endTime: 3000,
+                })
+            );
+            const cueService = createCueService(dataSource);
+
+            await cueService.delete({ trackId: track.id, cueId: cue.id });
+
+            const storedScripts = await dataSource.manager.find(Script, {
+                where: {
+                    id: script.id,
+                },
+            });
+            const [deletedScript] = await dataSource.manager.find(Script, {
+                where: {
+                    id: script.id,
+                },
+                withDeleted: true,
+            });
+            assert.equal(storedScripts.length, 0);
+            assert.ok(deletedScript.deletedAt);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('keeps the linked script when another active cue still references it', async () => {
+        const dataSource = await createCueServiceDataSource();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Cue shared script product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Cue shared script episode',
+                })
+            );
+            const character = await dataSource.manager.save(
+                new Character({
+                    productId: product.id,
+                    name: 'Cue shared script character',
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Cue shared script track',
+                    type: 'record',
+                    characterId: character.id,
+                })
+            );
+            const script = await dataSource.manager.save(new Script({ line: '공유 스크립트' }));
+            const [firstCue, secondCue] = await dataSource.manager.save([
+                new Cue({
+                    scriptId: script.id,
+                    characterId: character.id,
+                    trackId: track.id,
+                    startTime: 1000,
+                    endTime: 3000,
+                }),
+                new Cue({
+                    scriptId: script.id,
+                    characterId: character.id,
+                    trackId: track.id,
+                    startTime: 4000,
+                    endTime: 6000,
+                }),
+            ]);
+            const cueService = createCueService(dataSource);
+
+            await cueService.delete({ trackId: track.id, cueId: firstCue.id });
+
+            const storedScript = await dataSource.manager.findOneByOrFail(Script, { id: script.id });
+            const storedCue = await dataSource.manager.findOneByOrFail(Cue, { id: secondCue.id });
+            assert.equal(storedScript.line, '공유 스크립트');
+            assert.equal(storedCue.scriptId, script.id);
         } finally {
             await dataSource.destroy();
         }

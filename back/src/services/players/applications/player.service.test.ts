@@ -19,6 +19,7 @@ import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Record as RecordEntity } from '../../records/domain/record.entity';
 import { RecordRepository } from '../../records/repository/record.repository';
+import { Script } from '../../scripts/domain/script.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
 import { Track } from '../../tracks/domain/track.entity';
@@ -46,6 +47,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -145,7 +147,6 @@ describe('PlayerService', () => {
             );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: '플레이어 테스트 대사',
                     characterId: character.id,
                     trackId: dialogueTrack.id,
                     startTime: 500,
@@ -325,6 +326,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -377,6 +379,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -422,7 +425,6 @@ describe('PlayerService', () => {
             await dataSource.manager.save(new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 }));
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: '합성 비주얼 트랙 테스트',
                     characterId: character.id,
                     trackId: dialogueTrack.id,
                     startTime: 0,
@@ -477,6 +479,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -542,6 +545,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -635,6 +639,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -720,6 +725,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -806,6 +812,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -927,6 +934,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -1011,6 +1019,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -1059,7 +1068,6 @@ describe('PlayerService', () => {
             );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: '오디오 트림 테스트',
                     trackId: audioTrack.id,
                     audioId: audio.id,
                     startCanvasMediaId: canvasMedia.id,
@@ -1152,6 +1160,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],
@@ -1188,7 +1197,6 @@ describe('PlayerService', () => {
             );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: '미채택 녹음 테스트',
                     characterId: character.id,
                     trackId: track.id,
                     startTime: 0,
@@ -1248,6 +1256,7 @@ describe('PlayerService', () => {
                 Media,
                 Product,
                 RecordEntity,
+                Script,
                 Scroll,
                 Track,
             ],

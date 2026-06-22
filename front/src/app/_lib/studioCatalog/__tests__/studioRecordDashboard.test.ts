@@ -101,6 +101,16 @@ test('recording can start and save without a selected artist', () => {
     assert.doesNotMatch(source, /disabled=\{!selectedCue \|\| !selectedArtistId \|\| isSavingRecord \|\| isRecording\}/);
 });
 
+test('recording auto-stops at the selected cue duration and saves that duration', () => {
+    assert.match(source, /const recordingTargetDurationMsRef = useRef<number \| undefined>\(undefined\);/);
+    assert.match(source, /const targetDurationMs = Math\.round\(selectedCue\.durationMs\);/);
+    assert.match(source, /recordingTargetDurationMsRef\.current = targetDurationMs;/);
+    assert.match(source, /recordingStopTimerRef\.current = window\.setTimeout\(\(\) => \{[\s\S]*?stopRecording\(\);[\s\S]*?\}, targetDurationMs\);/);
+    assert.match(source, /const durationMs =[\s\S]*?targetDurationMs[\s\S]*?: Math\.max\(800, Date\.now\(\) - \(recordingStartedAtRef\.current \?\? Date\.now\(\)\)\);/);
+    assert.match(source, /disabled=\{isRecording \|\| !playingRecordKey\}/);
+    assert.doesNotMatch(source, /if \(isRecording\) \{[\s\S]*?stopRecording\(\);[\s\S]*?return;[\s\S]*?\}/);
+});
+
 test('recording screen focuses the latest saved take until the user clicks another take', () => {
     assert.match(source, /const \[focusedRecordKey, setFocusedRecordKey\]/);
     assert.match(source, /const nextRecord = getLatestRecordingTake\(nextCue\?\.records \?\? \[\]\)/);

@@ -61,6 +61,15 @@ export interface CueManifest {
     volume: number;
 }
 
+export interface ScriptManifest {
+    id: number;
+    episodeId: number;
+    characterId?: number;
+    text: string;
+    durationMs?: number;
+    sortOrder: number;
+}
+
 export interface RecordManifest {
     id: number;
     cueId: number;
@@ -104,6 +113,7 @@ export interface PlayerManifest {
         naturalHeight?: number;
         durationMs?: number;
     }>;
+    scripts?: ScriptManifest[];
     records: RecordManifest[];
     tts: TtsManifest[];
 }

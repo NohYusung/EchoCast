@@ -3,10 +3,11 @@ import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 't
 import { Audio } from '../../audios/domain/audio.entity';
 import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Character } from '../../characters/domain/character.entity';
+import { Script } from '../../scripts/domain/script.entity';
 import { Track } from '../../tracks/domain/track.entity';
 
 type Ctor = {
-    script: string;
+    scriptId?: number | null;
     characterId?: number;
     trackId: number;
     audioId?: number | null;
@@ -26,14 +27,8 @@ export class Cue extends DddAggregate {
     @PrimaryGeneratedColumn()
     id!: number;
 
-    /*
-    AGENT
-    - cue도메인에서 script칼럼을 없애고, scripts도메인을 새로만들어서, 관리하려고함. 
-    - /Users/nes0903/Documents/dobedub/new-dubright/back/src/services/scripts 이미 이 경로에 파일을 만들어둠. 
-    - cue 도메인에서는 scriptId를 참조하도록 수정. 
-    */
-    @Column({ comment: '큐 대사' })
-    script!: string;
+    @Column({ comment: '대사 id', nullable: true })
+    scriptId?: number | null;
 
     @Column({ comment: '캐릭터 id', nullable: true })
     characterId?: number;
@@ -75,6 +70,10 @@ export class Cue extends DddAggregate {
     @JoinColumn({ name: 'characterId' })
     character?: Character;
 
+    @ManyToOne(() => Script, { nullable: true })
+    @JoinColumn({ name: 'scriptId' })
+    scriptRef?: Script | null;
+
     @ManyToOne(() => Track)
     @JoinColumn({ name: 'trackId' })
     track!: Track;
@@ -94,7 +93,7 @@ export class Cue extends DddAggregate {
     constructor(args?: Ctor) {
         super();
         if (args) {
-            this.script = args.script;
+            this.scriptId = args.scriptId;
             this.characterId = args.characterId;
             this.trackId = args.trackId;
             this.audioId = args.audioId;
@@ -111,7 +110,7 @@ export class Cue extends DddAggregate {
     }
 
     update({
-        script,
+        scriptId,
         characterId,
         audioId,
         startCanvasMediaId,
@@ -124,7 +123,7 @@ export class Cue extends DddAggregate {
         endPosition,
         volume,
     }: {
-        script?: string;
+        scriptId?: number | null;
         characterId?: number;
         audioId?: number | null;
         startCanvasMediaId?: number;
@@ -138,7 +137,7 @@ export class Cue extends DddAggregate {
         volume?: number;
     }) {
         const changedArgs = this.stripUnchanged({
-            script,
+            scriptId,
             characterId,
             audioId,
             startCanvasMediaId,

@@ -62,7 +62,6 @@ test('GET player manifest endpoint exposes episode playback content without draf
         await dataSource.manager.save(new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 }));
         const cue = await dataSource.manager.save(
             new Cue({
-                script: 'API 대사',
                 characterId: character.id,
                 trackId: track.id,
                 startTime: 0,

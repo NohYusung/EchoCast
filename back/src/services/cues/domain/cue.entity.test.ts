@@ -11,13 +11,14 @@ import { Episode } from '../../episodes/domain/episode.entity';
 import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
+import { Script } from '../../scripts/domain/script.entity';
 import { Track } from '../../tracks/domain/track.entity';
 import { Cue } from './cue.entity';
 
 async function createCueEntityDataSource() {
     const dataSource = new DataSource({
         type: 'sqljs',
-        entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+        entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Script, Track],
         synchronize: true,
         logging: false,
     });
@@ -40,6 +41,11 @@ describe('Cue entity', () => {
             assert.equal(columnNames.includes('endPosition'), true);
             assert.equal(columnNames.includes('audioStartTime'), true);
             assert.equal(columnNames.includes('audioEndTime'), true);
+            assert.equal(columnNames.includes('script'), false);
+            assert.equal(columnNames.includes('scriptId'), true);
+            assert.equal(metadata.findColumnWithPropertyName('scriptId')?.isNullable, true);
+            assert.ok(metadata.findRelationWithPropertyPath('scriptRef'));
+            assert.equal(Object.getOwnPropertyDescriptor(Cue.prototype, 'script'), undefined);
             assert.equal(metadata.findColumnWithPropertyName('startTime')?.isNullable, true);
             assert.equal(metadata.findColumnWithPropertyName('endTime')?.isNullable, true);
         } finally {
@@ -78,9 +84,14 @@ describe('Cue entity', () => {
             const canvasMedia = await dataSource.manager.save(
                 new CanvasMedia({ canvasId: canvas.id, mediaId: media.id, index: 0 })
             );
+            const script = await dataSource.manager.save(
+                new Script({
+                    line: '위치가 있는 큐',
+                })
+            );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: '위치가 있는 큐',
+                    scriptId: script.id,
                     trackId: track.id,
                     startCanvasMediaId: canvasMedia.id,
                     endCanvasMediaId: canvasMedia.id,

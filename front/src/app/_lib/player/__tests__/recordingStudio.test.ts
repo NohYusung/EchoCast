@@ -19,7 +19,7 @@ const draft: PlayerDraft = {
         { id: 2, name: '서연', color: '#10b981' },
     ],
     scripts: [
-        { id: 2, episodeId: 1, characterId: 1, text: '저 눈빛... 어디서 봤더라.', sortOrder: 2 },
+        { id: 2, episodeId: 1, characterId: 1, text: '저 눈빛... 어디서 봤더라.', durationMs: 1800, sortOrder: 2 },
         { id: 1, episodeId: 1, characterId: 1, text: '또 늦었네...', sortOrder: 1 },
         { id: 3, episodeId: 1, characterId: 2, text: '거기 서.', sortOrder: 3 },
     ],
@@ -112,6 +112,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
             takeCount: item.takeCount,
             latestRecordUrl: item.latestRecordUrl,
             characterImageUrl: item.characterImageUrl,
+            durationMs: item.durationMs,
             isAccepted: item.records.at(-1)?.isAccepted,
         })),
         [
@@ -122,6 +123,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
                 takeCount: 1,
                 latestRecordUrl: '/record-1.wav',
                 characterImageUrl: 'https://assets.example.com/characters/jihu.png',
+                durationMs: 2100,
                 isAccepted: true,
             },
             {
@@ -131,6 +133,7 @@ test('buildRecordingCueQueue sorts scripts and marks draft or manifest recorded 
                 takeCount: 1,
                 latestRecordUrl: '/record-2.wav',
                 characterImageUrl: 'https://assets.example.com/characters/jihu.png',
+                durationMs: 1800,
                 isAccepted: true,
             },
         ],

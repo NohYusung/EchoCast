@@ -150,7 +150,7 @@ export function buildRecordingCueQueue({
                 sortOrder: script?.sortOrder ?? Number.MAX_SAFE_INTEGER,
                 startTime: cue.startTime,
                 endTime: cue.endTime,
-                durationMs: Math.max(0, cue.endTime - cue.startTime),
+                durationMs: script?.durationMs ?? Math.max(0, cue.endTime - cue.startTime),
                 startCanvasMediaId: toOptionalNumber(cue.startCanvasMediaId ?? manifestCue?.startCanvasMediaId),
                 endCanvasMediaId: toOptionalNumber(cue.endCanvasMediaId ?? manifestCue?.endCanvasMediaId),
                 startPosition: toOptionalNumber(cue.startPosition ?? manifestCue?.startPosition),

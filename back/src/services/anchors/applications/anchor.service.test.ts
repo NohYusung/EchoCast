@@ -12,6 +12,7 @@ import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
+import { Script } from '../../scripts/domain/script.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
 import { Track } from '../../tracks/domain/track.entity';
@@ -24,7 +25,7 @@ describe('AnchorService', () => {
     it('creates an anchor for a track and canvas in the same episode', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -78,7 +79,7 @@ describe('AnchorService', () => {
     it('rejects missing tracks and canvases from a different episode', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -145,7 +146,7 @@ describe('AnchorService', () => {
     it('updates an anchor after validating canvas ownership and position bounds', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -243,7 +244,7 @@ describe('AnchorService', () => {
     it('lets an anchor own a scroll event with matching start and end positions', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -327,7 +328,7 @@ describe('AnchorService', () => {
     it('deletes an anchor separately and clears dependent scroll events', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });

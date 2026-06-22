@@ -1,5 +1,6 @@
 export class CueCreateDto {
     script!: string;
+    duration?: number;
     startTime?: number;
     endTime?: number;
     startCanvasMediaId?: number;

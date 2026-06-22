@@ -21,6 +21,7 @@ type MediaFilter = 'all' | MediaType;
 type SetupStepId = 'media' | 'canvas' | 'dialogue';
 type CharacterRole = 'starring' | 'supporting' | 'minor' | 'narrator' | 'unknown';
 type TrackApiType = 'scroll' | 'scrolls' | 'record' | 'audio' | 'effect' | 'bgm';
+type AudioType = 'audio' | 'bgm' | 'effect' | 'tts' | 'record';
 type Product = {
     id: string;
     legacyId: string;
@@ -78,9 +79,28 @@ type MediaListItem = {
     mediaUrl: string;
     duration?: number;
 };
+type MediaCatalogItem = MediaListItem & {
+    catalogKey: string;
+    source: 'audio' | 'media';
+};
 type MediaListResponse = {
     data: {
         items: MediaListItem[];
+        total: number;
+    };
+};
+type AudioListItem = {
+    id: number;
+    episodeId: number;
+    cueId?: number;
+    audioType: AudioType;
+    name: string;
+    audioUrl: string;
+    duration?: number;
+};
+type AudioListResponse = {
+    data: {
+        items: AudioListItem[];
         total: number;
     };
 };
@@ -121,6 +141,7 @@ type CanvasMediaRequestItem = {
 type TrackCueListItem = {
     id: number;
     script: string;
+    duration?: number;
     characterId?: number;
     trackId: number;
     startTime: number;
@@ -154,6 +175,7 @@ type TrackCreateRequest = {
 };
 type CueCreateRequest = {
     script: string;
+    duration?: number;
     startTime?: number;
     endTime?: number;
     startCanvasMediaId?: number;
@@ -199,6 +221,7 @@ const characterRoleLabels: Record<CharacterRole, string> = {
     narrator: '나레이션',
     unknown: '역할 미정',
 };
+const defaultDialogueDurationSeconds = '1';
 
 export function StudioProductMediaDashboard({ productId }: { productId: string }) {
     const dialogueStripRef = useRef<HTMLDivElement | null>(null);
@@ -207,13 +230,19 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const [selectedEpisodeId, setSelectedEpisodeId] = useState('');
     const [characters, setCharacters] = useState<CharacterListItem[]>([]);
     const [mediaItems, setMediaItems] = useState<MediaListItem[]>([]);
+    const [audioItems, setAudioItems] = useState<AudioListItem[]>([]);
     const [canvases, setCanvases] = useState<CanvasListItem[]>([]);
     const [tracks, setTracks] = useState<TrackListItem[]>([]);
     const [selectedMediaIds, setSelectedMediaIds] = useState<number[]>([]);
+    const [canvasResourceSelectionIds, setCanvasResourceSelectionIds] = useState<number[]>([]);
     const [selectedCanvasId, setSelectedCanvasId] = useState<number | null>(null);
     const [activeStep, setActiveStep] = useState<SetupStepId>('media');
     const [selectedSpeakerId, setSelectedSpeakerId] = useState('all');
-    const [dialogueDraft, setDialogueDraft] = useState({ characterId: '', script: '' });
+    const [dialogueDraft, setDialogueDraft] = useState({
+        characterId: '',
+        script: '',
+        durationSeconds: defaultDialogueDurationSeconds,
+    });
     const [quickCharacterName, setQuickCharacterName] = useState('');
     const [quickCharacterRole, setQuickCharacterRole] = useState<CharacterRole>('minor');
     const [cueScriptDrafts, setCueScriptDrafts] = useState<Record<number, string>>({});
@@ -234,10 +263,15 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         setProduct(initialProduct);
         setEpisodes([]);
         setCharacters([]);
+        setMediaItems([]);
+        setAudioItems([]);
+        setCanvases([]);
+        setTracks([]);
+        setCanvasResourceSelectionIds([]);
         setSelectedEpisodeId('');
         setActiveStep('media');
         setSelectedSpeakerId('all');
-        setDialogueDraft({ characterId: '', script: '' });
+        setDialogueDraft({ characterId: '', script: '', durationSeconds: defaultDialogueDurationSeconds });
         setQuickCharacterName('');
         setQuickCharacterRole('minor');
         setCueScriptDrafts({});
@@ -282,10 +316,12 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     useEffect(() => {
         if (!selectedEpisodeId) {
             setMediaItems([]);
+            setAudioItems([]);
             setCanvases([]);
             setTracks([]);
             setSelectedCanvasId(null);
             setSelectedMediaIds([]);
+            setCanvasResourceSelectionIds([]);
             setCueScriptDrafts({});
             setSelectedCuePosition(null);
             return;
@@ -296,10 +332,16 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         setSelectedCuePosition(null);
         setMessage('');
 
-        Promise.all([listMedia(selectedEpisodeId), listCanvases(selectedEpisodeId), listTracks(selectedEpisodeId)])
-            .then(([listedMedia, listedCanvases, listedTracks]) => {
+        Promise.all([
+            listMedia(selectedEpisodeId),
+            listAudios(selectedEpisodeId),
+            listCanvases(selectedEpisodeId),
+            listTracks(selectedEpisodeId),
+        ])
+            .then(([listedMedia, listedAudios, listedCanvases, listedTracks]) => {
                 if (ignore) return;
                 setMediaItems(listedMedia);
+                setAudioItems(listedAudios);
                 setCanvases(listedCanvases);
                 setTracks(listedTracks);
                 setCueScriptDrafts(toCueScriptDrafts(listedTracks));
@@ -308,6 +350,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                     return listedCanvases[0]?.id ?? null;
                 });
                 setSelectedMediaIds([]);
+                setCanvasResourceSelectionIds([]);
                 setSelectedCuePosition(null);
             })
             .catch(() => {
@@ -353,16 +396,38 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             ? '전체 대사'
             : (characters.find((character) => String(character.id) === selectedSpeakerId)?.name ?? '선택 화자');
 
+    const mediaCatalogItems = useMemo(() => {
+        const catalogMediaItems = mediaItems.map((media) => ({
+            ...media,
+            catalogKey: `media-${media.id}`,
+            source: 'media' as const,
+        }));
+        const catalogAudioItems = audioItems
+            .filter((audio) => audio.audioType !== 'record')
+            .map((audio) => ({
+                id: audio.id,
+                episodeId: audio.episodeId,
+                mediaName: audio.name,
+                mediaType: 'audio' as const,
+                mediaUrl: audio.audioUrl,
+                duration: audio.duration,
+                catalogKey: `audio-${audio.id}`,
+                source: 'audio' as const,
+            }));
+
+        return [...catalogMediaItems, ...catalogAudioItems];
+    }, [audioItems, mediaItems]);
+
     const visibleMedia = useMemo(() => {
-        return mediaItems.filter((media) => {
+        return mediaCatalogItems.filter((media) => {
             if (filter !== 'all' && media.mediaType !== filter) return false;
 
             return true;
         });
-    }, [filter, mediaItems]);
+    }, [filter, mediaCatalogItems]);
 
     const counts = useMemo(() => {
-        return mediaItems.reduce(
+        return mediaCatalogItems.reduce(
             (acc, media) => {
                 acc.all += 1;
                 acc[media.mediaType] += 1;
@@ -370,7 +435,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             },
             { all: 0, image: 0, video: 0, audio: 0 }
         );
-    }, [mediaItems]);
+    }, [mediaCatalogItems]);
     const activeStepIndex = setupSteps.findIndex((step) => step.id === activeStep);
     const editorHref = selectedEpisodeId
         ? `/studio/products/${product.id}/episodes/${selectedEpisodeId}`
@@ -378,7 +443,6 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const currentEpisodeLabel = selectedEpisode
         ? `${product.title} · ${selectedEpisode.episodeNumber}화 · ${selectedEpisode.title}`
         : `${product.title} · 에피소드 선택 필요`;
-    const progressWidth = `${((activeStepIndex + 1) / setupSteps.length) * 100}%`;
     const canvasDraftMediaIds = useMemo(() => {
         if (selectedMediaIds.length > 0) return selectedMediaIds;
 
@@ -398,6 +462,17 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             })
             .filter((media): media is MediaListItem => Boolean(media));
     }, [canvasDraftMediaIds, mediaItems, selectedCanvas]);
+    const canvasSourceMediaItems = useMemo(() => {
+        return mediaItems.filter((media) => media.mediaType !== 'audio');
+    }, [mediaItems]);
+    const selectedCanvasResourceIds = useMemo(() => {
+        const sourceMediaIdSet = new Set(canvasSourceMediaItems.map((media) => media.id));
+        const draftMediaIdSet = new Set(canvasDraftMediaIds);
+
+        return canvasResourceSelectionIds.filter(
+            (mediaId) => sourceMediaIdSet.has(mediaId) && !draftMediaIdSet.has(mediaId)
+        );
+    }, [canvasDraftMediaIds, canvasResourceSelectionIds, canvasSourceMediaItems]);
     const selectedCanvasMediaItems = useMemo(() => {
         return (selectedCanvas?.medias ?? [])
             .slice()
@@ -415,6 +490,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     )?.canvasMediaId;
     const selectedCuePositionCanvasMediaId =
         selectedCuePosition?.startCanvasMediaId ?? firstSelectableCanvasMediaId ?? '';
+    const dialogueDurationMs = toDialogueDurationMs(dialogueDraft.durationSeconds);
+    const isDialogueDurationValid = typeof dialogueDurationMs === 'number';
     const dialogueStripSize = toDialogueStripSize(dialogueStripScale);
     const dialogueWorkspaceStyle = {
         '--tp-dialogue-strip-panel-width': `${dialogueStripSize.panelWidth}px`,
@@ -431,6 +508,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
     const selectCanvasMedia = () => {
         setSelectedMediaIds((selectedCanvas?.medias ?? []).map((media) => media.mediaId));
+        setCanvasResourceSelectionIds([]);
         setSelectedCuePosition(null);
     };
 
@@ -455,6 +533,40 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             if (base.includes(mediaId)) return base;
             return [...base, mediaId];
         });
+        setCanvasResourceSelectionIds((current) => current.filter((id) => id !== mediaId));
+    };
+
+    const toggleCanvasResourceSelection = (mediaId: number) => {
+        if (canvasDraftMediaIds.includes(mediaId)) return;
+
+        setCanvasResourceSelectionIds((current) => {
+            if (current.includes(mediaId)) return current.filter((id) => id !== mediaId);
+
+            return [...current, mediaId];
+        });
+    };
+
+    const selectAllCanvasResources = () => {
+        const draftMediaIdSet = new Set(canvasDraftMediaIds);
+        setCanvasResourceSelectionIds(
+            canvasSourceMediaItems.filter((media) => !draftMediaIdSet.has(media.id)).map((media) => media.id)
+        );
+    };
+
+    const clearCanvasResourceSelection = () => {
+        setCanvasResourceSelectionIds([]);
+    };
+
+    const addSelectedCanvasResources = () => {
+        if (selectedCanvasResourceIds.length === 0) return;
+
+        setSelectedMediaIds((current) => {
+            const base = current.length > 0 ? current : canvasDraftMediaIds;
+            const nextIds = selectedCanvasResourceIds.filter((mediaId) => !base.includes(mediaId));
+
+            return [...base, ...nextIds];
+        });
+        setCanvasResourceSelectionIds([]);
     };
 
     const updateDialogueStripScale = (value: string) => {
@@ -683,6 +795,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             setMediaItems(listedMedia);
             setCanvases(listedCanvases);
             setSelectedMediaIds((current) => current.filter((id) => id !== mediaId));
+            setCanvasResourceSelectionIds((current) => current.filter((id) => id !== mediaId));
             setSelectedCuePosition(null);
             setMessage('미디어를 삭제했습니다.');
         } catch {
@@ -735,6 +848,10 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             setMessage('대사를 입력해 주세요.');
             return;
         }
+        if (!dialogueDurationMs) {
+            setMessage('녹음 길이는 0초보다 크게 입력해 주세요.');
+            return;
+        }
         if (!selectedCuePosition) {
             setMessage('이미지 스트립에서 대사를 넣을 위치를 선택해 주세요.');
             return;
@@ -757,8 +874,9 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
             await createCue(String(track.id), {
                 script,
+                duration: dialogueDurationMs,
                 startTime,
-                endTime: startTime + 1000,
+                endTime: startTime + dialogueDurationMs,
                 ...selectedCuePosition,
                 volume: 1,
             });
@@ -979,36 +1097,46 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
                                             <div className="tp-media-grid tp-media-grid-setup">
                                                 {visibleMedia.length > 0 ? (
-                                                    visibleMedia.map((media) => (
-                                                        <article
-                                                            className={`tp-media-card ${media.mediaType} ${selectedMediaIds.includes(media.id) ? 'is-selected' : ''}`}
-                                                            key={media.id}
-                                                            onClick={() => toggleMediaSelection(media.id)}
-                                                        >
-                                                            <MediaPreview media={media} compact />
-                                                            {selectedMediaIds.includes(media.id) ? (
-                                                                <span className="tp-media-selected">선택</span>
-                                                            ) : null}
-                                                            <span className="tp-media-meta">
-                                                                <strong>{media.mediaName}</strong>
-                                                                <small>
-                                                                    {mediaLabels[media.mediaType]} ·{' '}
-                                                                    {formatDuration(media.duration)}
-                                                                </small>
-                                                            </span>
-                                                            <button
-                                                                aria-label={`${media.mediaName} 삭제`}
-                                                                className="tp-card-icon danger"
-                                                                onClick={(event) => {
-                                                                    event.stopPropagation();
-                                                                    deleteMediaItem(media.id);
+                                                    visibleMedia.map((media) => {
+                                                        const isMediaSource = media.source === 'media';
+                                                        const isSelected =
+                                                            isMediaSource && selectedMediaIds.includes(media.id);
+
+                                                        return (
+                                                            <article
+                                                                className={`tp-media-card ${media.mediaType} ${isSelected ? 'is-selected' : ''}`}
+                                                                key={media.catalogKey}
+                                                                onClick={() => {
+                                                                    if (isMediaSource) toggleMediaSelection(media.id);
                                                                 }}
-                                                                type="button"
                                                             >
-                                                                <StudioCatalogIcon name="trash" />
-                                                            </button>
-                                                        </article>
-                                                    ))
+                                                                <MediaPreview media={media} compact />
+                                                                {isSelected ? (
+                                                                    <span className="tp-media-selected">선택</span>
+                                                                ) : null}
+                                                                <span className="tp-media-meta">
+                                                                    <strong>{media.mediaName}</strong>
+                                                                    <small>
+                                                                        {mediaLabels[media.mediaType]} ·{' '}
+                                                                        {formatDuration(media.duration)}
+                                                                    </small>
+                                                                </span>
+                                                                {isMediaSource ? (
+                                                                    <button
+                                                                        aria-label={`${media.mediaName} 삭제`}
+                                                                        className="tp-card-icon danger"
+                                                                        onClick={(event) => {
+                                                                            event.stopPropagation();
+                                                                            deleteMediaItem(media.id);
+                                                                        }}
+                                                                        type="button"
+                                                                    >
+                                                                        <StudioCatalogIcon name="trash" />
+                                                                    </button>
+                                                                ) : null}
+                                                            </article>
+                                                        );
+                                                    })
                                                 ) : (
                                                     <div className="tp-empty compact">
                                                         <StudioCatalogIcon name="image" />
@@ -1201,20 +1329,83 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                             <span>캔버스 수</span>
                                                             <strong>{canvases.length}</strong>
                                                         </div>
+                                                        <div className="tp-canvas-source-tools">
+                                                            <button
+                                                                className="tp-btn primary"
+                                                                disabled={selectedCanvasResourceIds.length === 0}
+                                                                onClick={addSelectedCanvasResources}
+                                                                type="button"
+                                                            >
+                                                                <StudioCatalogIcon name="plus" />
+                                                                선택 추가
+                                                            </button>
+                                                            <button
+                                                                className="tp-btn ghost"
+                                                                disabled={canvasSourceMediaItems.length === 0}
+                                                                onClick={selectAllCanvasResources}
+                                                                type="button"
+                                                            >
+                                                                전체 선택
+                                                            </button>
+                                                            <button
+                                                                className="tp-btn ghost"
+                                                                disabled={canvasResourceSelectionIds.length === 0}
+                                                                onClick={clearCanvasResourceSelection}
+                                                                type="button"
+                                                            >
+                                                                선택 해제
+                                                            </button>
+                                                        </div>
                                                         <div className="tp-canvas-source-list">
-                                                            {mediaItems
-                                                                .filter((media) => media.mediaType !== 'audio')
-                                                                .map((media) => (
-                                                                    <button
+                                                            {canvasSourceMediaItems.map((media) => {
+                                                                const isInDraft = canvasDraftMediaIds.includes(
+                                                                    media.id
+                                                                );
+                                                                const isSelected = canvasResourceSelectionIds.includes(
+                                                                    media.id
+                                                                );
+
+                                                                return (
+                                                                    <div
+                                                                        aria-disabled={isInDraft}
+                                                                        aria-pressed={!isInDraft && isSelected}
+                                                                        className={`tp-canvas-source-row ${isSelected ? 'is-selected' : ''} ${isInDraft ? 'is-added' : ''}`}
                                                                         key={media.id}
-                                                                        onClick={() => addCanvasDraftItem(media.id)}
-                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            toggleCanvasResourceSelection(media.id)
+                                                                        }
+                                                                        onKeyDown={(event) => {
+                                                                            if (event.key !== 'Enter' && event.key !== ' ') {
+                                                                                return;
+                                                                            }
+
+                                                                            event.preventDefault();
+                                                                            toggleCanvasResourceSelection(media.id);
+                                                                        }}
+                                                                        role="button"
+                                                                        tabIndex={isInDraft ? -1 : 0}
                                                                     >
                                                                         <MediaPreview media={media} compact />
                                                                         <span>{media.mediaName}</span>
-                                                                        <StudioCatalogIcon name="plus" />
-                                                                    </button>
-                                                                ))}
+                                                                        {isInDraft ? (
+                                                                            <small>추가됨</small>
+                                                                        ) : (
+                                                                            <button
+                                                                                aria-label={`${media.mediaName} 바로 추가`}
+                                                                                className="tp-card-icon"
+                                                                                onClick={(event) => {
+                                                                                    event.preventDefault();
+                                                                                    event.stopPropagation();
+                                                                                    addCanvasDraftItem(media.id);
+                                                                                }}
+                                                                                type="button"
+                                                                            >
+                                                                                <StudioCatalogIcon name="plus" />
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
                                                         </div>
                                                     </div>
                                                 </aside>
@@ -1561,6 +1752,29 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                             </span>
                                                             <small>{selectedCuePositionLabel}</small>
                                                         </div>
+                                                        <label>
+                                                            <span>녹음 길이</span>
+                                                            <input
+                                                                aria-label="대사 녹음 길이"
+                                                                disabled={
+                                                                    characters.length === 0 ||
+                                                                    isSavingDialogue ||
+                                                                    isCreatingDialogueCharacter
+                                                                }
+                                                                min={0.1}
+                                                                onChange={(event) => {
+                                                                    const durationSeconds = event.currentTarget.value;
+                                                                    setDialogueDraft((current) => ({
+                                                                        ...current,
+                                                                        durationSeconds,
+                                                                    }));
+                                                                }}
+                                                                step={0.1}
+                                                                type="number"
+                                                                value={dialogueDraft.durationSeconds}
+                                                            />
+                                                            <small>초</small>
+                                                        </label>
                                                         <label className="tp-dialogue-script-field">
                                                             <span>대사</span>
                                                             <textarea
@@ -1587,6 +1801,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                 isSavingDialogue ||
                                                                 isCreatingDialogueCharacter ||
                                                                 !dialogueDraft.script.trim() ||
+                                                                !isDialogueDurationValid ||
                                                                 !selectedCuePosition
                                                             }
                                                             type="submit"
@@ -1616,7 +1831,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                                 </span>
                                                                                 <small>
                                                                                     {formatMilliseconds(cue.startTime)}{' '}
-                                                                                    · {track.name}
+                                                                                    · 녹음 {formatDuration(cue.duration)} ·{' '}
+                                                                                    {track.name}
                                                                                 </small>
                                                                             </div>
                                                                             <textarea
@@ -1683,43 +1899,6 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                     ) : null}
                                 </div>
                             </div>
-
-                            <footer className="tp-setup-footnav">
-                                <span>
-                                    {activeStepIndex + 1} / {setupSteps.length} 단계
-                                </span>
-                                <span className="tp-setup-progress">
-                                    <i style={{ width: progressWidth }} />
-                                </span>
-                                <div className="tp-spacer" />
-                                <button
-                                    className="tp-btn ghost"
-                                    disabled={activeStepIndex === 0}
-                                    onClick={() => setActiveStep(setupSteps[Math.max(0, activeStepIndex - 1)].id)}
-                                    type="button"
-                                >
-                                    이전
-                                </button>
-                                {activeStepIndex < setupSteps.length - 1 ? (
-                                    <button
-                                        className="tp-btn primary"
-                                        onClick={() =>
-                                            setActiveStep(
-                                                setupSteps[Math.min(setupSteps.length - 1, activeStepIndex + 1)].id
-                                            )
-                                        }
-                                        type="button"
-                                    >
-                                        다음
-                                        <StudioCatalogIcon name="chevronRight" />
-                                    </button>
-                                ) : (
-                                    <Link className="tp-btn primary" href={editorHref}>
-                                        타임라인으로
-                                        <StudioCatalogIcon name="chevronRight" />
-                                    </Link>
-                                )}
-                            </footer>
                         </>
                     )}
                 </section>
@@ -1930,6 +2109,13 @@ function formatMilliseconds(milliseconds: number) {
     return `${minute}:${second}`;
 }
 
+function toDialogueDurationMs(durationSeconds: string) {
+    const parsedSeconds = Number.parseFloat(durationSeconds);
+    if (!Number.isFinite(parsedSeconds) || parsedSeconds <= 0) return undefined;
+
+    return Math.round(parsedSeconds * 1000);
+}
+
 function getNextDialogueStartTime(tracks: TrackListItem[]) {
     const latestEndTime = tracks
         .filter(isDialogueTrack)
@@ -2069,6 +2255,19 @@ async function listMedia(episodeId: string) {
 
     const result = (await response.json()) as MediaListResponse;
     return result.data.items;
+}
+
+async function listAudios(episodeId: string) {
+    const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/episodes/${episodeId}/audios`, {
+        cache: 'no-store',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Audio list failed: ${response.status}`);
+    }
+
+    const result = (await response.json()) as AudioListResponse;
+    return result.data.items.filter((audio) => audio.audioType !== 'record');
 }
 
 async function listTracks(episodeId: string) {

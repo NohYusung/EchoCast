@@ -48,7 +48,6 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
         );
         const cue = await dataSource.manager.save(
             new Cue({
-                script: 'Record API script',
                 characterId: character.id,
                 trackId: track.id,
                 startTime: 100,
@@ -229,7 +228,6 @@ test('records API creates a record without an artist', async () => {
         );
         const cue = await dataSource.manager.save(
             new Cue({
-                script: 'Record API no artist script',
                 characterId: character.id,
                 trackId: track.id,
                 startTime: 100,

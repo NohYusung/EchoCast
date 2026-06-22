@@ -12,6 +12,7 @@ import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
+import { Script } from '../../scripts/domain/script.entity';
 import { Track } from '../../tracks/domain/track.entity';
 import { Scroll } from '../domain/scroll.entity';
 import { ScrollRepository } from '../repository/scroll.repository';
@@ -20,7 +21,7 @@ import { ScrollsService } from './scrolls.service';
 async function createScrollsServiceDataSource() {
     const dataSource = new DataSource({
         type: 'sqljs',
-        entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+        entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
         synchronize: true,
         logging: false,
     });

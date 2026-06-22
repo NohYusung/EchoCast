@@ -15,6 +15,7 @@ export class CueController {
         // 1. Destructure body, params, query
         const {
             script,
+            duration,
             startTime,
             endTime,
             audioId,
@@ -33,6 +34,7 @@ export class CueController {
         await this.cueService.create({
             trackId,
             script,
+            duration,
             startTime,
             endTime,
             audioId,
@@ -77,6 +79,7 @@ export class CueController {
         // 1. Destructure body, params, query
         const {
             script,
+            duration,
             startTime,
             endTime,
             audioId,
@@ -96,6 +99,7 @@ export class CueController {
             trackId,
             cueId,
             script,
+            duration,
             startTime,
             endTime,
             audioId,

@@ -10,6 +10,7 @@ import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
+import { Script } from '../../scripts/domain/script.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { Track } from '../../tracks/domain/track.entity';
 import { Audio } from './audio.entity';
@@ -18,7 +19,7 @@ describe('Audio', () => {
     it('stores source audio data with episode and optional cue relation', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -59,7 +60,6 @@ describe('Audio', () => {
             );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: 'Audio cue',
                     characterId: character.id,
                     trackId: track.id,
                     audioId: audio.id,
@@ -107,7 +107,7 @@ describe('Audio', () => {
     it('stores audio without duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });

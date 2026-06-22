@@ -27,6 +27,7 @@ export interface PlayerDraft {
         episodeId: number;
         characterId: number;
         text: string;
+        durationMs?: number;
         sortOrder: number;
     }>;
     tracks: Array<{

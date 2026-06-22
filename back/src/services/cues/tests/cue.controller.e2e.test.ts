@@ -75,6 +75,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
             .post(`/tracks/${track.id}/cues`)
             .send({
                 script: 'API로 추가한 큐',
+                duration: 2400,
                 volume: 0.85,
             })
             .expect(201);
@@ -93,6 +94,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(listedCue.endPosition, 0);
         assert.equal(listedCue.volume, 0.85);
         assert.equal(listedCue.script, 'API로 추가한 큐');
+        assert.equal(listedCue.duration, 2400);
         assert.equal(Object.hasOwn(listedCue, 'ttsVoiceId'), false);
 
         const listResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
@@ -109,6 +111,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(updatedTrack.cues[0].endPosition, 0);
         assert.equal(updatedTrack.cues[0].volume, 0.85);
         assert.equal(updatedTrack.cues[0].script, 'API로 추가한 큐');
+        assert.equal(updatedTrack.cues[0].duration, 2400);
         assert.equal(Object.hasOwn(updatedTrack.cues[0], 'ttsVoiceId'), false);
 
         const cueId = updatedTrack.cues[0].id;
@@ -116,6 +119,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
             .put(`/tracks/${track.id}/cues/${cueId}`)
             .send({
                 script: 'API로 수정한 큐',
+                duration: 1800,
                 startTime: 1800,
                 endTime: 6000,
                 startPosition: 18,
@@ -134,6 +138,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(trackWithUpdatedCue.cues.length, 1);
         assert.equal(trackWithUpdatedCue.cues[0].id, cueId);
         assert.equal(trackWithUpdatedCue.cues[0].script, 'API로 수정한 큐');
+        assert.equal(trackWithUpdatedCue.cues[0].duration, 1800);
         assert.equal(trackWithUpdatedCue.cues[0].startTime, 1800);
         assert.equal(trackWithUpdatedCue.cues[0].endTime, 6000);
         assert.equal(trackWithUpdatedCue.cues[0].startPosition, 18);

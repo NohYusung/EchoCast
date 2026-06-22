@@ -10,6 +10,7 @@ import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
+import { Script } from '../../scripts/domain/script.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { Track } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
@@ -21,7 +22,7 @@ describe('AudioService', () => {
     it('creates audio and lists it by episode', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -72,7 +73,7 @@ describe('AudioService', () => {
     it('drops an audio file by creating a track and a cue linked with audioId', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -129,7 +130,7 @@ describe('AudioService', () => {
     it('drops the same audio file more than once as separate cues', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });

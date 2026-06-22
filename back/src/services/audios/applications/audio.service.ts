@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DddService } from '../../../libs/ddd';
 import { Cue } from '../../cues/domain/cue.entity';
+import { Script } from '../../scripts/domain/script.entity';
 import { Track, type TrackType } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
 import { Audio, type AudioType } from '../domain/audio.entity';
@@ -132,9 +133,14 @@ export class AudioService extends DddService {
                 throw new BadRequestException('녹음 트랙은 캐릭터와 연결되어야 합니다.');
             }
 
+            const script = await entityManager.save(
+                new Script({
+                    line: audio.name,
+                })
+            );
             const cue = await entityManager.save(
                 new Cue({
-                    script: audio.name,
+                    scriptId: script.id,
                     characterId: track.characterId,
                     trackId: track.id,
                     audioId: audio.id,
@@ -145,6 +151,7 @@ export class AudioService extends DddService {
                     volume,
                 })
             );
+            cue.scriptRef = script;
 
             return { track, cue };
         });
@@ -160,7 +167,8 @@ export class AudioService extends DddService {
             },
             cue: {
                 id: result.cue.id,
-                script: result.cue.script,
+                scriptId: result.cue.scriptId,
+                script: result.cue.scriptRef?.line ?? '',
                 characterId: result.cue.characterId,
                 trackId: result.cue.trackId,
                 audioId: result.cue.audioId,

@@ -4,6 +4,12 @@ import { test } from 'node:test';
 
 const source = readFileSync(new URL('../StudioEditor.tsx', import.meta.url), 'utf8');
 
+test('studio editor brand logo links back to the product list', () => {
+    assert.match(source, /import Link from 'next\/link';/);
+    assert.match(source, /<Link className="odx-brand" href="\/studio\/products">/);
+    assert.doesNotMatch(source, /<div className="odx-brand">/);
+});
+
 test('scroll event timeline edits update existing anchors instead of creating new anchors', () => {
     const persistScrollEventUpdateBlock = source.match(
         /const persistScrollEventUpdate = async \(event: ScrollEventClip\) => \{[\s\S]*?\n    \};/

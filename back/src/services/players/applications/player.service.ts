@@ -77,7 +77,7 @@ export class PlayerService extends DddService {
                 ? await Promise.all([
                       this.cueRepository.find(
                           { trackId: checkInValue(trackIds) },
-                          { options: { sort: 'startTime', order: 'ASC' } }
+                          { relations: { scriptRef: true }, options: { sort: 'startTime', order: 'ASC' } }
                       ),
                       this.anchorRepository.find(
                           { trackId: checkInValue(trackIds) },

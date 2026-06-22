@@ -112,6 +112,8 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const recordingCueRef = useRef<RecordingCueQueueItem | undefined>(undefined);
     const recordingArtistIdRef = useRef<string | undefined>(undefined);
     const recordingStartedAtRef = useRef<number | undefined>(undefined);
+    const recordingTargetDurationMsRef = useRef<number | undefined>(undefined);
+    const recordingStopTimerRef = useRef<number | undefined>(undefined);
 
     useEffect(() => {
         setDraftState(draft);
@@ -250,8 +252,13 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
         const intervalId = window.setInterval(() => {
             const elapsedMs = Date.now() - recordingStartedAt;
-            setRecordingMs(elapsedMs);
-            setLiveWave(createWave(elapsedMs, RECORD_WAVEFORM_BAR_COUNT));
+            const targetDurationMs = recordingTargetDurationMsRef.current;
+            const displayMs =
+                typeof targetDurationMs === 'number' && targetDurationMs > 0
+                    ? Math.min(targetDurationMs, elapsedMs)
+                    : elapsedMs;
+            setRecordingMs(displayMs);
+            setLiveWave(createWave(displayMs, RECORD_WAVEFORM_BAR_COUNT));
         }, 120);
 
         return () => window.clearInterval(intervalId);
@@ -304,6 +311,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                     recorder.stop();
                 }
             }
+            clearRecordingStopTimer();
             stopRecordingStream(recordingStreamRef.current);
             cancelRecordPlaybackFrame();
             recordPlaybackRef.current?.pause();
@@ -326,6 +334,11 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     async function startRecording() {
         if (!selectedCue) return;
 
+        const targetDurationMs = Math.round(selectedCue.durationMs);
+        if (!Number.isFinite(targetDurationMs) || targetDurationMs <= 0) {
+            setMessage('대사 녹음 길이가 필요합니다.');
+            return;
+        }
         if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
             setMessage('현재 브라우저가 녹음을 지원하지 않습니다.');
             return;
@@ -345,6 +358,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             recordingCueRef.current = selectedCue;
             recordingArtistIdRef.current = selectedArtistId || undefined;
             recordingStartedAtRef.current = startedAt;
+            recordingTargetDurationMsRef.current = targetDurationMs;
 
             recorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
@@ -358,10 +372,16 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                 setMessage('녹음 중 오류가 발생했습니다.');
                 setIsRecording(false);
                 setRecordingStartedAt(undefined);
+                recordingTargetDurationMsRef.current = undefined;
+                clearRecordingStopTimer();
                 stopRecordingStream(recordingStreamRef.current);
             };
 
             recorder.start();
+            clearRecordingStopTimer();
+            recordingStopTimerRef.current = window.setTimeout(() => {
+                stopRecording();
+            }, targetDurationMs);
             setRecordingStartedAt(startedAt);
             setRecordingMs(0);
             setLiveWave(createWave(startedAt, RECORD_WAVEFORM_BAR_COUNT));
@@ -377,10 +397,22 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         if (!recorder || recorder.state === 'inactive') {
             setIsRecording(false);
             setRecordingStartedAt(undefined);
+            recordingTargetDurationMsRef.current = undefined;
+            clearRecordingStopTimer();
             return;
         }
 
+        clearRecordingStopTimer();
         recorder.stop();
+    }
+
+    function clearRecordingStopTimer() {
+        if (typeof recordingStopTimerRef.current !== 'number') {
+            return;
+        }
+
+        window.clearTimeout(recordingStopTimerRef.current);
+        recordingStopTimerRef.current = undefined;
     }
 
     async function uploadRecordFile({
@@ -442,7 +474,11 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         const chunks = recordingChunksRef.current;
         const cue = recordingCueRef.current;
         const artistId = recordingArtistIdRef.current;
-        const durationMs = Math.max(800, Date.now() - (recordingStartedAtRef.current ?? Date.now()));
+        const targetDurationMs = recordingTargetDurationMsRef.current;
+        const durationMs =
+            typeof targetDurationMs === 'number' && targetDurationMs > 0
+                ? targetDurationMs
+                : Math.max(800, Date.now() - (recordingStartedAtRef.current ?? Date.now()));
 
         setIsRecording(false);
         setRecordingStartedAt(undefined);
@@ -469,6 +505,8 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             recordingCueRef.current = undefined;
             recordingArtistIdRef.current = undefined;
             recordingStartedAtRef.current = undefined;
+            recordingTargetDurationMsRef.current = undefined;
+            clearRecordingStopTimer();
             setIsSavingRecord(false);
             stopRecordingStream(recordingStreamRef.current);
             recordingStreamRef.current = null;
@@ -658,11 +696,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }
 
     function stopTransport() {
-        if (isRecording) {
-            stopRecording();
-            return;
-        }
-
         stopRecordPlayback();
     }
 
@@ -1121,7 +1154,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                     <StudioCatalogIcon name={isFocusedRecordPlaying ? 'pause' : 'play'} />
                                     <span>{isFocusedRecordPlaying ? '일시정지' : '재생'}</span>
                                 </button>
-                                <button aria-label="정지" disabled={!isRecording && !playingRecordKey} onClick={stopTransport} type="button">
+                                <button aria-label="정지" disabled={isRecording || !playingRecordKey} onClick={stopTransport} type="button">
                                     <StudioCatalogIcon name="stop" />
                                     <span>정지</span>
                                 </button>

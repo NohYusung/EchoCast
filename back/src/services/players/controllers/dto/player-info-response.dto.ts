@@ -219,9 +219,24 @@ export class PlayerInfoResponseDto {
             duration: record.audio?.duration ?? undefined,
             isAccepted: record.isAccepted,
         }));
+        const playerScripts = Array.from(
+            new Map(
+                cues.map((cue, index) => [
+                    cue.scriptId ?? cue.id,
+                    {
+                        id: cue.scriptId ?? cue.id,
+                        episodeId: episode.id,
+                        characterId: cue.characterId ?? undefined,
+                        text: cue.scriptRef?.line ?? '',
+                        durationMs: cue.scriptRef?.duration ?? undefined,
+                        sortOrder: index + 1,
+                    },
+                ])
+            ).values()
+        );
         const playerCues = cues.map((cue) => ({
             id: cue.id,
-            scriptId: cue.id,
+            scriptId: cue.scriptId ?? cue.id,
             characterId: cue.characterId ?? undefined,
             trackId: cue.trackId,
             audioId: cue.audioId ?? undefined,
@@ -290,6 +305,7 @@ export class PlayerInfoResponseDto {
             cues: playerCues,
             canvases: playerCanvases,
             media,
+            scripts: playerScripts,
             records: playerRecords,
             scrolls: playerScrolls,
             anchors: playerAnchors,

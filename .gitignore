@@ -25,3 +25,4 @@ front/coverage/
 !front/.env.example
 .DS_Store
 AGENTS.md
+docs/

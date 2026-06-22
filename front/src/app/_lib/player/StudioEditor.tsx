@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
     CSSProperties,
@@ -10023,9 +10024,9 @@ export function StudioEditor({
     return (
         <div className="odx-editor" data-testid="tooned-index-editor">
             <header className="odx-topbar">
-                <div className="odx-brand">
+                <Link className="odx-brand" href="/studio/products">
                     <ToonedBrand context="studio" />
-                </div>
+                </Link>
                 <div className="odx-project">
                     <strong>{episodeTitle}</strong>
                     <span>{episodeMeta}</span>

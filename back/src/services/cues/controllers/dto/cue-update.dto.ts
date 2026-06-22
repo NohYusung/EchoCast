@@ -1,5 +1,6 @@
 export class CueUpdateDto {
     script?: string;
+    duration?: number;
     startTime?: number;
     endTime?: number;
     startCanvasMediaId?: number;

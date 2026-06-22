@@ -8,8 +8,11 @@ import { Character } from '../services/characters/domain/character.entity';
 import { Cue } from '../services/cues/domain/cue.entity';
 import { Episode } from '../services/episodes/domain/episode.entity';
 import { Media } from '../services/medias/domain/media.entity';
+import { Permission } from '../services/permissions/domain/permission.entity';
 import { Product } from '../services/products/domain/product.entity';
 import { Record } from '../services/records/domain/record.entity';
+import { Role } from '../services/roles/domain/role.entity';
+import { Script } from '../services/scripts/domain/script.entity';
 import { Scroll } from '../services/scrolls/domain/scroll.entity';
 import { Track } from '../services/tracks/domain/track.entity';
 import { User } from '../services/users/domain/user.entity';
@@ -25,8 +28,11 @@ export default [
     Cue,
     Episode,
     Media,
+    Permission,
     Product,
     Record,
+    Role,
+    Script,
     Scroll,
     Track,
     User,

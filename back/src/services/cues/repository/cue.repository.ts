@@ -12,7 +12,7 @@ export class CueRepository extends DddRepository<Cue> {
     async find(
         conditions: {
             id?: number;
-            script?: string;
+            scriptId?: number | FindOperator<number>;
             characterId?: number;
             trackId?: number | FindOperator<number>;
             audioId?: number | FindOperator<number>;
@@ -30,7 +30,7 @@ export class CueRepository extends DddRepository<Cue> {
         return this.entityManager.find(this.entityClass, {
             where: stripUndefined<Cue>({
                 id: conditions.id,
-                script: conditions.script,
+                scriptId: conditions.scriptId,
                 characterId: conditions.characterId,
                 trackId: conditions.trackId,
                 audioId: conditions.audioId,
@@ -49,7 +49,7 @@ export class CueRepository extends DddRepository<Cue> {
 
     async count(conditions: {
         id?: number;
-        script?: string;
+        scriptId?: number;
         characterId?: number;
         trackId?: number;
         audioId?: number;
@@ -65,7 +65,7 @@ export class CueRepository extends DddRepository<Cue> {
         return this.entityManager.count(this.entityClass, {
             where: stripUndefined<Cue>({
                 id: conditions.id,
-                script: conditions.script,
+                scriptId: conditions.scriptId,
                 characterId: conditions.characterId,
                 trackId: conditions.trackId,
                 audioId: conditions.audioId,

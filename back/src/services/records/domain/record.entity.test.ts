@@ -12,6 +12,7 @@ import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
+import { Script } from '../../scripts/domain/script.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { Track } from '../../tracks/domain/track.entity';
 import { Record } from './record.entity';
@@ -20,7 +21,7 @@ describe('Record', () => {
     it('stores an artist recorded file with cue and artist relations', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Scroll, Track],
+            entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -50,7 +51,6 @@ describe('Record', () => {
             );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: 'record test script',
                     characterId: character.id,
                     trackId: track.id,
                     startTime: 1000,
@@ -102,7 +102,7 @@ describe('Record', () => {
     it('stores a record without artist and duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Scroll, Track],
+            entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Script, Scroll, Track],
             synchronize: true,
             logging: false,
         });
@@ -132,7 +132,6 @@ describe('Record', () => {
             );
             const cue = await dataSource.manager.save(
                 new Cue({
-                    script: 'record nullable duration script',
                     characterId: character.id,
                     trackId: track.id,
                     startTime: 1000,

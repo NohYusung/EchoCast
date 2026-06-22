@@ -29,6 +29,12 @@ export class TrackCueResponseDto {
     script!: string;
 
     @Expose()
+    scriptId?: number;
+
+    @Expose()
+    duration?: number;
+
+    @Expose()
     characterId?: number;
 
     @Expose()

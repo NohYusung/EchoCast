@@ -11,9 +11,12 @@ import { CueModule } from './services/cues/cue.module';
 import { EpisodeModule } from './services/episodes/episode.module';
 import { FileModule } from './services/files/file.module';
 import { MediaModule } from './services/medias/media.module';
+import { PermissionModule } from './services/permissions/permission.module';
 import { PlayerModule } from './services/players/player.module';
 import { ProductModule } from './services/products/product.module';
 import { RecordModule } from './services/records/record.module';
+import { RoleModule } from './services/roles/role.module';
+import { ScriptModule } from './services/scripts/script.module';
 import { ScrollsModule } from './services/scrolls/scrolls.module';
 import { TrackModule } from './services/tracks/track.module';
 
@@ -32,9 +35,12 @@ import { TrackModule } from './services/tracks/track.module';
         MediaModule,
         CanvasModule,
         RecordModule,
+        ScriptModule,
         PlayerModule,
         ScrollsModule,
         FileModule,
+        PermissionModule,
+        RoleModule,
     ],
 })
 export class AppModule {}
