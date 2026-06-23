@@ -1,6 +1,6 @@
-import { Body, Controller, Dependencies, Post } from '@nestjs/common';
+import { Body, Controller, Dependencies, HttpCode, Post } from '@nestjs/common';
 import { AuthService } from '../applications/auth.service';
-import { AuthSignupDto } from './dto';
+import { AuthSignInDto, AuthSignupDto } from './dto';
 
 @Dependencies(AuthService)
 @Controller('/auth')
@@ -28,5 +28,26 @@ export class AuthController {
 
         // 4. Send response
         return { data: {} };
+    }
+
+    /**
+     * 로그인
+     */
+    @HttpCode(200)
+    @Post('/signIn')
+    async signIn(@Body() body: AuthSignInDto) {
+        // 1. Destructure body, params, query
+        const { email, password } = body;
+
+        // 2. Get context
+
+        // 3. Get result
+        const data = await this.authService.signIn({
+            email,
+            password,
+        });
+
+        // 4. Send response
+        return { data };
     }
 }
