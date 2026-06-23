@@ -1,6 +1,5 @@
 import { DddEvent } from '../libs/ddd';
 import { Anchor } from '../services/anchors/domain/anchor.entity';
-import { Artist } from '../services/artists/domain/artist.entity';
 import { Audio } from '../services/audios/domain/audio.entity';
 import { CanvasMedia } from '../services/canvas-medias/domain/canvas-media.entity';
 import { Canvas } from '../services/canvases/domain/canvas.entity';
@@ -20,7 +19,6 @@ import { User } from '../services/users/domain/user.entity';
 export default [
     DddEvent,
     Anchor,
-    Artist,
     Audio,
     CanvasMedia,
     Canvas,

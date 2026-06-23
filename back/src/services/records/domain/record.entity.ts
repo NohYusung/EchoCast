@@ -1,8 +1,8 @@
 import { DddAggregate } from '../../../libs/ddd';
 import { Column, Entity, JoinColumn, ManyToOne, OneToOne, PrimaryGeneratedColumn } from 'typeorm';
-import { Artist } from '../../artists/domain/artist.entity';
 import { Audio } from '../../audios/domain/audio.entity';
 import { Cue } from '../../cues/domain/cue.entity';
+import { User } from '../../users/domain/user.entity';
 
 type Ctor = {
     cueId: number;
@@ -19,7 +19,7 @@ export class Record extends DddAggregate {
     @Column({ comment: '큐 id' })
     cueId!: number;
 
-    @Column({ comment: '아티스트 id', nullable: true })
+    @Column({ comment: '아티스트 사용자 id', nullable: true })
     artistId!: number | null;
 
     @Column({ comment: '녹음 오디오 id', nullable: true })
@@ -32,9 +32,9 @@ export class Record extends DddAggregate {
     @JoinColumn({ name: 'cueId' })
     cue!: Cue;
 
-    @ManyToOne(() => Artist, (artist) => artist.records, { nullable: true })
+    @ManyToOne(() => User, { nullable: true })
     @JoinColumn({ name: 'artistId' })
-    artist!: Artist | null;
+    artist!: User | null;
 
     @OneToOne(() => Audio, { nullable: true })
     @JoinColumn({ name: 'audioId' })

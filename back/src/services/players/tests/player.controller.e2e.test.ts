@@ -5,7 +5,6 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../../app.module';
-import { Artist } from '../../artists/domain/artist.entity';
 import { Audio } from '../../audios/domain/audio.entity';
 import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Canvas } from '../../canvases/domain/canvas.entity';
@@ -16,6 +15,7 @@ import { Media } from '../../medias/domain/media.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Record as RecordEntity } from '../../records/domain/record.entity';
 import { Track } from '../../tracks/domain/track.entity';
+import { User } from '../../users/domain/user.entity';
 
 test('GET player manifest endpoint exposes episode playback content without draft APIs', async () => {
     const moduleRef = await Test.createTestingModule({
@@ -68,7 +68,13 @@ test('GET player manifest endpoint exposes episode playback content without draf
                 endTime: 1800,
             })
         );
-        const artist = await dataSource.manager.save(new Artist({ name: 'API 성우' }));
+        const artist = await dataSource.manager.save(
+            new User({
+                email: 'player-api-artist@example.com',
+                password: 'password',
+                name: 'API 성우',
+            })
+        );
         const recordAudio = await dataSource.manager.save(
             new Audio({
                 episodeId: episode.id,

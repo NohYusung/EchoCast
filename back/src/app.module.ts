@@ -4,7 +4,7 @@ import { ConfigsModule } from './configs';
 import { GuardModule } from './common/guards/guard.module';
 import { HealthModule } from './health/health.module';
 import { AnchorModule } from './services/anchors/anchor.module';
-import { ArtistModule } from './services/artists/artist.module';
+import { AuthModule } from './services/auth/auth.module';
 import { AudioModule } from './services/audios/audio.module';
 import { CanvasModule } from './services/canvases/canvas.module';
 import { CharacterModule } from './services/characters/characater.module';
@@ -26,8 +26,8 @@ import { TrackModule } from './services/tracks/track.module';
         ConfigsModule,
         GuardModule,
         HealthModule,
+        AuthModule,
         AnchorModule,
-        ArtistModule,
         AudioModule,
         ProductModule,
         CharacterModule,

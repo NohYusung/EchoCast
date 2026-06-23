@@ -4,7 +4,6 @@ import { describe, it } from 'node:test';
 import { DataSource } from 'typeorm';
 import { Anchor } from '../../anchors/domain/anchor.entity';
 import { AnchorRepository } from '../../anchors/repository/anchor.repository';
-import { Artist } from '../../artists/domain/artist.entity';
 import { Audio } from '../../audios/domain/audio.entity';
 import { AudioRepository } from '../../audios/repository/audio.repository';
 import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
@@ -24,6 +23,7 @@ import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { ScrollRepository } from '../../scrolls/repository/scroll.repository';
 import { Track } from '../../tracks/domain/track.entity';
 import { TrackRepository } from '../../tracks/repository/track.repository';
+import { User } from '../../users/domain/user.entity';
 import { PlayerService } from './player.service';
 
 async function setDefaultCanvas(dataSource: DataSource, episode: Episode, canvas: Canvas) {
@@ -37,7 +37,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -154,7 +154,13 @@ describe('PlayerService', () => {
                     volume: 0.9,
                 })
             );
-            const artist = await dataSource.manager.save(new Artist({ name: '성우' }));
+            const artist = await dataSource.manager.save(
+                new User({
+                    email: 'player-service-artist@example.com',
+                    password: 'password',
+                    name: '성우',
+                })
+            );
             const draftRecordAudio = await dataSource.manager.save(
                 new Audio({
                     episodeId: episode.id,
@@ -316,7 +322,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -369,7 +375,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -469,7 +475,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -535,7 +541,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -629,7 +635,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -715,7 +721,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -802,7 +808,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -924,7 +930,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -1009,7 +1015,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -1150,7 +1156,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,
@@ -1246,7 +1252,7 @@ describe('PlayerService', () => {
             type: 'sqljs',
             entities: [
                 Anchor,
-                Artist,
+                User,
                 Audio,
                 CanvasMedia,
                 Canvas,

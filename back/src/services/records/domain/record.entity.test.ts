@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { DataSource } from 'typeorm';
 import { Anchor } from '../../anchors/domain/anchor.entity';
-import { Artist } from '../../artists/domain/artist.entity';
 import { Audio } from '../../audios/domain/audio.entity';
 import { CanvasMedia } from '../../canvas-medias/domain/canvas-media.entity';
 import { Canvas } from '../../canvases/domain/canvas.entity';
@@ -15,13 +14,14 @@ import { Product } from '../../products/domain/product.entity';
 import { Script } from '../../scripts/domain/script.entity';
 import { Scroll } from '../../scrolls/domain/scroll.entity';
 import { Track } from '../../tracks/domain/track.entity';
+import { User } from '../../users/domain/user.entity';
 import { Record } from './record.entity';
 
 describe('Record', () => {
     it('stores an artist recorded file with cue and artist relations', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Script, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Script, Scroll, Track, User],
             synchronize: true,
             logging: false,
         });
@@ -57,7 +57,13 @@ describe('Record', () => {
                     endTime: 3000,
                 })
             );
-            const artist = await dataSource.manager.save(new Artist({ name: 'Record artist' }));
+            const artist = await dataSource.manager.save(
+                new User({
+                    email: 'record-artist@example.com',
+                    password: 'password',
+                    name: 'Record artist',
+                })
+            );
             const audio = await dataSource.manager.save(
                 new Audio({
                     episodeId: episode.id,
@@ -102,7 +108,7 @@ describe('Record', () => {
     it('stores a record without artist and duration', async () => {
         const dataSource = new DataSource({
             type: 'sqljs',
-            entities: [Anchor, Artist, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Script, Scroll, Track],
+            entities: [Anchor, Audio, CanvasMedia, Canvas, Character, Cue, Episode, Media, Product, Record, Script, Scroll, Track, User],
             synchronize: true,
             logging: false,
         });

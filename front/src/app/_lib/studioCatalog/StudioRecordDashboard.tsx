@@ -38,12 +38,6 @@ type StudioRecordArtist = {
     name: string;
 };
 
-type ArtistListResponse = {
-    data?: {
-        items?: StudioRecordArtist[];
-    };
-};
-
 type UploadUrlsResponse = {
     data?: Array<{
         publicUrl: string;
@@ -83,7 +77,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const availableCharacterIds = useMemo(() => availableCharacters.map((character) => character.id), [availableCharacters]);
     const [selectedCharacterIds, setSelectedCharacterIds] = useState(() => draft.characters.map((character) => character.id));
     const [selectedArtistId, setSelectedArtistId] = useState('');
-    const [artists, setArtists] = useState<StudioRecordArtist[]>([]);
+    const [artists] = useState<StudioRecordArtist[]>([]);
     const [filter, setFilter] = useState<RecordingCueFilter>('all');
     const [selectedCueId, setSelectedCueId] = useState<number | undefined>();
     const [recordingStripScale, setRecordingStripScale] = useState(100);
@@ -122,33 +116,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     useEffect(() => {
         setManifestState(manifest);
     }, [manifest]);
-
-    useEffect(() => {
-        let isMounted = true;
-
-        async function loadArtists() {
-            try {
-                const response = await fetch(`${apiBaseUrl}/artists`, { cache: 'no-store' });
-                if (!response.ok) throw new Error(`Artist request failed: ${response.status}`);
-
-                const payload = (await response.json()) as ArtistListResponse;
-                const nextArtists = payload.data?.items ?? [];
-                if (!isMounted) return;
-
-                setArtists(nextArtists);
-                setSelectedArtistId((current) => current || String(nextArtists[0]?.id ?? ''));
-            } catch (error) {
-                if (!isMounted) return;
-                setMessage(toRecordErrorMessage(error, '성우 목록을 불러오지 못했습니다.'));
-            }
-        }
-
-        void loadArtists();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [apiBaseUrl]);
 
     useEffect(() => {
         setSelectedCharacterIds((current) => {

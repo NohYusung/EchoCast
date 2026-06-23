@@ -5,13 +5,13 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../../app.module';
-import { Artist } from '../../artists/domain/artist.entity';
 import { Audio } from '../../audios/domain/audio.entity';
 import { Character } from '../../characters/domain/character.entity';
 import { Cue } from '../../cues/domain/cue.entity';
 import { Episode } from '../../episodes/domain/episode.entity';
 import { Product } from '../../products/domain/product.entity';
 import { Track } from '../../tracks/domain/track.entity';
+import { User } from '../../users/domain/user.entity';
 import { Record } from '../domain/record.entity';
 
 test('records API creates, lists, updates, and deletes a record for a cue and artist', async () => {
@@ -54,7 +54,13 @@ test('records API creates, lists, updates, and deletes a record for a cue and ar
                 endTime: 1300,
             })
         );
-        const artist = await dataSource.manager.save(new Artist({ name: 'Record API artist' }));
+        const artist = await dataSource.manager.save(
+            new User({
+                email: 'record-api-artist@example.com',
+                password: 'password',
+                name: 'Record API artist',
+            })
+        );
 
         const response = await request(app.getHttpServer())
             .post('/records')
