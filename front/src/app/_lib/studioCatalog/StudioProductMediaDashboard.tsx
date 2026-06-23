@@ -1711,6 +1711,36 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                             }))
                                                                         ).map((placement) => [placement.cueId, placement])
                                                                     );
+                                                                    const mediaCueOverlayItems = mediaCueRows.map(
+                                                                        ({ cue, character, track, mode }) => {
+                                                                            const definition =
+                                                                                getCanvasCueModeDefinition(mode);
+                                                                            const speakerName =
+                                                                                mode === 'dialogue'
+                                                                                    ? character?.name ?? track.name
+                                                                                    : definition.label;
+                                                                            const placement = mediaCuePlacements.get(cue.id);
+                                                                            const cueTop =
+                                                                                placement?.top ??
+                                                                                toDialogueCueOverlayTop(cue.startPosition);
+                                                                            const style = {
+                                                                                '--tp-dialogue-cue-top': `${cueTop}%`,
+                                                                                '--tp-dialogue-cue-accent': definition.accent,
+                                                                                '--tp-dialogue-cue-offset': `${
+                                                                                    placement?.offsetPx ?? 18
+                                                                                }px`,
+                                                                                '--tp-dialogue-cue-connector-width': `${
+                                                                                    placement?.connectorWidthPx ?? 16
+                                                                                }px`,
+                                                                            } as CSSProperties;
+
+                                                                            return {
+                                                                                cue,
+                                                                                speakerName,
+                                                                                style,
+                                                                            };
+                                                                        }
+                                                                    );
                                                                     const dialogueLineContent = (
                                                                         <>
                                                                             {typeof selectedPositionPercent === 'number' ? (
@@ -1721,20 +1751,15 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                                     }}
                                                                                 />
                                                                             ) : null}
-                                                                            {mediaCueRows.map(({ cue, character, track, mode }) => {
-                                                                                const definition =
-                                                                                    getCanvasCueModeDefinition(mode);
-                                                                                const speakerName =
-                                                                                    mode === 'dialogue'
-                                                                                        ? character?.name ?? track.name
-                                                                                        : definition.label;
-                                                                                const placement = mediaCuePlacements.get(cue.id);
-                                                                                const cueTop =
-                                                                                    placement?.top ??
-                                                                                    toDialogueCueOverlayTop(
-                                                                                        cue.startPosition
-                                                                                    );
-
+                                                                            {mediaCueOverlayItems.map(({ cue, style }) => (
+                                                                                <i
+                                                                                    aria-hidden="true"
+                                                                                    className="tp-dialogue-strip-cue-connector"
+                                                                                    key={`connector-${cue.id}`}
+                                                                                    style={style}
+                                                                                />
+                                                                            ))}
+                                                                            {mediaCueOverlayItems.map(({ cue, speakerName, style }) => {
                                                                                 return (
                                                                                     <span
                                                                                         className={
@@ -1760,18 +1785,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                                             selectCanvasCue(cue.id);
                                                                                         }}
                                                                                         role="button"
-                                                                                        style={{
-                                                                                            '--tp-dialogue-cue-top': `${cueTop}%`,
-                                                                                            '--tp-dialogue-cue-accent':
-                                                                                                definition.accent,
-                                                                                            '--tp-dialogue-cue-offset': `${
-                                                                                                placement?.offsetPx ?? 18
-                                                                                            }px`,
-                                                                                            '--tp-dialogue-cue-connector-width': `${
-                                                                                                placement?.connectorWidthPx ??
-                                                                                                16
-                                                                                            }px`,
-                                                                                        } as CSSProperties}
+                                                                                        style={style}
                                                                                         tabIndex={0}
                                                                                         title={`${speakerName}: ${cue.script}`}
                                                                                     >

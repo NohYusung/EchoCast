@@ -94,6 +94,12 @@ test('canvas stage exposes cue placement modes and inspector fields', () => {
     assert.match(source, /'--tp-dialogue-cue-accent'/);
     assert.match(source, /'--tp-dialogue-cue-offset'/);
     assert.match(source, /'--tp-dialogue-cue-connector-width'/);
+    assert.match(source, /const mediaCueOverlayItems = mediaCueRows\.map/);
+    assert.match(source, /className="tp-dialogue-strip-cue-connector"/);
+    assert.ok(
+        source.indexOf('className="tp-dialogue-strip-cue-connector"') <
+            source.indexOf("'tp-dialogue-strip-cue is-selected'")
+    );
     assert.doesNotMatch(source, /tp-canvas-dialogue-line-label/);
     assert.match(source, /toDialogueCueOverlayTop\(cue\.startPosition\)/);
     assert.doesNotMatch(source, /캔버스에서 대사를 넣을 위치를 선택해 주세요/);
@@ -118,7 +124,17 @@ test('canvas stage exposes cue placement modes and inspector fields', () => {
         /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue\s*\{[\s\S]*?top:\s*var\(--tp-dialogue-cue-top,\s*50%\);/
     );
     assert.match(styles, /left:\s*calc\(100% \+ var\(--tp-dialogue-cue-offset,\s*18px\)\);/);
+    assert.match(styles, /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue::before/);
+    assert.match(styles, /right:\s*100%;[\s\S]*?width:\s*18px;/);
     assert.match(styles, /width:\s*var\(--tp-dialogue-cue-connector-width,\s*16px\);/);
+    assert.match(
+        styles,
+        /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue\s*\{[\s\S]*?z-index:\s*3;/
+    );
+    assert.match(
+        styles,
+        /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue-connector\s*\{[\s\S]*?z-index:\s*1;/
+    );
     assert.doesNotMatch(styles, /\.tp-canvas-dialogue-line-label/);
     assert.match(styles, /\.tp-canvas-dialogue-image-hitarea/);
     assert.doesNotMatch(styles, /\.tp-canvas-dialogue-line\.is-placement-enabled/);

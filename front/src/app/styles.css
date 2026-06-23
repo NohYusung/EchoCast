@@ -15790,6 +15790,7 @@ p {
 
 .tp-canvas-dialogue-line .tp-dialogue-strip-cue {
     top: var(--tp-dialogue-cue-top, 50%);
+    z-index: 3;
     right: auto;
     left: calc(100% + var(--tp-dialogue-cue-offset, 18px));
     width: 158px;
@@ -15818,12 +15819,28 @@ p {
 
 .tp-canvas-dialogue-line .tp-dialogue-strip-cue::before {
     position: absolute;
-    top: 18px;
+    top: 50%;
     right: 100%;
-    width: var(--tp-dialogue-cue-connector-width, 16px);
+    width: 18px;
     height: 2px;
     background: linear-gradient(90deg, var(--tp-dialogue-cue-accent, #2dd4bf), transparent);
     content: '';
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.tp-canvas-dialogue-line .tp-dialogue-strip-cue-connector {
+    position: absolute;
+    z-index: 1;
+    top: var(--tp-dialogue-cue-top, 50%);
+    left: calc(
+        100% + var(--tp-dialogue-cue-offset, 18px) - var(--tp-dialogue-cue-connector-width, 16px)
+    );
+    width: var(--tp-dialogue-cue-connector-width, 16px);
+    height: 2px;
+    background: linear-gradient(90deg, var(--tp-dialogue-cue-accent, #2dd4bf), transparent);
+    pointer-events: none;
+    transform: translateY(-50%);
 }
 
 .tp-canvas-dialogue-line .tp-dialogue-strip-cue-head {
