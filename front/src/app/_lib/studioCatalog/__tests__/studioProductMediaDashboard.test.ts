@@ -58,10 +58,21 @@ test('canvas stage exposes cue placement modes and inspector fields', () => {
     assert.match(source, /label: '효과음'/);
     assert.match(source, /label: '배경음'/);
     assert.match(source, /const canvasDialogueStripRef = useRef<HTMLDivElement \| null>\(null\);/);
+    assert.match(source, /type CueUpdateRequest = Partial<CueCreateRequest> & \{\s*targetTrackId\?: number;\s*\};/);
     assert.match(source, /toggleCanvasCueMode/);
     assert.match(source, /createCanvasCue/);
     assert.match(source, /ensureCanvasAudioCueTrack/);
     assert.match(source, /selectCanvasDialogueCuePosition/);
+    assert.match(source, /const \[canvasCueDragState,\s*setCanvasCueDragState\] = useState<CanvasCueDragState \| null>\(null\);/);
+    assert.match(source, /resolveDialogueCuePositionFromStrip/);
+    assert.match(source, /startCanvasCueDrag/);
+    assert.match(source, /moveCanvasCueDrag/);
+    assert.match(source, /endCanvasCueDrag/);
+    assert.match(source, /cancelCanvasCueDrag/);
+    assert.match(source, /window\.addEventListener\('pointermove', moveOnWindow, \{ passive: false \}\);/);
+    assert.match(source, /window\.addEventListener\('pointerup', endOnWindow, \{ passive: false \}\);/);
+    assert.match(source, /window\.addEventListener\('pointercancel', cancelOnWindow, \{ passive: false \}\);/);
+    assert.match(source, /await updateCue\(String\(finishedDragState\.trackId\), String\(finishedDragState\.cueId\), nextPosition\);/);
     assert.match(source, /stripRoot\?\.matches\('\[data-dialogue-strip-stack\]'\)/);
     assert.match(stageHeadSnippet, /canvasCueModeDefinitions\.map/);
     assert.match(stageHeadSnippet, /toggleCanvasCueMode\(definition\.id\)/);
@@ -98,8 +109,9 @@ test('canvas stage exposes cue placement modes and inspector fields', () => {
     assert.match(source, /className="tp-dialogue-strip-cue-connector"/);
     assert.ok(
         source.indexOf('className="tp-dialogue-strip-cue-connector"') <
-            source.indexOf("'tp-dialogue-strip-cue is-selected'")
+            source.indexOf('const isDraggingCanvasCue')
     );
+    assert.match(source, /onPointerDown=\{\(event\) =>\s*startCanvasCueDrag/);
     assert.doesNotMatch(source, /tp-canvas-dialogue-line-label/);
     assert.match(source, /toDialogueCueOverlayTop\(cue\.startPosition\)/);
     assert.doesNotMatch(source, /캔버스에서 대사를 넣을 위치를 선택해 주세요/);
@@ -131,6 +143,10 @@ test('canvas stage exposes cue placement modes and inspector fields', () => {
         styles,
         /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue\s*\{[\s\S]*?z-index:\s*3;/
     );
+    assert.match(styles, /cursor:\s*grab;/);
+    assert.match(styles, /touch-action:\s*none;/);
+    assert.match(styles, /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue\.is-dragging/);
+    assert.match(styles, /cursor:\s*grabbing;/);
     assert.match(
         styles,
         /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue-connector\s*\{[\s\S]*?z-index:\s*1;/
@@ -174,24 +190,68 @@ test('canvas stage exposes Open Design style cue filters', () => {
     assert.match(styles, /\.tp-canvas-cue-filter-all\s*\{/);
 });
 
-test('canvas cue cards show selected cue details in a separate panel', () => {
+test('canvas cue cards show editable selected cue details in a separate panel', () => {
+    const selectedCueFormStart = source.indexOf('className="tp-canvas-selected-cue tp-canvas-dialogue-form"');
+    const selectedCueFormEnd = source.indexOf('className="tp-canvas-selected-cue-actions"', selectedCueFormStart);
+    const selectedCueFormSnippet =
+        selectedCueFormStart >= 0 && selectedCueFormEnd > selectedCueFormStart
+            ? source.slice(selectedCueFormStart, selectedCueFormEnd)
+            : '';
+
+    assert.ok(selectedCueFormSnippet);
     assert.match(source, /const \[selectedCanvasCueId,\s*setSelectedCanvasCueId\] = useState<number \| null>\(null\);/);
     assert.match(source, /const selectedCanvasCueEntry = useMemo/);
     assert.match(source, /const selectedCanvasCueDefinition = selectedCanvasCueEntry/);
     assert.match(source, /const selectedCanvasCueSpeakerName = selectedCanvasCueEntry/);
+    assert.match(source, /const \[selectedCanvasCueDraft,\s*setSelectedCanvasCueDraft\] = useState<CanvasCueInspectorDraft>/);
+    assert.match(source, /const \[isSavingSelectedCanvasCue,\s*setIsSavingSelectedCanvasCue\] = useState\(false\);/);
+    assert.match(source, /characterId: String\(selectedCanvasCueEntry\.cue\.characterId \?\? selectedCanvasCueEntry\.track\.characterId \?\? ''\)/);
+    assert.match(source, /setSelectedCanvasCueDraft\(\{[\s\S]*?script: selectedCanvasCueEntry\.cue\.script/);
+    assert.match(source, /durationSeconds: toDurationSecondsInput\(cueDuration\)/);
+    assert.match(source, /const saveSelectedCanvasCue = async \(event: FormEvent<HTMLFormElement>\)/);
+    assert.match(source, /const characterId = Number\(selectedCanvasCueDraft\.characterId\);/);
+    assert.match(source, /selectedCanvasCueEntry\.mode === 'dialogue'[\s\S]*?대사의 캐릭터를 선택해 주세요/);
+    assert.match(source, /selectedCanvasCueEntry\.mode === 'dialogue'[\s\S]*?ensureDialogueTrack/);
+    assert.match(source, /await updateCue\(String\(selectedCanvasCueEntry\.track\.id\), String\(selectedCanvasCueEntry\.cue\.id\),/);
+    assert.match(source, /targetTrackId: targetTrack\.id/);
+    assert.match(source, /duration: selectedCanvasCueDraftDurationMs/);
+    assert.match(source, /endTime: selectedCanvasCueEntry\.cue\.startTime \+ selectedCanvasCueDraftDurationMs/);
+    assert.match(source, /const deleteSelectedCanvasCue = async \(\)/);
+    assert.match(source, /await deleteCue\(String\(selectedCanvasCueEntry\.track\.id\), String\(selectedCanvasCueEntry\.cue\.id\)\)/);
     assert.match(source, /selectCanvasCue\(cue\.id\)/);
     assert.match(source, /role="button"/);
     assert.match(source, /tabIndex=\{0\}/);
-    assert.match(source, /'tp-dialogue-strip-cue is-selected'/);
+    assert.match(source, /'tp-dialogue-strip-cue'/);
+    assert.match(source, /selectedCanvasCueId === cue\.id[\s\S]*?\? 'is-selected'/);
     assert.match(source, /'tp-canvas-workbench has-cue-inspector'/);
     assert.match(source, /className="tp-canvas-col tp-canvas-col-cue-insp"/);
     assert.match(source, /<h2>선택 큐<\/h2>/);
     assert.match(source, /className="tp-canvas-cue-inspector"/);
-    assert.match(source, /className="tp-canvas-selected-cue"/);
+    assert.match(source, /className="tp-canvas-selected-cue tp-canvas-dialogue-form"/);
+    assert.match(source, /onSubmit=\{saveSelectedCanvasCue\}/);
     assert.match(source, /className="tp-canvas-selected-cue-head"/);
+    assert.match(source, /selectedCanvasCueEntry\.mode === 'dialogue'/);
+    assert.match(source, /aria-label="대사 수정 캐릭터"/);
+    assert.match(selectedCueFormSnippet, /const characterId =\s*event\.currentTarget\.value;[\s\S]*?setSelectedCanvasCueDraft/);
+    assert.match(selectedCueFormSnippet, /const script = event\.currentTarget\.value;[\s\S]*?setSelectedCanvasCueDraft/);
+    assert.match(selectedCueFormSnippet, /const canvasMediaId =\s*event\.currentTarget\.value;[\s\S]*?setSelectedCanvasCueDraft/);
+    assert.match(selectedCueFormSnippet, /const position =\s*event\.currentTarget\.value;[\s\S]*?setSelectedCanvasCueDraft/);
+    assert.match(selectedCueFormSnippet, /const durationSeconds =\s*event\.currentTarget\.value;[\s\S]*?setSelectedCanvasCueDraft/);
+    assert.doesNotMatch(
+        selectedCueFormSnippet,
+        /setSelectedCanvasCueDraft\(\(current\) => \(\{(?:(?!\}\)\);)[\s\S])*event\.currentTarget\.value/
+    );
     assert.match(source, /className="tp-canvas-cue-meta"/);
-    assert.match(source, /selectedCanvasCueEntry\.cue\.script/);
+    assert.match(source, /aria-label=\{`\$\{selectedCanvasCueDefinition\.label\} 수정 컷`\}/);
+    assert.match(source, /aria-label=\{`\$\{selectedCanvasCueDefinition\.label\} 수정 위치값`\}/);
+    assert.match(source, /aria-label=\{`\$\{selectedCanvasCueDefinition\.label\} 수정 길이`\}/);
+    assert.match(source, /className="tp-canvas-selected-cue-actions"/);
+    assert.match(source, /onClick=\{\(\) => void deleteSelectedCanvasCue\(\)\}/);
+    assert.match(source, /<StudioCatalogIcon name="trash" \/>/);
+    assert.match(source, /삭제/);
+    assert.match(source, /수정 저장/);
     assert.match(source, /selectedCanvasCueEntry\.track\.name/);
+    assert.doesNotMatch(source, /className="tp-canvas-dialogue-form tp-canvas-selected-cue-form"/);
     assert.doesNotMatch(source, /tp-canvas-resource-hitarea/);
     assert.doesNotMatch(source, /tp-canvas-selected-resource/);
     assert.match(styles, /\.tp-canvas-workbench\.has-cue-inspector/);
@@ -199,7 +259,10 @@ test('canvas cue cards show selected cue details in a separate panel', () => {
     assert.match(styles, /\.tp-canvas-cue-inspector/);
     assert.match(styles, /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue\.is-selected/);
     assert.match(styles, /\.tp-canvas-selected-cue/);
+    assert.match(styles, /\.tp-canvas-selected-cue-grid/);
+    assert.match(styles, /\.tp-canvas-selected-cue-actions/);
     assert.match(styles, /\.tp-canvas-cue-meta/);
+    assert.doesNotMatch(styles, /\.tp-canvas-selected-cue-form/);
     assert.doesNotMatch(styles, /\.tp-canvas-resource-hitarea/);
     assert.doesNotMatch(styles, /\.tp-canvas-selected-resource/);
 });

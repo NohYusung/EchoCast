@@ -1,4 +1,5 @@
 export class CueUpdateDto {
+    targetTrackId?: number;
     script?: string;
     duration?: number;
     startTime?: number;

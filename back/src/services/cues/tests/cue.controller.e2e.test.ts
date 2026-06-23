@@ -145,15 +145,97 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(trackWithUpdatedCue.cues[0].endPosition, 72);
         assert.equal(trackWithUpdatedCue.cues[0].volume, 0.65);
 
+        const targetCharacterName = `큐 이동 캐릭터 ${Date.now()}`;
+        await request(app.getHttpServer())
+            .post(`/products/${product.id}/characters`)
+            .send({
+                name: targetCharacterName,
+                role: 'supporting',
+            })
+            .expect(201);
+
+        const targetCharactersResponse = await request(app.getHttpServer())
+            .get(`/products/${product.id}/characters`)
+            .expect(200);
+        const targetCharacter = targetCharactersResponse.body.data.items.find(
+            (item: { id: number; name: string }) => item.name === targetCharacterName
+        );
+        assert.ok(targetCharacter);
+
+        const targetTrackName = `큐 이동 보이스 트랙 ${Date.now()}`;
+        await request(app.getHttpServer())
+            .post(`/episodes/${episode.id}/tracks`)
+            .send({
+                name: targetTrackName,
+                type: 'record',
+                characterId: targetCharacter.id,
+            })
+            .expect(201);
+
+        const targetTracksResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
+        const targetTrack = targetTracksResponse.body.data.items.find(
+            (item: { id: number; name: string }) => item.name === targetTrackName
+        );
+        assert.ok(targetTrack);
+
+        const moveResponse = await request(app.getHttpServer())
+            .put(`/tracks/${track.id}/cues/${cueId}`)
+            .send({
+                targetTrackId: targetTrack.id,
+                script: 'API로 이동한 큐',
+                duration: 2100,
+                startTime: 2000,
+                endTime: 7000,
+                startPosition: 44,
+                endPosition: 44,
+            })
+            .expect(200);
+
+        assert.deepEqual(moveResponse.body, { data: {} });
+
+        const movedListResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
+        const sourceTrackAfterMove = movedListResponse.body.data.items.find(
+            (item: { id: number; cues: Array<{ id: number }> }) => item.id === track.id
+        );
+        const targetTrackWithMovedCue = movedListResponse.body.data.items.find(
+            (item: {
+                id: number;
+                cues: Array<{
+                    id: number;
+                    trackId: number;
+                    characterId: number;
+                    script: string;
+                    duration: number;
+                    startTime: number;
+                    endTime: number;
+                    startPosition: number;
+                    endPosition: number;
+                }>;
+            }) => item.id === targetTrack.id
+        );
+        assert.ok(sourceTrackAfterMove);
+        assert.ok(targetTrackWithMovedCue);
+        assert.equal(sourceTrackAfterMove.cues.length, 0);
+        assert.equal(targetTrackWithMovedCue.cues.length, 1);
+        assert.equal(targetTrackWithMovedCue.cues[0].id, cueId);
+        assert.equal(targetTrackWithMovedCue.cues[0].trackId, targetTrack.id);
+        assert.equal(targetTrackWithMovedCue.cues[0].characterId, targetCharacter.id);
+        assert.equal(targetTrackWithMovedCue.cues[0].script, 'API로 이동한 큐');
+        assert.equal(targetTrackWithMovedCue.cues[0].duration, 2100);
+        assert.equal(targetTrackWithMovedCue.cues[0].startTime, 2000);
+        assert.equal(targetTrackWithMovedCue.cues[0].endTime, 7000);
+        assert.equal(targetTrackWithMovedCue.cues[0].startPosition, 44);
+        assert.equal(targetTrackWithMovedCue.cues[0].endPosition, 44);
+
         const deleteResponse = await request(app.getHttpServer())
-            .delete(`/tracks/${track.id}/cues/${cueId}`)
+            .delete(`/tracks/${targetTrack.id}/cues/${cueId}`)
             .expect(200);
 
         assert.deepEqual(deleteResponse.body, { data: {} });
 
         const deletedListResponse = await request(app.getHttpServer()).get(`/episodes/${episode.id}/tracks`).expect(200);
         const trackWithoutDeletedCue = deletedListResponse.body.data.items.find(
-            (item: { id: number; cues: Array<{ id: number }> }) => item.id === track.id
+            (item: { id: number; cues: Array<{ id: number }> }) => item.id === targetTrack.id
         );
         assert.ok(trackWithoutDeletedCue);
         assert.equal(trackWithoutDeletedCue.cues.length, 0);

@@ -15804,7 +15804,10 @@ p {
     color: #d7dbe6;
     box-shadow: 0 10px 26px -14px #000;
     backdrop-filter: none;
+    cursor: grab;
     pointer-events: auto;
+    touch-action: none;
+    user-select: none;
 }
 
 .tp-canvas-dialogue-line .tp-dialogue-strip-cue:hover,
@@ -15815,6 +15818,14 @@ p {
         0 0 0 1px color-mix(in srgb, var(--tp-dialogue-cue-accent, #2dd4bf) 54%, transparent),
         0 10px 26px -14px #000;
     outline: 0;
+}
+
+.tp-canvas-dialogue-line .tp-dialogue-strip-cue.is-dragging {
+    z-index: 4;
+    cursor: grabbing;
+    box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--tp-dialogue-cue-accent, #2dd4bf) 64%, transparent),
+        0 16px 32px -14px #000;
 }
 
 .tp-canvas-dialogue-line .tp-dialogue-strip-cue::before {
@@ -16111,6 +16122,12 @@ p {
     font-weight: 700;
 }
 
+.tp-canvas-selected-cue-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 92px;
+    gap: 8px;
+}
+
 .tp-canvas-kv {
     display: flex;
     justify-content: space-between;
@@ -16213,6 +16230,17 @@ p {
 .tp-canvas-cue-meta strong {
     color: var(--tp-fg);
     font: 800 11px/1 var(--tp-mono);
+}
+
+.tp-canvas-selected-cue-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.tp-canvas-selected-cue-actions .tp-btn {
+    justify-content: center;
+    width: 100%;
 }
 
 .tp-canvas-source-tools {

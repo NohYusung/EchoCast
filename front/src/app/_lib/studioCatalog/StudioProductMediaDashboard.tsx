@@ -2,7 +2,15 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, ChangeEvent, DragEvent, FormEvent, KeyboardEvent, MouseEvent } from 'react';
+import type {
+    CSSProperties,
+    ChangeEvent,
+    DragEvent,
+    FormEvent,
+    KeyboardEvent,
+    MouseEvent,
+    PointerEvent as ReactPointerEvent,
+} from 'react';
 import { ToonedBrand } from '../brand/ToonedBrand';
 import { StudioCatalogIcon, type StudioCatalogIconName } from './StudioCatalogIcon';
 import {
@@ -187,8 +195,8 @@ type CueCreateRequest = {
     endPosition?: number;
     volume?: number;
 };
-type CueUpdateRequest = {
-    script?: string;
+type CueUpdateRequest = Partial<CueCreateRequest> & {
+    targetTrackId?: number;
 };
 type CanvasCueModeDefinition = {
     id: CanvasCueMode;
@@ -206,6 +214,23 @@ type CanvasCueFilterDefinition = {
     id: CanvasCueFilterId;
     label: string;
     accent: string;
+};
+type CanvasCueDragState = {
+    cueId: number;
+    trackId: number;
+    pointerId: number;
+    pointerStartY: number;
+    grabOffsetPx: number;
+    originalPosition: DialogueCuePositionRequest;
+    position: DialogueCuePositionRequest;
+    hasMoved: boolean;
+};
+type CanvasCueInspectorDraft = {
+    characterId: string;
+    script: string;
+    durationSeconds: string;
+    canvasMediaId: string;
+    position: string;
 };
 type FileUploadUrlItem = {
     publicUrl: string;
@@ -293,6 +318,7 @@ const canvasCueModeDefinitions: CanvasCueModeDefinition[] = [
 export function StudioProductMediaDashboard({ productId }: { productId: string }) {
     const dialogueStripRef = useRef<HTMLDivElement | null>(null);
     const canvasDialogueStripRef = useRef<HTMLDivElement | null>(null);
+    const canvasCueDragCaptureRef = useRef<HTMLElement | null>(null);
     const [product, setProduct] = useState(() => getInitialProduct(productId));
     const [episodes, setEpisodes] = useState<EpisodeListItem[]>([]);
     const [selectedEpisodeId, setSelectedEpisodeId] = useState('');
@@ -323,6 +349,10 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const [quickCharacterRole, setQuickCharacterRole] = useState<CharacterRole>('minor');
     const [cueScriptDrafts, setCueScriptDrafts] = useState<Record<number, string>>({});
     const [selectedCuePosition, setSelectedCuePosition] = useState<DialogueCuePositionRequest | null>(null);
+    const [selectedCanvasCueDraft, setSelectedCanvasCueDraft] = useState<CanvasCueInspectorDraft>(() =>
+        toDefaultCanvasCueInspectorDraft()
+    );
+    const [canvasCueDragState, setCanvasCueDragState] = useState<CanvasCueDragState | null>(null);
     const [dialogueStripScale, setDialogueStripScale] = useState(100);
     const [filter, setFilter] = useState<MediaFilter>('all');
     const [isLoadingShell, setIsLoadingShell] = useState(true);
@@ -330,6 +360,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const [isUploading, setIsUploading] = useState(false);
     const [isCreatingDialogueCharacter, setIsCreatingDialogueCharacter] = useState(false);
     const [isSavingDialogue, setIsSavingDialogue] = useState(false);
+    const [isSavingSelectedCanvasCue, setIsSavingSelectedCanvasCue] = useState(false);
     const [message, setMessage] = useState('');
 
     useEffect(() => {
@@ -357,6 +388,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         setQuickCharacterRole('minor');
         setCueScriptDrafts({});
         setSelectedCuePosition(null);
+        setSelectedCanvasCueDraft(toDefaultCanvasCueInspectorDraft());
+        setCanvasCueDragState(null);
         setMessage('');
         setIsLoadingShell(true);
 
@@ -420,6 +453,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             setActiveCanvasCueFilterIds(canvasCueFilterDefinitions.map((definition) => definition.id));
             setCueScriptDrafts({});
             setSelectedCuePosition(null);
+            setSelectedCanvasCueDraft(toDefaultCanvasCueInspectorDraft());
+            setCanvasCueDragState(null);
             return;
         }
 
@@ -452,6 +487,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                 setSelectedCanvasCueId(null);
                 setActiveCanvasCueFilterIds(canvasCueFilterDefinitions.map((definition) => definition.id));
                 setSelectedCuePosition(null);
+                setSelectedCanvasCueDraft(toDefaultCanvasCueInspectorDraft());
+                setCanvasCueDragState(null);
             })
             .catch(() => {
                 if (!ignore) {
@@ -500,14 +537,23 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                 if (!mode) return [];
 
                 return (track.cues ?? []).map((cue) => ({
-                    cue,
+                    cue:
+                        canvasCueDragState?.cueId === cue.id
+                            ? {
+                                  ...cue,
+                                  startCanvasMediaId: canvasCueDragState.position.startCanvasMediaId,
+                                  endCanvasMediaId: canvasCueDragState.position.endCanvasMediaId,
+                                  startPosition: canvasCueDragState.position.startPosition,
+                                  endPosition: canvasCueDragState.position.endPosition,
+                              }
+                            : cue,
                     track,
                     mode,
                     character: characters.find((character) => character.id === (cue.characterId ?? track.characterId)),
                 }));
             })
             .sort((a, b) => a.cue.startTime - b.cue.startTime || a.cue.id - b.cue.id);
-    }, [characters, tracks]);
+    }, [canvasCueDragState, characters, tracks]);
 
     const visibleDialogueRows = useMemo(() => {
         if (selectedSpeakerId === 'all') return dialogueRows;
@@ -660,6 +706,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             ? selectedCanvasCueEntry.character?.name ?? selectedCanvasCueEntry.track.name
             : (selectedCanvasCueDefinition?.label ?? selectedCanvasCueEntry.track.name)
         : '';
+    const selectedCanvasCueDraftDurationMs = toDialogueDurationMs(selectedCanvasCueDraft.durationSeconds);
+    const isSelectedCanvasCueDraftDurationValid = typeof selectedCanvasCueDraftDurationMs === 'number';
     const selectedCuePositionMedia = selectedCuePosition
         ? selectedCanvasMediaItems.find((media) => media.canvasMediaId === selectedCuePosition.startCanvasMediaId)
         : undefined;
@@ -691,6 +739,28 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const canvasStripStyle = {
         '--tp-canvas-strip-width': `${canvasStripWidth}px`,
     } as CSSProperties;
+
+    useEffect(() => {
+        if (!selectedCanvasCueEntry) {
+            setSelectedCanvasCueDraft(toDefaultCanvasCueInspectorDraft());
+            return;
+        }
+
+        const cueDuration =
+            selectedCanvasCueEntry.cue.duration ??
+            selectedCanvasCueEntry.cue.endTime - selectedCanvasCueEntry.cue.startTime;
+
+        setSelectedCanvasCueDraft({
+            characterId: String(selectedCanvasCueEntry.cue.characterId ?? selectedCanvasCueEntry.track.characterId ?? ''),
+            script: selectedCanvasCueEntry.cue.script,
+            durationSeconds: toDurationSecondsInput(cueDuration),
+            canvasMediaId:
+                typeof selectedCanvasCueEntry.cue.startCanvasMediaId === 'number'
+                    ? String(selectedCanvasCueEntry.cue.startCanvasMediaId)
+                    : String(firstSelectableCanvasMediaId ?? ''),
+            position: String(selectedCanvasCueEntry.cue.startPosition ?? 50),
+        });
+    }, [firstSelectableCanvasMediaId, selectedCanvasCueEntry]);
 
     const toggleMediaSelection = (mediaId: number) => {
         setSelectedMediaIds((current) => {
@@ -871,16 +941,15 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         applyManualDialogueCuePosition({ canvasMediaId, position });
     };
 
-    const selectDialogueCuePositionFromStrip = (
-        event: MouseEvent<HTMLElement>,
-        stripRoot: HTMLDivElement | null,
-    ) => {
+    const resolveDialogueCuePositionFromStrip = (clientY: number, stripRoot: HTMLDivElement | null) => {
         const stripStack = stripRoot?.matches('[data-dialogue-strip-stack]')
             ? stripRoot
             : stripRoot?.querySelector<HTMLElement>('[data-dialogue-strip-stack]');
         if (!selectedCanvas || !stripStack || selectedCanvasMediaItems.length === 0) {
-            setMessage('위치를 선택할 캔버스 스트립이 없습니다.');
-            return;
+            return {
+                position: null,
+                error: '위치를 선택할 캔버스 스트립이 없습니다.',
+            };
         }
 
         const stripRect = stripStack.getBoundingClientRect();
@@ -905,12 +974,31 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             canvasId: selectedCanvas.id,
             medias: selectedCanvasMediaItems,
             stripHeightPx: stripRect.height,
-            stripPositionPx: event.clientY - stripRect.top,
+            stripPositionPx: clientY - stripRect.top,
             visualSegments,
         });
 
         if (!position) {
-            setMessage('저장된 캔버스 미디어 위치를 확인할 수 없습니다. 캔버스 구성을 먼저 저장해 주세요.');
+            return {
+                position: null,
+                error: '저장된 캔버스 미디어 위치를 확인할 수 없습니다. 캔버스 구성을 먼저 저장해 주세요.',
+            };
+        }
+
+        return {
+            position,
+            error: '',
+        };
+    };
+
+    const selectDialogueCuePositionFromStrip = (
+        event: MouseEvent<HTMLElement>,
+        stripRoot: HTMLDivElement | null,
+    ) => {
+        const { position, error } = resolveDialogueCuePositionFromStrip(event.clientY, stripRoot);
+
+        if (!position) {
+            setMessage(error);
             return;
         }
 
@@ -934,6 +1022,173 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         setCueScriptDrafts(toCueScriptDrafts(listedTracks));
         return listedTracks;
     };
+
+    const startCanvasCueDrag = ({
+        cue,
+        event,
+        trackId,
+    }: {
+        cue: TrackCueListItem;
+        event: ReactPointerEvent<HTMLElement>;
+        trackId: number;
+    }) => {
+        if (event.button !== 0) return;
+
+        const currentPosition =
+            typeof cue.startCanvasMediaId === 'number' && typeof cue.endCanvasMediaId === 'number'
+                ? {
+                      startCanvasMediaId: cue.startCanvasMediaId,
+                      endCanvasMediaId: cue.endCanvasMediaId,
+                      startPosition: cue.startPosition,
+                      endPosition: cue.endPosition,
+                  }
+                : null;
+        const cardRect = event.currentTarget.getBoundingClientRect();
+        const cardCenterY = cardRect.top + cardRect.height / 2;
+        const fallback = resolveDialogueCuePositionFromStrip(cardCenterY, canvasDialogueStripRef.current);
+        const initialPosition = currentPosition ?? fallback.position;
+
+        if (!initialPosition) {
+            setMessage(fallback.error);
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        canvasCueDragCaptureRef.current = event.currentTarget;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setSelectedCanvasCueId(cue.id);
+        setActiveCanvasCueMode(null);
+        setSelectedCuePosition(null);
+        setMessage('');
+        setCanvasCueDragState({
+            cueId: cue.id,
+            trackId,
+            pointerId: event.pointerId,
+            pointerStartY: event.clientY,
+            grabOffsetPx: event.clientY - cardCenterY,
+            originalPosition: initialPosition,
+            position: initialPosition,
+            hasMoved: false,
+        });
+    };
+
+    const releaseCanvasCueDragPointer = (pointerId: number) => {
+        const captureTarget = canvasCueDragCaptureRef.current;
+
+        if (captureTarget?.hasPointerCapture(pointerId)) {
+            captureTarget.releasePointerCapture(pointerId);
+        }
+
+        canvasCueDragCaptureRef.current = null;
+    };
+
+    const moveCanvasCueDrag = (pointerId: number, clientY: number) => {
+        if (!canvasCueDragState || canvasCueDragState.pointerId !== pointerId) return;
+
+        const { position } = resolveDialogueCuePositionFromStrip(
+            clientY - canvasCueDragState.grabOffsetPx,
+            canvasDialogueStripRef.current
+        );
+
+        if (!position) return;
+
+        setCanvasCueDragState((current) => {
+            if (!current || current.pointerId !== pointerId) return current;
+
+            return {
+                ...current,
+                position,
+                hasMoved:
+                    current.hasMoved ||
+                    Math.abs(clientY - current.pointerStartY) > 2 ||
+                    !isSameDialogueCuePosition(position, current.originalPosition),
+            };
+        });
+    };
+
+    const endCanvasCueDrag = (pointerId: number, clientY: number) => {
+        if (!canvasCueDragState || canvasCueDragState.pointerId !== pointerId) return;
+
+        const finishedDragState = canvasCueDragState;
+        releaseCanvasCueDragPointer(pointerId);
+        const { position } = resolveDialogueCuePositionFromStrip(
+            clientY - finishedDragState.grabOffsetPx,
+            canvasDialogueStripRef.current
+        );
+        const nextPosition = position ?? finishedDragState.position;
+        const didMove =
+            finishedDragState.hasMoved || !isSameDialogueCuePosition(nextPosition, finishedDragState.originalPosition);
+
+        if (!didMove) {
+            setCanvasCueDragState((current) =>
+                current?.pointerId === pointerId && current.cueId === finishedDragState.cueId ? null : current
+            );
+            return;
+        }
+
+        setCanvasCueDragState((current) =>
+            current?.pointerId === pointerId && current.cueId === finishedDragState.cueId
+                ? { ...current, position: nextPosition, hasMoved: true }
+                : current
+        );
+
+        void (async () => {
+            try {
+                await updateCue(String(finishedDragState.trackId), String(finishedDragState.cueId), nextPosition);
+                await refreshTracks();
+                setSelectedCanvasCueId(finishedDragState.cueId);
+                setMessage('큐 위치를 저장했습니다.');
+            } catch {
+                await refreshTracks().catch(() => undefined);
+                setMessage('큐 위치 저장에 실패했습니다.');
+            } finally {
+                setCanvasCueDragState((current) =>
+                    current?.pointerId === pointerId && current.cueId === finishedDragState.cueId ? null : current
+                );
+            }
+        })();
+    };
+
+    const cancelCanvasCueDrag = (pointerId: number) => {
+        if (!canvasCueDragState || canvasCueDragState.pointerId !== pointerId) return;
+
+        releaseCanvasCueDragPointer(pointerId);
+        setCanvasCueDragState(null);
+    };
+
+    useEffect(() => {
+        if (!canvasCueDragState) return undefined;
+
+        const moveOnWindow = (event: globalThis.PointerEvent) => {
+            if (event.pointerId !== canvasCueDragState.pointerId) return;
+
+            event.preventDefault();
+            moveCanvasCueDrag(event.pointerId, event.clientY);
+        };
+        const endOnWindow = (event: globalThis.PointerEvent) => {
+            if (event.pointerId !== canvasCueDragState.pointerId) return;
+
+            event.preventDefault();
+            endCanvasCueDrag(event.pointerId, event.clientY);
+        };
+        const cancelOnWindow = (event: globalThis.PointerEvent) => {
+            if (event.pointerId !== canvasCueDragState.pointerId) return;
+
+            event.preventDefault();
+            cancelCanvasCueDrag(event.pointerId);
+        };
+
+        window.addEventListener('pointermove', moveOnWindow, { passive: false });
+        window.addEventListener('pointerup', endOnWindow, { passive: false });
+        window.addEventListener('pointercancel', cancelOnWindow, { passive: false });
+
+        return () => {
+            window.removeEventListener('pointermove', moveOnWindow);
+            window.removeEventListener('pointerup', endOnWindow);
+            window.removeEventListener('pointercancel', cancelOnWindow);
+        };
+    }, [canvasCueDragState, selectedCanvas, selectedCanvasMediaItems]);
 
     const createQuickDialogueCharacter = async () => {
         const request = toQuickDialogueCharacterRequest({
@@ -1263,6 +1518,102 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             setMessage('대사를 삭제했습니다.');
         } catch {
             setMessage('대사 삭제에 실패했습니다.');
+        }
+    };
+
+    const saveSelectedCanvasCue = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+
+        if (!selectedEpisodeId || !selectedCanvasCueEntry || !selectedCanvasCueDefinition) return;
+
+        const script = selectedCanvasCueDraft.script.trim();
+        const canvasMediaIdText = selectedCanvasCueDraft.canvasMediaId.trim();
+        const positionText = selectedCanvasCueDraft.position.trim();
+        const canvasMediaId = Number(canvasMediaIdText);
+        const position = Number(positionText);
+        const characterId = Number(selectedCanvasCueDraft.characterId);
+
+        if (!script) {
+            setMessage(`${selectedCanvasCueDefinition.scriptLabel}을 입력해 주세요.`);
+            return;
+        }
+        if (
+            selectedCanvasCueEntry.mode === 'dialogue' &&
+            (!Number.isInteger(characterId) || characterId <= 0)
+        ) {
+            setMessage('대사의 캐릭터를 선택해 주세요.');
+            return;
+        }
+        if (!isSelectedCanvasCueDraftDurationValid || typeof selectedCanvasCueDraftDurationMs !== 'number') {
+            setMessage('길이는 0초보다 크게 입력해 주세요.');
+            return;
+        }
+        if (!canvasMediaIdText || !positionText || !Number.isFinite(canvasMediaId) || !Number.isFinite(position)) {
+            setMessage('수정할 컷과 위치를 입력해 주세요.');
+            return;
+        }
+
+        const nextPosition = toManualDialogueCuePositionRequest({
+            medias: selectedCanvasMediaItems,
+            canvasMediaId,
+            position,
+        });
+
+        if (!nextPosition) {
+            setMessage('위치값은 0부터 100 사이로 입력해 주세요.');
+            return;
+        }
+
+        try {
+            setIsSavingSelectedCanvasCue(true);
+            setMessage('');
+            const targetTrack =
+                selectedCanvasCueEntry.mode === 'dialogue'
+                    ? await ensureDialogueTrack({
+                          characterId,
+                          characters,
+                          episodeId: selectedEpisodeId,
+                          tracks,
+                          onTracks: (nextTracks) => {
+                              setTracks(nextTracks);
+                              setCueScriptDrafts(toCueScriptDrafts(nextTracks));
+                          },
+                      })
+                    : selectedCanvasCueEntry.track;
+            await updateCue(String(selectedCanvasCueEntry.track.id), String(selectedCanvasCueEntry.cue.id), {
+                targetTrackId: targetTrack.id,
+                script,
+                duration: selectedCanvasCueDraftDurationMs,
+                startTime: selectedCanvasCueEntry.cue.startTime,
+                endTime: selectedCanvasCueEntry.cue.startTime + selectedCanvasCueDraftDurationMs,
+                ...nextPosition,
+                volume: selectedCanvasCueEntry.cue.volume,
+            });
+            await refreshTracks();
+            setSelectedCanvasCueId(selectedCanvasCueEntry.cue.id);
+            setMessage(`${selectedCanvasCueDefinition.label}을 수정했습니다.`);
+        } catch {
+            setMessage(`${selectedCanvasCueDefinition.label} 수정에 실패했습니다.`);
+        } finally {
+            setIsSavingSelectedCanvasCue(false);
+        }
+    };
+
+    const deleteSelectedCanvasCue = async () => {
+        if (!selectedCanvasCueEntry || !selectedCanvasCueDefinition) return;
+
+        try {
+            setIsSavingSelectedCanvasCue(true);
+            setMessage('');
+            await deleteCue(String(selectedCanvasCueEntry.track.id), String(selectedCanvasCueEntry.cue.id));
+            await refreshTracks();
+            setSelectedCanvasCueId(null);
+            setSelectedCanvasCueDraft(toDefaultCanvasCueInspectorDraft());
+            setMessage(`${selectedCanvasCueDefinition.label}을 삭제했습니다.`);
+        } catch {
+            setMessage(`${selectedCanvasCueDefinition.label} 삭제에 실패했습니다.`);
+        } finally {
+            setIsSavingSelectedCanvasCue(false);
         }
     };
 
@@ -1760,13 +2111,22 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                                 />
                                                                             ))}
                                                                             {mediaCueOverlayItems.map(({ cue, speakerName, style }) => {
+                                                                                const isDraggingCanvasCue =
+                                                                                    canvasCueDragState?.cueId === cue.id;
+
                                                                                 return (
                                                                                     <span
-                                                                                        className={
+                                                                                        className={[
+                                                                                            'tp-dialogue-strip-cue',
                                                                                             selectedCanvasCueId === cue.id
-                                                                                                ? 'tp-dialogue-strip-cue is-selected'
-                                                                                                : 'tp-dialogue-strip-cue'
-                                                                                        }
+                                                                                                ? 'is-selected'
+                                                                                                : '',
+                                                                                            isDraggingCanvasCue
+                                                                                                ? 'is-dragging'
+                                                                                                : '',
+                                                                                        ]
+                                                                                            .filter(Boolean)
+                                                                                            .join(' ')}
                                                                                         key={cue.id}
                                                                                         onClick={(event) => {
                                                                                             event.stopPropagation();
@@ -1784,6 +2144,13 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                                             event.stopPropagation();
                                                                                             selectCanvasCue(cue.id);
                                                                                         }}
+                                                                                        onPointerDown={(event) =>
+                                                                                            startCanvasCueDrag({
+                                                                                                cue,
+                                                                                                event,
+                                                                                                trackId: cue.trackId,
+                                                                                            })
+                                                                                        }
                                                                                         role="button"
                                                                                         style={style}
                                                                                         tabIndex={0}
@@ -2276,8 +2643,9 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                             <span>{selectedCanvasCueDefinition.label}</span>
                                                         </div>
                                                         <div className="tp-canvas-cue-inspector">
-                                                            <article
-                                                                className="tp-canvas-selected-cue"
+                                                            <form
+                                                                className="tp-canvas-selected-cue tp-canvas-dialogue-form"
+                                                                onSubmit={saveSelectedCanvasCue}
                                                                 style={
                                                                     {
                                                                         '--tp-dialogue-cue-accent':
@@ -2307,7 +2675,128 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                         </em>
                                                                     </span>
                                                                 </div>
-                                                                <p>{selectedCanvasCueEntry.cue.script}</p>
+                                                                {selectedCanvasCueEntry.mode === 'dialogue' ? (
+                                                                    <label>
+                                                                        <span>캐릭터</span>
+                                                                        <select
+                                                                            aria-label="대사 수정 캐릭터"
+                                                                            disabled={
+                                                                                isSavingSelectedCanvasCue ||
+                                                                                characters.length === 0
+                                                                            }
+                                                                            onChange={(event) => {
+                                                                                const characterId =
+                                                                                    event.currentTarget.value;
+                                                                                setSelectedCanvasCueDraft((current) => ({
+                                                                                    ...current,
+                                                                                    characterId,
+                                                                                }));
+                                                                            }}
+                                                                            value={selectedCanvasCueDraft.characterId}
+                                                                        >
+                                                                            {characters.map((character) => (
+                                                                                <option
+                                                                                    key={character.id}
+                                                                                    value={character.id}
+                                                                                >
+                                                                                    {character.name}
+                                                                                </option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </label>
+                                                                ) : null}
+                                                                <label>
+                                                                    <span>{selectedCanvasCueDefinition.scriptLabel}</span>
+                                                                    <textarea
+                                                                        disabled={isSavingSelectedCanvasCue}
+                                                                        onChange={(event) => {
+                                                                            const script = event.currentTarget.value;
+                                                                            setSelectedCanvasCueDraft((current) => ({
+                                                                                ...current,
+                                                                                script,
+                                                                            }));
+                                                                        }}
+                                                                        placeholder={selectedCanvasCueDefinition.placeholder}
+                                                                        value={selectedCanvasCueDraft.script}
+                                                                    />
+                                                                </label>
+                                                                <div className="tp-canvas-selected-cue-grid">
+                                                                    <label>
+                                                                        <span>컷</span>
+                                                                        <select
+                                                                            aria-label={`${selectedCanvasCueDefinition.label} 수정 컷`}
+                                                                            disabled={
+                                                                                isSavingSelectedCanvasCue ||
+                                                                                selectedCanvasMediaItems.length === 0
+                                                                            }
+                                                                            onChange={(event) => {
+                                                                                const canvasMediaId =
+                                                                                    event.currentTarget.value;
+                                                                                setSelectedCanvasCueDraft((current) => ({
+                                                                                    ...current,
+                                                                                    canvasMediaId,
+                                                                                }));
+                                                                            }}
+                                                                            value={selectedCanvasCueDraft.canvasMediaId}
+                                                                        >
+                                                                            {selectedCanvasMediaItems
+                                                                                .filter(
+                                                                                    (media) =>
+                                                                                        typeof media.canvasMediaId ===
+                                                                                        'number'
+                                                                                )
+                                                                                .map((media, index) => (
+                                                                                    <option
+                                                                                        key={media.canvasMediaId}
+                                                                                        value={media.canvasMediaId}
+                                                                                    >
+                                                                                        {index + 1}. {media.mediaName}
+                                                                                    </option>
+                                                                                ))}
+                                                                        </select>
+                                                                    </label>
+                                                                    <label>
+                                                                        <span>위치</span>
+                                                                        <input
+                                                                            aria-label={`${selectedCanvasCueDefinition.label} 수정 위치값`}
+                                                                            disabled={isSavingSelectedCanvasCue}
+                                                                            max={100}
+                                                                            min={0}
+                                                                            onChange={(event) => {
+                                                                                const position =
+                                                                                    event.currentTarget.value;
+                                                                                setSelectedCanvasCueDraft((current) => ({
+                                                                                    ...current,
+                                                                                    position,
+                                                                                }));
+                                                                            }}
+                                                                            placeholder="%"
+                                                                            step={1}
+                                                                            type="number"
+                                                                            value={selectedCanvasCueDraft.position}
+                                                                        />
+                                                                    </label>
+                                                                </div>
+                                                                <label>
+                                                                    <span>{selectedCanvasCueDefinition.durationLabel}</span>
+                                                                    <input
+                                                                        aria-label={`${selectedCanvasCueDefinition.label} 수정 길이`}
+                                                                        disabled={isSavingSelectedCanvasCue}
+                                                                        min={0.1}
+                                                                        onChange={(event) => {
+                                                                            const durationSeconds =
+                                                                                event.currentTarget.value;
+                                                                            setSelectedCanvasCueDraft((current) => ({
+                                                                                ...current,
+                                                                                durationSeconds,
+                                                                            }));
+                                                                        }}
+                                                                        step={0.1}
+                                                                        type="number"
+                                                                        value={selectedCanvasCueDraft.durationSeconds}
+                                                                    />
+                                                                    <small>초</small>
+                                                                </label>
                                                                 <div className="tp-canvas-cue-meta">
                                                                     <span>트랙</span>
                                                                     <strong>{selectedCanvasCueEntry.track.name}</strong>
@@ -2330,7 +2819,33 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                         )}
                                                                     </strong>
                                                                 </div>
-                                                            </article>
+                                                                <div className="tp-canvas-selected-cue-actions">
+                                                                    <button
+                                                                        className="tp-btn danger"
+                                                                        disabled={isSavingSelectedCanvasCue}
+                                                                        onClick={() => void deleteSelectedCanvasCue()}
+                                                                        type="button"
+                                                                    >
+                                                                        <StudioCatalogIcon name="trash" />
+                                                                        삭제
+                                                                    </button>
+                                                                    <button
+                                                                        className="tp-btn primary"
+                                                                        disabled={
+                                                                            isSavingSelectedCanvasCue ||
+                                                                            !selectedCanvasCueDraft.script.trim() ||
+                                                                            !isSelectedCanvasCueDraftDurationValid ||
+                                                                            !selectedCanvasCueDraft.canvasMediaId ||
+                                                                            (selectedCanvasCueEntry.mode === 'dialogue' &&
+                                                                                !selectedCanvasCueDraft.characterId)
+                                                                        }
+                                                                        type="submit"
+                                                                    >
+                                                                        <StudioCatalogIcon name="check" />
+                                                                        {isSavingSelectedCanvasCue ? '저장 중' : '수정 저장'}
+                                                                    </button>
+                                                                </div>
+                                                            </form>
                                                         </div>
                                                     </aside>
                                                 ) : null}
@@ -3062,6 +3577,16 @@ function toDefaultCanvasCueDrafts(characterId = '') {
     } satisfies Record<CanvasCueMode, { characterId: string; script: string; durationSeconds: string }>;
 }
 
+function toDefaultCanvasCueInspectorDraft(): CanvasCueInspectorDraft {
+    return {
+        characterId: '',
+        script: '',
+        durationSeconds: defaultDialogueDurationSeconds,
+        canvasMediaId: '',
+        position: '',
+    };
+}
+
 function getCanvasCueModeDefinition(mode: CanvasCueMode) {
     return canvasCueModeDefinitions.find((definition) => definition.id === mode) ?? canvasCueModeDefinitions[0];
 }
@@ -3127,6 +3652,22 @@ function toDialogueDurationMs(durationSeconds: string) {
     if (!Number.isFinite(parsedSeconds) || parsedSeconds <= 0) return undefined;
 
     return Math.round(parsedSeconds * 1000);
+}
+
+function toDurationSecondsInput(durationMilliseconds: number) {
+    if (!Number.isFinite(durationMilliseconds) || durationMilliseconds <= 0) return defaultDialogueDurationSeconds;
+
+    const seconds = durationMilliseconds / 1000;
+    return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1).replace(/\.0$/, '');
+}
+
+function isSameDialogueCuePosition(left: DialogueCuePositionRequest, right: DialogueCuePositionRequest) {
+    return (
+        left.startCanvasMediaId === right.startCanvasMediaId &&
+        left.endCanvasMediaId === right.endCanvasMediaId &&
+        left.startPosition === right.startPosition &&
+        left.endPosition === right.endPosition
+    );
 }
 
 function getNextDialogueStartTime(tracks: TrackListItem[]) {

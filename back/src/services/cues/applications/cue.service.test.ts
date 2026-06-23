@@ -349,6 +349,93 @@ describe('CueService', () => {
         }
     });
 
+    it('moves a cue to another character-linked track when targetTrackId is provided', async () => {
+        const dataSource = await createCueServiceDataSource();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Cue move product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Cue move episode',
+                })
+            );
+            const [sourceCharacter, targetCharacter] = await dataSource.manager.save([
+                new Character({
+                    productId: product.id,
+                    name: 'Cue move source character',
+                }),
+                new Character({
+                    productId: product.id,
+                    name: 'Cue move target character',
+                }),
+            ]);
+            const [sourceTrack, targetTrack] = await dataSource.manager.save([
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Cue move source track',
+                    type: 'record',
+                    characterId: sourceCharacter.id,
+                }),
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Cue move target track',
+                    type: 'record',
+                    characterId: targetCharacter.id,
+                }),
+            ]);
+            const script = await dataSource.manager.save(new Script({ line: '이동 전 대사', duration: 1200 }));
+            const cue = await dataSource.manager.save(
+                new Cue({
+                    scriptId: script.id,
+                    characterId: sourceCharacter.id,
+                    trackId: sourceTrack.id,
+                    startTime: 1000,
+                    endTime: 2200,
+                    startPosition: 20,
+                    endPosition: 20,
+                    volume: 0.9,
+                })
+            );
+            const cueService = createCueService(dataSource);
+
+            await cueService.update({
+                trackId: sourceTrack.id,
+                cueId: cue.id,
+                targetTrackId: targetTrack.id,
+                script: '이동 후 대사',
+                duration: 1800,
+                startTime: 1000,
+                endTime: 2800,
+                startPosition: 45,
+                endPosition: 45,
+            });
+
+            const movedCue = await dataSource.manager.findOneOrFail(Cue, {
+                where: { id: cue.id },
+                relations: { scriptRef: true },
+            });
+            const sourceTrackCueCount = await dataSource.manager.count(Cue, { where: { trackId: sourceTrack.id } });
+            const targetTrackCueCount = await dataSource.manager.count(Cue, { where: { trackId: targetTrack.id } });
+
+            assert.equal(movedCue.id, cue.id);
+            assert.equal(movedCue.trackId, targetTrack.id);
+            assert.equal(movedCue.characterId, targetCharacter.id);
+            assert.equal(movedCue.scriptRef?.line, '이동 후 대사');
+            assert.equal(movedCue.scriptRef?.duration, 1800);
+            assert.equal(movedCue.startTime, 1000);
+            assert.equal(movedCue.endTime, 2800);
+            assert.equal(movedCue.startPosition, 45);
+            assert.equal(movedCue.endPosition, 45);
+            assert.equal(movedCue.volume, 0.9);
+            assert.equal(sourceTrackCueCount, 0);
+            assert.equal(targetTrackCueCount, 1);
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
     it('splits an audio cue into two cues that share audioId with separate source ranges', async () => {
         const dataSource = await createCueServiceDataSource();
 

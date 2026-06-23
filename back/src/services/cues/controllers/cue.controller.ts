@@ -78,6 +78,7 @@ export class CueController {
     ) {
         // 1. Destructure body, params, query
         const {
+            targetTrackId,
             script,
             duration,
             startTime,
@@ -98,6 +99,7 @@ export class CueController {
         await this.cueService.update({
             trackId,
             cueId,
+            targetTrackId,
             script,
             duration,
             startTime,

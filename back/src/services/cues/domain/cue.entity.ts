@@ -112,6 +112,7 @@ export class Cue extends DddAggregate {
     update({
         scriptId,
         characterId,
+        trackId,
         audioId,
         startCanvasMediaId,
         endCanvasMediaId,
@@ -125,6 +126,7 @@ export class Cue extends DddAggregate {
     }: {
         scriptId?: number | null;
         characterId?: number;
+        trackId?: number;
         audioId?: number | null;
         startCanvasMediaId?: number;
         endCanvasMediaId?: number;
@@ -139,6 +141,7 @@ export class Cue extends DddAggregate {
         const changedArgs = this.stripUnchanged({
             scriptId,
             characterId,
+            trackId,
             audioId,
             startCanvasMediaId,
             endCanvasMediaId,

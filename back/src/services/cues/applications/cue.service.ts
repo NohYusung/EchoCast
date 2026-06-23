@@ -140,6 +140,7 @@ export class CueService extends DddService {
     async update({
         trackId,
         cueId,
+        targetTrackId,
         script,
         duration,
         startTime,
@@ -155,6 +156,7 @@ export class CueService extends DddService {
     }: {
         trackId: number;
         cueId: number;
+        targetTrackId?: number;
         script?: string;
         duration?: number;
         startTime?: number;
@@ -168,12 +170,12 @@ export class CueService extends DddService {
         endPosition?: number;
         volume?: number;
     }) {
-        const [track] = await this.trackRepository.find({ id: trackId });
+        const [sourceTrack] = await this.trackRepository.find({ id: trackId });
 
-        if (!track) {
+        if (!sourceTrack) {
             throw new NotFoundException('트랙을 찾을 수 없습니다.');
         }
-        if (track.type === 'record' && !track.characterId) {
+        if (sourceTrack.type === 'record' && !sourceTrack.characterId) {
             throw new BadRequestException('큐 트랙은 캐릭터와 연결되어야 합니다.');
         }
 
@@ -181,6 +183,20 @@ export class CueService extends DddService {
 
         if (!cue) {
             throw new NotFoundException('큐를 찾을 수 없습니다.');
+        }
+        const targetTrack =
+            targetTrackId !== undefined && targetTrackId !== trackId
+                ? (await this.trackRepository.find({ id: targetTrackId }))[0]
+                : sourceTrack;
+
+        if (!targetTrack) {
+            throw new NotFoundException('대상 트랙을 찾을 수 없습니다.');
+        }
+        if (targetTrack.episodeId !== sourceTrack.episodeId) {
+            throw new BadRequestException('큐 대상 트랙은 기존 트랙의 에피소드에 속해야 합니다.');
+        }
+        if (targetTrack.type === 'record' && !targetTrack.characterId) {
+            throw new BadRequestException('큐 대상 트랙은 캐릭터와 연결되어야 합니다.');
         }
 
         const trimmedScript = script?.trim();
@@ -194,7 +210,7 @@ export class CueService extends DddService {
             endTime: endTime ?? cue.endTime ?? undefined,
         });
         const nextAudioId = audioId !== undefined ? audioId : (cue.audioId ?? undefined);
-        const audio = await this.resolveAudio({ track, audioId: nextAudioId });
+        const audio = await this.resolveAudio({ track: targetTrack, audioId: nextAudioId });
         const nextAudioStartTime = audioStartTime !== undefined ? audioStartTime : (cue.audioStartTime ?? undefined);
         const nextAudioEndTime = audioEndTime !== undefined ? audioEndTime : (cue.audioEndTime ?? undefined);
         this.validateAudioSourceRange({
@@ -214,7 +230,7 @@ export class CueService extends DddService {
             startCanvasMedia,
             endCanvasMedia,
         } = await this.resolveCanvasMedias({
-            track,
+            track: targetTrack,
             startCanvasMediaId: nextStartCanvasMediaId,
             endCanvasMediaId: nextEndCanvasMediaId,
         });
@@ -235,7 +251,8 @@ export class CueService extends DddService {
 
         cue.update({
             scriptId: updatedScript?.id,
-            characterId: track.characterId ?? undefined,
+            characterId: targetTrack.characterId ?? undefined,
+            trackId: targetTrack.id,
             audioId,
             startCanvasMediaId: resolvedStartCanvasMediaId,
             endCanvasMediaId: resolvedEndCanvasMediaId,
