@@ -13,6 +13,7 @@ export type StudioCatalogIconName =
     | 'mic'
     | 'minus'
     | 'more'
+    | 'music'
     | 'panel'
     | 'pause'
     | 'play'
@@ -21,7 +22,8 @@ export type StudioCatalogIconName =
     | 'settings'
     | 'stop'
     | 'trash'
-    | 'users';
+    | 'users'
+    | 'volume';
 
 const iconPaths: Record<StudioCatalogIconName, ReactNode> = {
     asset: (
@@ -63,6 +65,13 @@ const iconPaths: Record<StudioCatalogIconName, ReactNode> = {
             <circle cx="19" cy="12" r="2" />
         </>
     ),
+    music: (
+        <>
+            <path d="M9 18V5l10-2v13" />
+            <circle cx="6" cy="18" r="3" />
+            <circle cx="16" cy="16" r="3" />
+        </>
+    ),
     panel: (
         <>
             <rect height="18" rx="2.5" width="18" x="3" y="3" />
@@ -95,6 +104,12 @@ const iconPaths: Record<StudioCatalogIconName, ReactNode> = {
         <>
             <circle cx="9" cy="8" r="3.4" />
             <path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5M16 4.5a3.4 3.4 0 0 1 0 7M21 20c0-2.8-1.8-4.4-4-4.8" />
+        </>
+    ),
+    volume: (
+        <>
+            <path d="M4 9v6h4l5 4V5L8 9H4Z" />
+            <path d="M17 9.5a4 4 0 0 1 0 5M20 7a8 8 0 0 1 0 10" />
         </>
     ),
 };

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    toDialogueCueOverlayPlacements,
     toDialogueCueOverlayTop,
     toDialogueCuePositionRequest,
     toDialogueStripSize,
@@ -98,6 +99,34 @@ test('toDialogueCueOverlayTop keeps dialogue bubbles inside the visible media ar
     assert.equal(toDialogueCueOverlayTop(47.6), 48);
     assert.equal(toDialogueCueOverlayTop(100), 92);
     assert.equal(toDialogueCueOverlayTop(Number.NaN), 50);
+});
+
+test('toDialogueCueOverlayPlacements pushes overlapping cue cards into side lanes', () => {
+    assert.deepEqual(
+        toDialogueCueOverlayPlacements([
+            { cueId: 1, top: 45 },
+            { cueId: 2, top: 50 },
+            { cueId: 3, top: 86 },
+        ]),
+        [
+            { cueId: 1, top: 45, lane: 0, offsetPx: 18, connectorWidthPx: 16 },
+            { cueId: 2, top: 50, lane: 1, offsetPx: 192, connectorWidthPx: 190 },
+            { cueId: 3, top: 86, lane: 0, offsetPx: 18, connectorWidthPx: 16 },
+        ],
+    );
+});
+
+test('toDialogueCueOverlayPlacements separates visually close cue cards near strip edges', () => {
+    assert.deepEqual(
+        toDialogueCueOverlayPlacements([
+            { cueId: 10, top: 8 },
+            { cueId: 11, top: 42 },
+        ]),
+        [
+            { cueId: 10, top: 8, lane: 0, offsetPx: 18, connectorWidthPx: 16 },
+            { cueId: 11, top: 42, lane: 1, offsetPx: 192, connectorWidthPx: 190 },
+        ],
+    );
 });
 
 test('toQuickDialogueCharacterRequest trims the ad hoc character name and keeps the selected role', () => {

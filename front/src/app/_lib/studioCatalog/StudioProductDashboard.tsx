@@ -1011,10 +1011,10 @@ function StudioRail({ active }: { active: 'products' | 'stats' }) {
                 <StudioCatalogIcon name="image" />
                 <span>에셋</span>
             </button>
-            <button type="button">
+            <Link href="/studio/admin">
                 <StudioCatalogIcon name="users" />
-                <span>멤버</span>
-            </button>
+                <span>권한</span>
+            </Link>
             <span className="tp-rail-spacer" />
             <button type="button">
                 <StudioCatalogIcon name="trash" />

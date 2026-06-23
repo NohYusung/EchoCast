@@ -10,6 +10,7 @@ export default function HomePage() {
                     <Link href="/studio/products/1/episodes">Episodes</Link>
                     <Link href="/studio/products/1/episodes/1">Studio</Link>
                     <Link href="/studio/products/1/episodes/1/record">Record</Link>
+                    <Link href="/studio/admin">Admin</Link>
                     <Link href="/direction/screen/1/1">Direction</Link>
                     <Link href="/player/1">Player</Link>
                 </nav>

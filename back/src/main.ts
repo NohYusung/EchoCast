@@ -9,7 +9,7 @@ async function bootstrap() {
     app.enableCors({
         origin: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['content-type'],
+        allowedHeaders: ['content-type', 'authorization', 'x-user-id'],
     });
     await app.listen(configsService.server.port);
 }
