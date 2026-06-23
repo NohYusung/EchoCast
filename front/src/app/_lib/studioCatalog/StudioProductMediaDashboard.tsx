@@ -21,6 +21,7 @@ type MediaType = 'image' | 'video' | 'audio';
 type MediaFilter = 'all' | MediaType;
 type SetupStepId = 'media' | 'canvas' | 'dialogue';
 type CanvasCueMode = 'dialogue' | 'effect' | 'bgm';
+type CanvasCueFilterId = 'dialogue' | 'effect' | 'bgm';
 type CharacterRole = 'starring' | 'supporting' | 'minor' | 'narrator' | 'unknown';
 type TrackApiType = 'scroll' | 'scrolls' | 'record' | 'audio' | 'effect' | 'bgm';
 type AudioType = 'audio' | 'bgm' | 'effect' | 'tts' | 'record';
@@ -201,6 +202,11 @@ type CanvasCueModeDefinition = {
     placeholder: string;
     addLabel: string;
 };
+type CanvasCueFilterDefinition = {
+    id: CanvasCueFilterId;
+    label: string;
+    accent: string;
+};
 type FileUploadUrlItem = {
     publicUrl: string;
     mimetype: string;
@@ -238,8 +244,13 @@ const characterRoleLabels: Record<CharacterRole, string> = {
 const defaultDialogueDurationSeconds = '1';
 const canvasStripBaseWidth = 236;
 const canvasStripMinScale = 60;
-const canvasStripMaxScale = 220;
+const canvasStripMaxScale = 400;
 const canvasStripScaleStep = 10;
+const canvasCueFilterDefinitions: CanvasCueFilterDefinition[] = [
+    { id: 'dialogue', label: '대사', accent: '#5b9bff' },
+    { id: 'effect', label: '효과음', accent: '#f472b6' },
+    { id: 'bgm', label: '배경음', accent: '#34d399' },
+];
 const canvasCueModeDefinitions: CanvasCueModeDefinition[] = [
     {
         id: 'dialogue',
@@ -296,6 +307,10 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
     const [canvasResourceSelectionIds, setCanvasResourceSelectionIds] = useState<number[]>([]);
     const [previewMedia, setPreviewMedia] = useState<MediaCatalogItem | null>(null);
     const [selectedCanvasId, setSelectedCanvasId] = useState<number | null>(null);
+    const [selectedCanvasCueId, setSelectedCanvasCueId] = useState<number | null>(null);
+    const [activeCanvasCueFilterIds, setActiveCanvasCueFilterIds] = useState<CanvasCueFilterId[]>(() =>
+        canvasCueFilterDefinitions.map((definition) => definition.id)
+    );
     const [activeStep, setActiveStep] = useState<SetupStepId>('media');
     const [selectedSpeakerId, setSelectedSpeakerId] = useState('all');
     const [dialogueDraft, setDialogueDraft] = useState({
@@ -331,6 +346,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
         setCanvasResourceSelectionIds([]);
         setActiveCanvasCueMode(null);
         setPreviewMedia(null);
+        setSelectedCanvasCueId(null);
+        setActiveCanvasCueFilterIds(canvasCueFilterDefinitions.map((definition) => definition.id));
         setSelectedEpisodeId('');
         setActiveStep('media');
         setSelectedSpeakerId('all');
@@ -399,6 +416,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             setCanvasResourceSelectionIds([]);
             setActiveCanvasCueMode(null);
             setPreviewMedia(null);
+            setSelectedCanvasCueId(null);
+            setActiveCanvasCueFilterIds(canvasCueFilterDefinitions.map((definition) => definition.id));
             setCueScriptDrafts({});
             setSelectedCuePosition(null);
             return;
@@ -430,6 +449,8 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                 setCanvasResourceSelectionIds([]);
                 setActiveCanvasCueMode(null);
                 setPreviewMedia(null);
+                setSelectedCanvasCueId(null);
+                setActiveCanvasCueFilterIds(canvasCueFilterDefinitions.map((definition) => definition.id));
                 setSelectedCuePosition(null);
             })
             .catch(() => {
@@ -584,6 +605,61 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             .filter((media) => media.mediaType !== 'audio')
             .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
     }, [selectedCanvas]);
+    const selectedCanvasMediaIdSet = useMemo(() => {
+        return new Set(
+            selectedCanvasMediaItems
+                .map((media) => media.canvasMediaId)
+                .filter((canvasMediaId): canvasMediaId is number => typeof canvasMediaId === 'number')
+        );
+    }, [selectedCanvasMediaItems]);
+    const canvasCueFilterCounts = useMemo(() => {
+        const counts = Object.fromEntries(
+            canvasCueFilterDefinitions.map((definition) => [definition.id, 0])
+        ) as Record<CanvasCueFilterId, number>;
+
+        canvasCueRows.forEach((row) => {
+            if (
+                typeof row.cue.startCanvasMediaId !== 'number' ||
+                !selectedCanvasMediaIdSet.has(row.cue.startCanvasMediaId)
+            ) {
+                return;
+            }
+
+            counts[getCanvasCueFilterId(row)] += 1;
+        });
+
+        return counts;
+    }, [canvasCueRows, selectedCanvasMediaIdSet]);
+    const selectedCanvasCueEntry = useMemo(() => {
+        if (typeof selectedCanvasCueId !== 'number') return null;
+
+        return (
+            canvasCueRows
+                .map((row) => {
+                    const filterId = getCanvasCueFilterId(row);
+                    const mediaIndex = selectedCanvasMediaItems.findIndex(
+                        (media) => media.canvasMediaId === row.cue.startCanvasMediaId
+                    );
+
+                    return {
+                        ...row,
+                        filterId,
+                        media: mediaIndex >= 0 ? selectedCanvasMediaItems[mediaIndex] : undefined,
+                        mediaIndex,
+                    };
+                })
+                .find((row) => row.cue.id === selectedCanvasCueId && activeCanvasCueFilterIds.includes(row.filterId)) ??
+            null
+        );
+    }, [activeCanvasCueFilterIds, canvasCueRows, selectedCanvasCueId, selectedCanvasMediaItems]);
+    const selectedCanvasCueDefinition = selectedCanvasCueEntry
+        ? getCanvasCueModeDefinition(selectedCanvasCueEntry.mode)
+        : undefined;
+    const selectedCanvasCueSpeakerName = selectedCanvasCueEntry
+        ? selectedCanvasCueEntry.mode === 'dialogue'
+            ? selectedCanvasCueEntry.character?.name ?? selectedCanvasCueEntry.track.name
+            : (selectedCanvasCueDefinition?.label ?? selectedCanvasCueEntry.track.name)
+        : '';
     const selectedCuePositionMedia = selectedCuePosition
         ? selectedCanvasMediaItems.find((media) => media.canvasMediaId === selectedCuePosition.startCanvasMediaId)
         : undefined;
@@ -651,15 +727,36 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
             }
 
             setCanvasResourceSelectionIds([]);
+            setSelectedCanvasCueId(null);
             setMessage('');
             return mode;
         });
+    };
+
+    const toggleCanvasCueFilter = (filterId: CanvasCueFilterId) => {
+        setActiveCanvasCueFilterIds((current) => {
+            if (current.includes(filterId)) return current.filter((id) => id !== filterId);
+
+            return [...current, filterId];
+        });
+    };
+
+    const selectAllCanvasCueFilters = () => {
+        setActiveCanvasCueFilterIds(canvasCueFilterDefinitions.map((definition) => definition.id));
     };
 
     const selectCanvasMedia = () => {
         setSelectedMediaIds((selectedCanvas?.medias ?? []).map((media) => media.mediaId));
         setCanvasResourceSelectionIds([]);
         setSelectedCuePosition(null);
+        setSelectedCanvasCueId(null);
+    };
+
+    const selectCanvasCue = (cueId: number) => {
+        setSelectedCanvasCueId(cueId);
+        setActiveCanvasCueMode(null);
+        setSelectedCuePosition(null);
+        setMessage('');
     };
 
     const moveCanvasDraftItem = (index: number, direction: -1 | 1) => {
@@ -1389,7 +1486,13 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
                                     {activeStep === 'canvas' ? (
                                         <section className="tp-step-panel tp-step-panel-fill">
-                                            <div className="tp-canvas-workbench">
+                                            <div
+                                                className={
+                                                    selectedCanvasCueEntry
+                                                        ? 'tp-canvas-workbench has-cue-inspector'
+                                                        : 'tp-canvas-workbench'
+                                                }
+                                            >
                                                 <aside className="tp-canvas-col tp-canvas-col-list">
                                                     <div className="tp-canvas-colhead">
                                                         <h2>캔버스</h2>
@@ -1408,6 +1511,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                     onClick={() => {
                                                                         setSelectedCanvasId(canvas.id);
                                                                         setSelectedCuePosition(null);
+                                                                        setSelectedCanvasCueId(null);
                                                                         setSelectedMediaIds(
                                                                             (canvas.medias ?? [])
                                                                                 .slice()
@@ -1523,6 +1627,50 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                         </div>
                                                     </div>
                                                     <div
+                                                        aria-label="캔버스 큐 필터"
+                                                        className="tp-canvas-cue-filter"
+                                                        role="group"
+                                                    >
+                                                        {canvasCueFilterDefinitions.map((definition) => {
+                                                            const isActive = activeCanvasCueFilterIds.includes(
+                                                                definition.id
+                                                            );
+
+                                                            return (
+                                                                <button
+                                                                    className={
+                                                                        isActive
+                                                                            ? 'tp-canvas-cue-filter-chip is-active'
+                                                                            : 'tp-canvas-cue-filter-chip'
+                                                                    }
+                                                                    key={definition.id}
+                                                                    onClick={() =>
+                                                                        toggleCanvasCueFilter(definition.id)
+                                                                    }
+                                                                    style={
+                                                                        {
+                                                                            '--tp-cue-filter-color': definition.accent,
+                                                                        } as CSSProperties
+                                                                    }
+                                                                    type="button"
+                                                                >
+                                                                    <span className="tp-canvas-cue-filter-box">
+                                                                        <StudioCatalogIcon name="check" />
+                                                                    </span>
+                                                                    <span>{definition.label}</span>
+                                                                    <small>{canvasCueFilterCounts[definition.id]}</small>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                        <button
+                                                            className="tp-canvas-cue-filter-all"
+                                                            onClick={selectAllCanvasCueFilters}
+                                                            type="button"
+                                                        >
+                                                            전체 선택
+                                                        </button>
+                                                    </div>
+                                                    <div
                                                         className={
                                                             selectedCanvasMediaItems.length > 0
                                                                 ? 'tp-strip-stage is-dialogue-placement'
@@ -1548,8 +1696,12 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                         media.mediaId
                                                                     );
                                                                     const mediaCueRows = canvasCueRows.filter(
-                                                                        ({ cue }) =>
-                                                                            cue.startCanvasMediaId === media.canvasMediaId
+                                                                        (row) =>
+                                                                            row.cue.startCanvasMediaId ===
+                                                                                media.canvasMediaId &&
+                                                                            activeCanvasCueFilterIds.includes(
+                                                                                getCanvasCueFilterId(row)
+                                                                            )
                                                                     );
                                                                     const mediaCuePlacements = new Map(
                                                                         toDialogueCueOverlayPlacements(
@@ -1585,8 +1737,29 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
 
                                                                                 return (
                                                                                     <span
-                                                                                        className="tp-dialogue-strip-cue"
+                                                                                        className={
+                                                                                            selectedCanvasCueId === cue.id
+                                                                                                ? 'tp-dialogue-strip-cue is-selected'
+                                                                                                : 'tp-dialogue-strip-cue'
+                                                                                        }
                                                                                         key={cue.id}
+                                                                                        onClick={(event) => {
+                                                                                            event.stopPropagation();
+                                                                                            selectCanvasCue(cue.id);
+                                                                                        }}
+                                                                                        onKeyDown={(event) => {
+                                                                                            if (
+                                                                                                event.key !== 'Enter' &&
+                                                                                                event.key !== ' '
+                                                                                            ) {
+                                                                                                return;
+                                                                                            }
+
+                                                                                            event.preventDefault();
+                                                                                            event.stopPropagation();
+                                                                                            selectCanvasCue(cue.id);
+                                                                                        }}
+                                                                                        role="button"
                                                                                         style={{
                                                                                             '--tp-dialogue-cue-top': `${cueTop}%`,
                                                                                             '--tp-dialogue-cue-accent':
@@ -1599,6 +1772,7 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                                                 16
                                                                                             }px`,
                                                                                         } as CSSProperties}
+                                                                                        tabIndex={0}
                                                                                         title={`${speakerName}: ${cue.script}`}
                                                                                     >
                                                                                         <span className="tp-dialogue-strip-cue-head">
@@ -1618,19 +1792,22 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                             key={`${media.canvasMediaId ?? media.mediaId}-${index}`}
                                                                         >
                                                                             <div
-                                                                                className={
+                                                                                className={[
+                                                                                    'tp-strip-block',
+                                                                                    media.mediaType,
+                                                                                    'is-dialogue-target',
+                                                                                    isCanvasCueModeActive
+                                                                                        ? 'is-placement-enabled'
+                                                                                        : '',
                                                                                     isSelectedPosition
-                                                                                        ? `tp-strip-block ${media.mediaType} is-dialogue-target ${isCanvasCueModeActive ? 'is-placement-enabled' : ''} is-selected`
-                                                                                        : `tp-strip-block ${media.mediaType} is-dialogue-target ${isCanvasCueModeActive ? 'is-placement-enabled' : ''}`
-                                                                                }
+                                                                                        ? 'is-selected'
+                                                                                        : '',
+                                                                                ]
+                                                                                    .filter(Boolean)
+                                                                                    .join(' ')}
                                                                                 data-dialogue-index={media.index ?? index}
                                                                                 data-dialogue-visual-id={visualId}
                                                                             >
-                                                                                <span className="tp-strip-label">
-                                                                                    {media.mediaType === 'video'
-                                                                                        ? '영상'
-                                                                                        : '컷'}
-                                                                                </span>
                                                                                 <MediaPreview
                                                                                     media={toMediaListItem(
                                                                                         media,
@@ -1711,13 +1888,6 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                                         className={`tp-strip-block ${media.mediaType}`}
                                                                         key={`${media.id}-${index}`}
                                                                     >
-                                                                        <span className="tp-strip-label">
-                                                                            {media.mediaType === 'video'
-                                                                                ? '영상'
-                                                                                : media.mediaType === 'audio'
-                                                                                  ? '오디오'
-                                                                                  : '컷'}
-                                                                        </span>
                                                                         <MediaPreview media={media} compact={false} />
                                                                         <strong>{media.mediaName}</strong>
                                                                         <div className="tp-strip-controls">
@@ -2085,6 +2255,71 @@ export function StudioProductMediaDashboard({ productId }: { productId: string }
                                                         )}
                                                     </div>
                                                 </aside>
+                                                {selectedCanvasCueEntry && selectedCanvasCueDefinition ? (
+                                                    <aside className="tp-canvas-col tp-canvas-col-cue-insp">
+                                                        <div className="tp-canvas-colhead">
+                                                            <h2>선택 큐</h2>
+                                                            <span>{selectedCanvasCueDefinition.label}</span>
+                                                        </div>
+                                                        <div className="tp-canvas-cue-inspector">
+                                                            <article
+                                                                className="tp-canvas-selected-cue"
+                                                                style={
+                                                                    {
+                                                                        '--tp-dialogue-cue-accent':
+                                                                            selectedCanvasCueDefinition.accent,
+                                                                    } as CSSProperties
+                                                                }
+                                                            >
+                                                                <div className="tp-canvas-selected-cue-head">
+                                                                    <i>
+                                                                        <StudioCatalogIcon
+                                                                            name={selectedCanvasCueDefinition.icon}
+                                                                        />
+                                                                    </i>
+                                                                    <span>
+                                                                        <small>{selectedCanvasCueDefinition.label} 큐</small>
+                                                                        <strong>{selectedCanvasCueSpeakerName}</strong>
+                                                                        <em>
+                                                                            {selectedCanvasCueEntry.mediaIndex >= 0
+                                                                                ? `컷 ${selectedCanvasCueEntry.mediaIndex + 1}`
+                                                                                : '컷 미지정'}{' '}
+                                                                            ·{' '}
+                                                                            {formatMilliseconds(
+                                                                                selectedCanvasCueEntry.cue.duration ??
+                                                                                    selectedCanvasCueEntry.cue.endTime -
+                                                                                        selectedCanvasCueEntry.cue.startTime
+                                                                            )}
+                                                                        </em>
+                                                                    </span>
+                                                                </div>
+                                                                <p>{selectedCanvasCueEntry.cue.script}</p>
+                                                                <div className="tp-canvas-cue-meta">
+                                                                    <span>트랙</span>
+                                                                    <strong>{selectedCanvasCueEntry.track.name}</strong>
+                                                                    <span>큐 ID</span>
+                                                                    <strong>{selectedCanvasCueEntry.cue.id}</strong>
+                                                                    <span>위치</span>
+                                                                    <strong>
+                                                                        {selectedCanvasCueEntry.media?.mediaName ??
+                                                                            '미디어 미지정'}{' '}
+                                                                        · {selectedCanvasCueEntry.cue.startPosition}%
+                                                                    </strong>
+                                                                    <span>타임라인</span>
+                                                                    <strong>
+                                                                        {formatMilliseconds(
+                                                                            selectedCanvasCueEntry.cue.startTime
+                                                                        )}{' '}
+                                                                        -{' '}
+                                                                        {formatMilliseconds(
+                                                                            selectedCanvasCueEntry.cue.endTime
+                                                                        )}
+                                                                    </strong>
+                                                                </div>
+                                                            </article>
+                                                        </div>
+                                                    </aside>
+                                                ) : null}
                                             </div>
                                         </section>
                                     ) : null}
@@ -2827,6 +3062,17 @@ function getCanvasCueModeForTrack(track: TrackListItem): CanvasCueMode | null {
     if (track.type === 'bgm') return 'bgm';
 
     return null;
+}
+
+function getCanvasCueFilterId({
+    mode,
+}: {
+    mode: CanvasCueMode;
+}): CanvasCueFilterId {
+    if (mode === 'effect') return 'effect';
+    if (mode === 'bgm') return 'bgm';
+
+    return 'dialogue';
 }
 
 function toCueScriptDrafts(tracks: TrackListItem[]) {

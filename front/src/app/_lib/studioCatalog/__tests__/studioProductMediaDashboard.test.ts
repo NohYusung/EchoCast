@@ -32,6 +32,7 @@ test('canvas media source list supports batch resource selection', () => {
 
 test('canvas stage exposes zoom controls for the strip preview', () => {
     assert.match(source, /const \[canvasStripScale,\s*setCanvasStripScale\] = useState\(100\);/);
+    assert.match(source, /const canvasStripMaxScale = 400;/);
     assert.match(source, /const canvasStripWidth = Math\.round\(\(canvasStripBaseWidth \* canvasStripScale\) \/ 100\);/);
     assert.match(source, /function updateCanvasStripScale|const updateCanvasStripScale/);
     assert.match(source, /aria-label="캔버스 확대 축소"[\s\S]*?className="tp-canvas-zoom"[\s\S]*?role="group"/);
@@ -79,6 +80,7 @@ test('canvas stage exposes cue placement modes and inspector fields', () => {
     assert.match(source, /toDialogueCueOverlayPlacements/);
     assert.match(source, /const mediaCuePlacements = new Map/);
     assert.match(source, /className="tp-strip-dialogue-row"/);
+    assert.doesNotMatch(source, /className="tp-strip-label"/);
     assert.match(source, /className="tp-canvas-dialogue-image-hitarea"/);
     assert.match(source, /onClick=\{selectCanvasDialogueCuePosition\}/);
     assert.match(source, /className="tp-canvas-dialogue-line"/);
@@ -106,6 +108,7 @@ test('canvas stage exposes cue placement modes and inspector fields', () => {
     assert.doesNotMatch(styles, /grid-template-columns:\s*var\(--tp-canvas-strip-width,\s*236px\)\s+\d+px;/);
     assert.match(styles, /\.tp-strip-stack\.is-dialogue-placement\s*\{[\s\S]*?width:\s*var\(--tp-canvas-strip-width,\s*236px\);/);
     assert.match(styles, /\.tp-strip-dialogue-row\s*\{[\s\S]*?display:\s*block;/);
+    assert.doesNotMatch(styles, /\.tp-strip-label/);
     assert.match(styles, /\.tp-canvas-dialogue-line/);
     assert.match(styles, /\.tp-canvas-dialogue-line\s*\{[\s\S]*?position:\s*absolute;/);
     assert.match(styles, /background:\s*transparent;/);
@@ -120,6 +123,69 @@ test('canvas stage exposes cue placement modes and inspector fields', () => {
     assert.match(styles, /\.tp-canvas-dialogue-image-hitarea/);
     assert.doesNotMatch(styles, /\.tp-canvas-dialogue-line\.is-placement-enabled/);
     assert.doesNotMatch(styles, /\.tp-canvas-dialogue-track-lane/);
+});
+
+test('canvas stage exposes Open Design style cue filters', () => {
+    assert.match(source, /type CanvasCueFilterId = 'dialogue' \| 'effect' \| 'bgm';/);
+    assert.match(source, /const canvasCueFilterDefinitions: CanvasCueFilterDefinition\[\] = \[/);
+    assert.match(source, /label: '대사'/);
+    assert.match(source, /label: '효과음'/);
+    assert.match(source, /label: '배경음'/);
+    assert.doesNotMatch(source, /label: '내레이션'/);
+    assert.doesNotMatch(source, /label: '번역 자막'/);
+    assert.doesNotMatch(source, /label: '상황 설명'/);
+    assert.match(source, /const \[activeCanvasCueFilterIds,\s*setActiveCanvasCueFilterIds\]/);
+    assert.match(source, /const selectedCanvasMediaIdSet = useMemo/);
+    assert.match(source, /const canvasCueFilterCounts = useMemo/);
+    assert.match(source, /counts\[getCanvasCueFilterId\(row\)\] \+= 1;/);
+    assert.match(source, /const toggleCanvasCueFilter = \(filterId: CanvasCueFilterId\)/);
+    assert.match(source, /const selectAllCanvasCueFilters = \(\)/);
+    assert.match(source, /className="tp-canvas-cue-filter"/);
+    assert.match(source, /aria-label="캔버스 큐 필터"/);
+    assert.match(source, /canvasCueFilterDefinitions\.map/);
+    assert.match(source, /className="tp-canvas-cue-filter-box"/);
+    assert.match(source, /<StudioCatalogIcon name="check" \/>/);
+    assert.match(source, /canvasCueFilterCounts\[definition\.id\]/);
+    assert.match(source, /전체 선택/);
+    assert.match(source, /activeCanvasCueFilterIds\.includes\(\s*getCanvasCueFilterId\(row\)\s*\)/);
+    assert.match(source, /function getCanvasCueFilterId/);
+    assert.doesNotMatch(source, /normalizedTrackName\.includes\('번역'\)/);
+    assert.doesNotMatch(source, /character\?\.role === 'narrator'/);
+    assert.match(styles, /\.tp-canvas-cue-filter\s*\{/);
+    assert.match(styles, /\.tp-canvas-cue-filter-chip\s*\{/);
+    assert.match(styles, /\.tp-canvas-cue-filter-box\s*\{/);
+    assert.match(styles, /\.tp-canvas-cue-filter-chip\.is-active \.tp-canvas-cue-filter-box/);
+    assert.match(styles, /\.tp-canvas-cue-filter-all\s*\{/);
+});
+
+test('canvas cue cards show selected cue details in a separate panel', () => {
+    assert.match(source, /const \[selectedCanvasCueId,\s*setSelectedCanvasCueId\] = useState<number \| null>\(null\);/);
+    assert.match(source, /const selectedCanvasCueEntry = useMemo/);
+    assert.match(source, /const selectedCanvasCueDefinition = selectedCanvasCueEntry/);
+    assert.match(source, /const selectedCanvasCueSpeakerName = selectedCanvasCueEntry/);
+    assert.match(source, /selectCanvasCue\(cue\.id\)/);
+    assert.match(source, /role="button"/);
+    assert.match(source, /tabIndex=\{0\}/);
+    assert.match(source, /'tp-dialogue-strip-cue is-selected'/);
+    assert.match(source, /'tp-canvas-workbench has-cue-inspector'/);
+    assert.match(source, /className="tp-canvas-col tp-canvas-col-cue-insp"/);
+    assert.match(source, /<h2>선택 큐<\/h2>/);
+    assert.match(source, /className="tp-canvas-cue-inspector"/);
+    assert.match(source, /className="tp-canvas-selected-cue"/);
+    assert.match(source, /className="tp-canvas-selected-cue-head"/);
+    assert.match(source, /className="tp-canvas-cue-meta"/);
+    assert.match(source, /selectedCanvasCueEntry\.cue\.script/);
+    assert.match(source, /selectedCanvasCueEntry\.track\.name/);
+    assert.doesNotMatch(source, /tp-canvas-resource-hitarea/);
+    assert.doesNotMatch(source, /tp-canvas-selected-resource/);
+    assert.match(styles, /\.tp-canvas-workbench\.has-cue-inspector/);
+    assert.match(styles, /\.tp-canvas-col-cue-insp/);
+    assert.match(styles, /\.tp-canvas-cue-inspector/);
+    assert.match(styles, /\.tp-canvas-dialogue-line \.tp-dialogue-strip-cue\.is-selected/);
+    assert.match(styles, /\.tp-canvas-selected-cue/);
+    assert.match(styles, /\.tp-canvas-cue-meta/);
+    assert.doesNotMatch(styles, /\.tp-canvas-resource-hitarea/);
+    assert.doesNotMatch(styles, /\.tp-canvas-selected-resource/);
 });
 
 test('media registration view includes registered audios but excludes record audios', () => {
