@@ -128,15 +128,22 @@ test('recording can start and save without a selected artist', () => {
     assert.doesNotMatch(source, /disabled=\{!selectedCue \|\| !selectedArtistId \|\| isSavingRecord \|\| isRecording\}/);
 });
 
-test('recording uses a page-level circular buffer and saves an explicit cue audio range', () => {
-    assert.match(source, /recordingCircularBufferMaxMs/);
+test('recording saves a padded take and lets the cue range move inside it', () => {
+    assert.match(source, /recordingSilencePaddingMs/);
+    assert.match(source, /padRecordingSamplesWithSilence/);
     assert.match(source, /const recordingBufferRef = useRef<RecordingBufferHandle \| null>\(null\);/);
-    assert.match(source, /void startRecordingBuffer\(\);/);
+    assert.match(source, /const recordingStopTimerRef = useRef<number \| undefined>\(undefined\);/);
+    assert.doesNotMatch(source, /void startRecordingBuffer\(\);/);
     assert.match(source, /const pendingRecordingBuffer/);
     assert.match(source, /const \[isRecordingBufferPreviewPlaying, setIsRecordingBufferPreviewPlaying\]/);
     assert.match(source, /toRecordingBufferSelection\(\{/);
+    assert.match(source, /startMs: recordingSilencePaddingMs/);
+    assert.match(source, /const paddedRecording = padRecordingSamplesWithSilence\(\{[\s\S]*?samples: snapshot\.samples,[\s\S]*?sampleRate: snapshot\.sampleRate,[\s\S]*?targetDurationMs/);
+    assert.match(source, /recordingStopTimerRef\.current = window\.setTimeout\(\(\) => \{[\s\S]*?stopRecording\(\);[\s\S]*?\}, targetDurationMs\);/);
+    assert.match(source, /function clearRecordingStopTimer\(\)/);
     assert.match(source, /encodePcm16Wav\(pendingRecordingBuffer\.samples, pendingRecordingBuffer\.sampleRate\)/);
     assert.match(source, /await updateCueAudioRange\(\{/);
+    assert.match(source, /durationMs: pendingRecordingBuffer\.bufferDurationMs/);
     assert.match(source, /audioStartTime: pendingRecordingBuffer\.selection\.startMs/);
     assert.match(source, /audioEndTime: pendingRecordingBuffer\.selection\.endMs/);
     assert.match(source, /const pendingRecordingSelectedWave = pendingRecordingBuffer[\s\S]*?buildRecordingBufferSelectionWaveformPeaks\(\{/);
@@ -155,8 +162,10 @@ test('recording uses a page-level circular buffer and saves an explicit cue audi
     assert.match(styles, /\.tr-record-buffer-window\s*\{/);
     assert.doesNotMatch(source, /aria-label="선택 구간 미리듣기"/);
     assert.doesNotMatch(styles, /\.tr-record-buffer-window button/);
-    assert.doesNotMatch(source, /recordingStopTimerRef/);
-    assert.doesNotMatch(source, /window\.setTimeout\(\(\) => \{[\s\S]*?stopRecording\(\);[\s\S]*?\}, targetDurationMs\)/);
+    assert.doesNotMatch(source, /recordingCircularBufferMaxMs/);
+    assert.doesNotMatch(source, /trimRecordingBufferChunks/);
+    assert.doesNotMatch(source, /최근 30초/);
+    assert.doesNotMatch(source, /최대 \{formatDurationSeconds/);
 });
 
 test('recording buffer waveform uses the same bottom-aligned bars as playback waveform', () => {

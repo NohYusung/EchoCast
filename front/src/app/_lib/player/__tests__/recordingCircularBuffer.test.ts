@@ -5,20 +5,23 @@ import {
     buildRecordingBufferWaveformPeaks,
     encodePcm16Wav,
     moveRecordingBufferSelection,
-    recordingCircularBufferMaxMs,
+    padRecordingSamplesWithSilence,
+    recordingSilencePaddingMs,
     toRecordingBufferSelection,
 } from '../recordingCircularBuffer';
 
-test('recording buffer keeps a fixed cue-duration save window near the recent tail', () => {
+test('recording buffer starts the cue-duration window after two seconds of silence', () => {
     const selection = toRecordingBufferSelection({
-        bufferDurationMs: recordingCircularBufferMaxMs,
-        targetDurationMs: 1800,
+        bufferDurationMs: 9000,
+        targetDurationMs: 5000,
+        startMs: recordingSilencePaddingMs,
     });
 
+    assert.equal(recordingSilencePaddingMs, 2000);
     assert.deepEqual(selection, {
-        startMs: 27800,
-        durationMs: 1800,
-        endMs: 29600,
+        startMs: 2000,
+        durationMs: 5000,
+        endMs: 7000,
     });
 });
 
@@ -52,6 +55,32 @@ test('recording buffer selection dragging stays inside the retained buffer', () 
         }),
         { startMs: 4000, durationMs: 1000, endMs: 5000 },
     );
+});
+
+test('recording buffer adds silence before and after the fixed recording duration', () => {
+    const padded = padRecordingSamplesWithSilence({
+        samples: Float32Array.from([0.25, -0.5, 0.75]),
+        sampleRate: 1000,
+        targetDurationMs: 5,
+        paddingMs: 2,
+    });
+
+    assert.equal(padded.durationMs, 9);
+    assert.equal(padded.audioStartTime, 2);
+    assert.equal(padded.audioEndTime, 7);
+    assert.deepEqual(Array.from(padded.samples), [0, 0, 0.25, -0.5, 0.75, 0, 0, 0, 0]);
+});
+
+test('recording buffer trims recorded samples to the fixed recording duration before padding', () => {
+    const padded = padRecordingSamplesWithSilence({
+        samples: Float32Array.from([0.125, 0.25, 0.5, 0.75]),
+        sampleRate: 1000,
+        targetDurationMs: 2,
+        paddingMs: 1,
+    });
+
+    assert.equal(padded.durationMs, 4);
+    assert.deepEqual(Array.from(padded.samples), [0, 0.125, 0.25, 0]);
 });
 
 test('recording buffer waveform peaks are stable and bounded', () => {

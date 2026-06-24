@@ -20,9 +20,9 @@ import {
     getRecordingBufferDurationMs,
     getRecordingBufferWindowStyle,
     moveRecordingBufferSelection,
-    recordingCircularBufferMaxMs,
+    padRecordingSamplesWithSilence,
+    recordingSilencePaddingMs,
     toRecordingBufferSelection,
-    trimRecordingBufferChunks,
 } from '../player/recordingCircularBuffer';
 import type { RecordingBufferSelection } from '../player/recordingCircularBuffer';
 import {
@@ -123,8 +123,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const [isSavingRecord, setIsSavingRecord] = useState(false);
     const [recordingStartedAt, setRecordingStartedAt] = useState<number | undefined>();
     const [recordingMs, setRecordingMs] = useState(0);
-    const [recordingBufferStatus, setRecordingBufferStatus] = useState<RecordingBufferStatus>('starting');
-    const [recordingBufferMs, setRecordingBufferMs] = useState(0);
+    const [recordingBufferStatus, setRecordingBufferStatus] = useState<RecordingBufferStatus>('ready');
     const [recordingBufferWave, setRecordingBufferWave] = useState<number[]>([]);
     const [pendingRecordingBuffer, setPendingRecordingBuffer] = useState<PendingRecordingBuffer | undefined>();
     const [isRecordingBufferPreviewPlaying, setIsRecordingBufferPreviewPlaying] = useState(false);
@@ -145,7 +144,9 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const recordPlaybackSeekRef = useRef<{ recordKey: string; seconds: number } | undefined>(undefined);
     const recordPlaybackProgressRef = useRef(0);
     const recordPlaybackProgressStateSyncedAtRef = useRef(0);
+    const isRecordingRef = useRef(false);
     const recordingBufferRef = useRef<RecordingBufferHandle | null>(null);
+    const recordingStopTimerRef = useRef<number | undefined>(undefined);
     const recordingBufferDragOffsetMsRef = useRef<number | undefined>(undefined);
     const isRecordComponentMountedRef = useRef(false);
     const recordingCueRef = useRef<RecordingCueQueueItem | undefined>(undefined);
@@ -284,24 +285,10 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
     useEffect(() => {
         isRecordComponentMountedRef.current = true;
-        void startRecordingBuffer();
-
-        const intervalId = window.setInterval(() => {
-            const snapshot = snapshotRecordingBuffer();
-
-            if (!snapshot) {
-                setRecordingBufferMs(0);
-                setRecordingBufferWave([]);
-                return;
-            }
-
-            setRecordingBufferMs(snapshot.bufferDurationMs);
-            setRecordingBufferWave(snapshot.wave);
-        }, 240);
 
         return () => {
             isRecordComponentMountedRef.current = false;
-            window.clearInterval(intervalId);
+            clearRecordingStopTimer();
             stopRecordingBuffer();
             stopRecordingBufferPreview();
         };
@@ -311,8 +298,16 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         if (!isRecording || typeof recordingStartedAt !== 'number') return;
 
         const intervalId = window.setInterval(() => {
+            const targetDurationMs = recordingTargetDurationMsRef.current;
             const elapsedMs = Date.now() - recordingStartedAt;
-            setRecordingMs(elapsedMs);
+            const nextRecordingMs =
+                typeof targetDurationMs === 'number' && targetDurationMs > 0 ? Math.min(targetDurationMs, elapsedMs) : elapsedMs;
+            const snapshot = snapshotRecordingBuffer();
+
+            setRecordingMs(nextRecordingMs);
+            if (snapshot) {
+                setRecordingBufferWave(snapshot.wave);
+            }
         }, 120);
 
         return () => window.clearInterval(intervalId);
@@ -438,11 +433,6 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                 output.fill(0);
                 handle.chunks.push(chunk);
                 handle.totalSamples += chunk.length;
-                handle.totalSamples = trimRecordingBufferChunks({
-                    chunks: handle.chunks,
-                    totalSamples: handle.totalSamples,
-                    maxSamples: Math.max(1, Math.round((handle.sampleRate * recordingCircularBufferMaxMs) / 1000)),
-                });
             };
 
             source.connect(processor);
@@ -481,6 +471,13 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         stopRecordingStream(handle.stream);
         void handle.audioContext.close().catch(() => undefined);
         recordingBufferRef.current = null;
+    }
+
+    function clearRecordingStopTimer() {
+        if (typeof recordingStopTimerRef.current !== 'number') return;
+
+        window.clearTimeout(recordingStopTimerRef.current);
+        recordingStopTimerRef.current = undefined;
     }
 
     function snapshotRecordingBuffer() {
@@ -663,9 +660,9 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
         try {
             setMessage('');
-            if (!recordingBufferRef.current) {
-                await startRecordingBuffer();
-            }
+            clearRecordingStopTimer();
+            stopRecordingBuffer();
+            await startRecordingBuffer();
 
             const recordingBuffer = recordingBufferRef.current;
             if (!recordingBuffer) {
@@ -686,28 +683,40 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             recordingArtistIdRef.current = selectedArtistId || undefined;
             recordingStartedAtRef.current = startedAt;
             recordingTargetDurationMsRef.current = targetDurationMs;
+            isRecordingRef.current = true;
             setPendingRecordingBuffer(undefined);
             setRecordingStartedAt(startedAt);
             setRecordingMs(0);
+            setRecordingBufferWave([]);
             setIsRecording(true);
+            recordingStopTimerRef.current = window.setTimeout(() => {
+                stopRecording();
+            }, targetDurationMs);
         } catch (error) {
+            isRecordingRef.current = false;
+            clearRecordingStopTimer();
+            stopRecordingBuffer();
             setMessage(toRecordErrorMessage(error, '마이크 권한을 확인할 수 없습니다.'));
         }
     }
 
     function stopRecording() {
-        if (!isRecording) {
+        if (!isRecordingRef.current) {
             return;
         }
 
+        clearRecordingStopTimer();
         const cue = recordingCueRef.current;
         const artistId = recordingArtistIdRef.current;
         const targetDurationMs = recordingTargetDurationMsRef.current;
         const snapshot = snapshotRecordingBuffer();
 
+        isRecordingRef.current = false;
+        stopRecordingBuffer();
         setIsRecording(false);
         setRecordingStartedAt(undefined);
         setRecordingMs(0);
+        setRecordingBufferWave([]);
         recordingStartedAtRef.current = undefined;
         recordingTargetDurationMsRef.current = undefined;
 
@@ -716,24 +725,29 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             return;
         }
 
+        const safeTargetDurationMs =
+            typeof targetDurationMs === 'number' && targetDurationMs > 0 ? targetDurationMs : Math.max(1, cue.durationMs);
+        const paddedRecording = padRecordingSamplesWithSilence({
+            samples: snapshot.samples,
+            sampleRate: snapshot.sampleRate,
+            targetDurationMs: safeTargetDurationMs,
+        });
         const selection = toRecordingBufferSelection({
-            bufferDurationMs: snapshot.bufferDurationMs,
-            targetDurationMs:
-                typeof targetDurationMs === 'number' && targetDurationMs > 0
-                    ? targetDurationMs
-                    : Math.max(1, cue.durationMs),
+            bufferDurationMs: paddedRecording.durationMs,
+            targetDurationMs: safeTargetDurationMs,
+            startMs: recordingSilencePaddingMs,
         });
 
         setPendingRecordingBuffer({
             cue,
             artistId,
-            samples: snapshot.samples,
+            samples: paddedRecording.samples,
             sampleRate: snapshot.sampleRate,
-            bufferDurationMs: snapshot.bufferDurationMs,
-            wave: snapshot.wave,
+            bufferDurationMs: paddedRecording.durationMs,
+            wave: buildRecordingBufferWaveformPeaks(paddedRecording.samples, RECORD_WAVEFORM_BAR_COUNT),
             selection,
         });
-        setMessage('녹음 버퍼에서 저장할 구간을 확인한 뒤 저장하세요.');
+        setMessage('녹음 여백에서 저장할 구간을 확인한 뒤 저장하세요.');
     }
 
     async function uploadRecordFile({
@@ -1609,8 +1623,8 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                 <div className="tr-record-buffer">
                                     <div className="tr-record-buffer-head">
                                         <div>
-                                            <h3>녹음 버퍼</h3>
-                                            <p>최근 30초에서 사용할 구간을 끌어서 지정</p>
+                                            <h3>녹음 조정</h3>
+                                            <p>앞뒤 2초 여백에서 사용할 구간을 끌어서 지정</p>
                                         </div>
                                         <span>
                                             사용 {formatDurationSeconds(pendingRecordingBuffer.selection.durationMs)} · 버퍼{' '}
@@ -1675,9 +1689,15 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                 </div>
                             ) : (
                                 <div className={`tr-record-buffer-status ${recordingBufferStatus}`}>
-                                    <span>버퍼</span>
-                                    <strong>{recordingBufferStatus === 'ready' ? formatDurationSeconds(recordingBufferMs) : '준비 중'}</strong>
-                                    <em>최대 {formatDurationSeconds(recordingCircularBufferMaxMs)}</em>
+                                    <span>녹음</span>
+                                    <strong>
+                                        {isRecording
+                                            ? formatDurationSeconds(recordingMs)
+                                            : recordingBufferStatus === 'starting'
+                                              ? '준비 중'
+                                              : '대기'}
+                                    </strong>
+                                    <em>여백 {formatDurationSeconds(recordingSilencePaddingMs)}씩</em>
                                 </div>
                             )}
                             {message ? <p className="tr-record-message">{message}</p> : null}

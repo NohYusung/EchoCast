@@ -1,5 +1,4 @@
-export const recordingCircularBufferMaxMs = 30000;
-export const recordingBufferTailPaddingMs = 400;
+export const recordingSilencePaddingMs = 2000;
 
 export type RecordingBufferSelection = {
     startMs: number;
@@ -7,14 +6,21 @@ export type RecordingBufferSelection = {
     endMs: number;
 };
 
+export type PaddedRecordingSamples = {
+    samples: Float32Array;
+    durationMs: number;
+    audioStartTime: number;
+    audioEndTime: number;
+};
+
 export function toRecordingBufferSelection({
     bufferDurationMs,
     targetDurationMs,
-    tailPaddingMs = recordingBufferTailPaddingMs,
+    startMs = recordingSilencePaddingMs,
 }: {
     bufferDurationMs: number;
     targetDurationMs: number;
-    tailPaddingMs?: number;
+    startMs?: number;
 }): RecordingBufferSelection {
     const safeBufferDurationMs = Math.max(0, Math.round(toFiniteNumber(bufferDurationMs)));
     if (safeBufferDurationMs <= 0) {
@@ -24,13 +30,12 @@ export function toRecordingBufferSelection({
     const safeTargetDurationMs = Math.max(1, Math.round(toFiniteNumber(targetDurationMs) || safeBufferDurationMs));
     const durationMs = Math.min(safeBufferDurationMs, safeTargetDurationMs);
     const maxStartMs = Math.max(0, safeBufferDurationMs - durationMs);
-    const preferredStartMs = safeBufferDurationMs - durationMs - Math.max(0, Math.round(toFiniteNumber(tailPaddingMs)));
-    const startMs = clampInteger(preferredStartMs, 0, maxStartMs);
+    const safeStartMs = clampInteger(toFiniteNumber(startMs), 0, maxStartMs);
 
     return {
-        startMs,
+        startMs: safeStartMs,
         durationMs,
-        endMs: startMs + durationMs,
+        endMs: safeStartMs + durationMs,
     };
 }
 
@@ -84,28 +89,39 @@ export function concatRecordingBufferChunks(chunks: readonly Float32Array[]): Fl
     return samples;
 }
 
-export function trimRecordingBufferChunks({
-    chunks,
-    totalSamples,
-    maxSamples,
+export function padRecordingSamplesWithSilence({
+    samples,
+    sampleRate,
+    targetDurationMs,
+    paddingMs = recordingSilencePaddingMs,
 }: {
-    chunks: Float32Array[];
-    totalSamples: number;
-    maxSamples: number;
-}) {
-    let nextTotalSamples = totalSamples;
+    samples: Float32Array;
+    sampleRate: number;
+    targetDurationMs: number;
+    paddingMs?: number;
+}): PaddedRecordingSamples {
+    const safeSampleRate = Math.max(1, Math.round(toFiniteNumber(sampleRate) || 48000));
+    const safeTargetDurationMs = Math.max(1, Math.round(toFiniteNumber(targetDurationMs)));
+    const safePaddingMs = Math.max(0, Math.round(toFiniteNumber(paddingMs)));
+    const targetSampleCount = Math.max(1, Math.round((safeSampleRate * safeTargetDurationMs) / 1000));
+    const paddingSampleCount = Math.max(0, Math.round((safeSampleRate * safePaddingMs) / 1000));
+    const fixedRecordingSamples = new Float32Array(targetSampleCount);
+    const copySampleCount = Math.min(samples.length, targetSampleCount);
 
-    while (chunks.length > 0 && nextTotalSamples - chunks[0].length >= maxSamples) {
-        nextTotalSamples -= chunks.shift()?.length ?? 0;
-    }
+    fixedRecordingSamples.set(samples.slice(0, copySampleCount));
 
-    if (chunks.length > 0 && nextTotalSamples > maxSamples) {
-        const trimSamples = nextTotalSamples - maxSamples;
-        chunks[0] = chunks[0].slice(trimSamples);
-        nextTotalSamples = maxSamples;
-    }
+    const paddedSamples = new Float32Array(paddingSampleCount * 2 + targetSampleCount);
+    paddedSamples.set(fixedRecordingSamples, paddingSampleCount);
 
-    return nextTotalSamples;
+    const audioStartTime = getRecordingBufferDurationMs(paddingSampleCount, safeSampleRate);
+    const audioEndTime = audioStartTime + getRecordingBufferDurationMs(targetSampleCount, safeSampleRate);
+
+    return {
+        samples: paddedSamples,
+        durationMs: getRecordingBufferDurationMs(paddedSamples.length, safeSampleRate),
+        audioStartTime,
+        audioEndTime,
+    };
 }
 
 export function getRecordingBufferDurationMs(sampleCount: number, sampleRate: number): number {
