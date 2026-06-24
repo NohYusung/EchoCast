@@ -13,6 +13,19 @@ import type { PlayerDraft } from '../player/playerDraft.types';
 import type { PlayerManifest } from '../player/playerManifest.types';
 import { buildRecordCreateRequest, buildRecordingUploadFileRequest, getRecordApiId } from '../player/recordingStudioApi';
 import {
+    buildRecordingBufferSelectionWaveformPeaks,
+    buildRecordingBufferWaveformPeaks,
+    concatRecordingBufferChunks,
+    encodePcm16Wav,
+    getRecordingBufferDurationMs,
+    getRecordingBufferWindowStyle,
+    moveRecordingBufferSelection,
+    recordingCircularBufferMaxMs,
+    toRecordingBufferSelection,
+    trimRecordingBufferChunks,
+} from '../player/recordingCircularBuffer';
+import type { RecordingBufferSelection } from '../player/recordingCircularBuffer';
+import {
     buildRecordingCueStripMarkers,
     buildRecordingCueQueue,
     filterRecordingCueQueue,
@@ -46,13 +59,34 @@ type UploadUrlsResponse = {
     }>;
 };
 
+type RecordingBufferStatus = 'starting' | 'ready' | 'error' | 'unsupported';
+
+type RecordingBufferHandle = {
+    stream: MediaStream;
+    audioContext: AudioContext;
+    source: MediaStreamAudioSourceNode;
+    processor: ScriptProcessorNode;
+    chunks: Float32Array[];
+    totalSamples: number;
+    sampleRate: number;
+};
+
+type PendingRecordingBuffer = {
+    cue: RecordingCueQueueItem;
+    artistId?: string;
+    samples: Float32Array;
+    sampleRate: number;
+    bufferDurationMs: number;
+    wave: number[];
+    selection: RecordingBufferSelection;
+};
+
 const filterLabels: Record<RecordingCueFilter, string> = {
     all: '전체',
     pending: '대기',
     done: '완료',
 };
 
-const RECORDING_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/wav'];
 const RECORD_WAVEFORM_BAR_COUNT = 300;
 const EXTERNAL_RECORD_ACCEPT = 'audio/*,.mp3,.m4a,.wav,.ogg,.webm';
 
@@ -85,7 +119,11 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const [isSavingRecord, setIsSavingRecord] = useState(false);
     const [recordingStartedAt, setRecordingStartedAt] = useState<number | undefined>();
     const [recordingMs, setRecordingMs] = useState(0);
-    const [liveWave, setLiveWave] = useState(() => createWave('idle', 42));
+    const [recordingBufferStatus, setRecordingBufferStatus] = useState<RecordingBufferStatus>('starting');
+    const [recordingBufferMs, setRecordingBufferMs] = useState(0);
+    const [recordingBufferWave, setRecordingBufferWave] = useState<number[]>([]);
+    const [pendingRecordingBuffer, setPendingRecordingBuffer] = useState<PendingRecordingBuffer | undefined>();
+    const [isRecordingBufferPreviewPlaying, setIsRecordingBufferPreviewPlaying] = useState(false);
     const [focusedRecordKey, setFocusedRecordKey] = useState<string | undefined>();
     const [playingRecordKey, setPlayingRecordKey] = useState<string | undefined>();
     const [isRecordPlaybackPaused, setIsRecordPlaybackPaused] = useState(false);
@@ -93,21 +131,23 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     const [recordWaveforms, setRecordWaveforms] = useState<Record<string, number[]>>({});
     const [loadingWaveformKey, setLoadingWaveformKey] = useState<string | undefined>();
     const [message, setMessage] = useState('');
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const externalRecordInputRef = useRef<HTMLInputElement | null>(null);
     const waveformRef = useRef<HTMLDivElement | null>(null);
+    const recordingBufferTrimRef = useRef<HTMLDivElement | null>(null);
     const recordPlaybackRef = useRef<HTMLAudioElement | null>(null);
+    const recordingBufferPreviewRef = useRef<HTMLAudioElement | null>(null);
+    const recordingBufferPreviewUrlRef = useRef<string | undefined>(undefined);
     const recordPlaybackFrameRef = useRef<number | undefined>(undefined);
     const recordPlaybackSeekRef = useRef<{ recordKey: string; seconds: number } | undefined>(undefined);
     const recordPlaybackProgressRef = useRef(0);
     const recordPlaybackProgressStateSyncedAtRef = useRef(0);
-    const recordingChunksRef = useRef<Blob[]>([]);
-    const recordingStreamRef = useRef<MediaStream | null>(null);
+    const recordingBufferRef = useRef<RecordingBufferHandle | null>(null);
+    const recordingBufferDragOffsetMsRef = useRef<number | undefined>(undefined);
+    const isRecordComponentMountedRef = useRef(false);
     const recordingCueRef = useRef<RecordingCueQueueItem | undefined>(undefined);
     const recordingArtistIdRef = useRef<string | undefined>(undefined);
     const recordingStartedAtRef = useRef<number | undefined>(undefined);
     const recordingTargetDurationMsRef = useRef<number | undefined>(undefined);
-    const recordingStopTimerRef = useRef<number | undefined>(undefined);
 
     useEffect(() => {
         setDraftState(draft);
@@ -159,6 +199,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         typeof activeFocusedRecordKey === 'string' &&
         playingRecordKey === activeFocusedRecordKey &&
         !isRecordPlaybackPaused;
+    const isTransportPlaybackActive = pendingRecordingBuffer ? isRecordingBufferPreviewPlaying : isFocusedRecordPlaying;
     const activeRecordWaveform = activeFocusedRecordKey ? recordWaveforms[activeFocusedRecordKey] : undefined;
     const isWaveformLoading = Boolean(activeFocusedRecordKey && loadingWaveformKey === activeFocusedRecordKey);
     const stripClips = useMemo(() => getRecordStripClips({ draft: draftState, manifest: manifestState }), [draftState, manifestState]);
@@ -197,14 +238,36 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         return counts;
     }, [allQueue]);
     const isAllCharactersSelected = availableCharacters.length > 0 && selectedAvailableCharacterIds.length === availableCharacters.length;
-    const hasRecordWaveform = isRecording || Boolean(focusedRecord?.audioUrl);
+    const pendingRecordingBufferWindow = pendingRecordingBuffer
+        ? getRecordingBufferWindowStyle(pendingRecordingBuffer.selection, pendingRecordingBuffer.bufferDurationMs)
+        : undefined;
+    const pendingRecordingSelectedWave = pendingRecordingBuffer
+        ? buildRecordingBufferSelectionWaveformPeaks({
+              samples: pendingRecordingBuffer.samples,
+              sampleRate: pendingRecordingBuffer.sampleRate,
+              selection: pendingRecordingBuffer.selection,
+              count: RECORD_WAVEFORM_BAR_COUNT,
+          })
+        : [];
+    const hasRecordWaveform = isRecording || Boolean(pendingRecordingBuffer) || Boolean(focusedRecord?.audioUrl);
     const currentWave = isRecording
-        ? liveWave
-        : focusedRecord?.audioUrl
-          ? activeRecordWaveform ?? createWave(focusedRecord.audioUrl, RECORD_WAVEFORM_BAR_COUNT)
-          : [];
-    const waveformDurationMs = isRecording ? recordingMs : (focusedRecord?.durationMs ?? 0);
-    const waveformProgressPercent = isRecording ? 0 : Math.round(Math.min(1, Math.max(0, recordPlaybackProgress)) * 10000) / 100;
+        ? recordingBufferWave.length > 0
+            ? recordingBufferWave
+            : createWave(recordingMs, RECORD_WAVEFORM_BAR_COUNT)
+        : pendingRecordingBuffer
+          ? pendingRecordingSelectedWave
+          : focusedRecord?.audioUrl
+            ? activeRecordWaveform ?? createWave(focusedRecord.audioUrl, RECORD_WAVEFORM_BAR_COUNT)
+            : [];
+    const waveformDurationMs = isRecording
+        ? recordingMs
+        : pendingRecordingBuffer
+          ? pendingRecordingBuffer.selection.durationMs
+          : (focusedRecord?.durationMs ?? 0);
+    const waveformProgressPercent =
+        isRecording || (pendingRecordingBuffer && !isRecordingBufferPreviewPlaying)
+            ? 0
+            : Math.round(Math.min(1, Math.max(0, recordPlaybackProgress)) * 10000) / 100;
     const waveformStyle = {
         '--tr-waveform-bar-count': currentWave.length,
         '--tr-waveform-progress': `${waveformProgressPercent}%`,
@@ -215,17 +278,36 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }, [selectedCue, selectedCueId]);
 
     useEffect(() => {
+        isRecordComponentMountedRef.current = true;
+        void startRecordingBuffer();
+
+        const intervalId = window.setInterval(() => {
+            const snapshot = snapshotRecordingBuffer();
+
+            if (!snapshot) {
+                setRecordingBufferMs(0);
+                setRecordingBufferWave([]);
+                return;
+            }
+
+            setRecordingBufferMs(snapshot.bufferDurationMs);
+            setRecordingBufferWave(snapshot.wave);
+        }, 240);
+
+        return () => {
+            isRecordComponentMountedRef.current = false;
+            window.clearInterval(intervalId);
+            stopRecordingBuffer();
+            stopRecordingBufferPreview();
+        };
+    }, []);
+
+    useEffect(() => {
         if (!isRecording || typeof recordingStartedAt !== 'number') return;
 
         const intervalId = window.setInterval(() => {
             const elapsedMs = Date.now() - recordingStartedAt;
-            const targetDurationMs = recordingTargetDurationMsRef.current;
-            const displayMs =
-                typeof targetDurationMs === 'number' && targetDurationMs > 0
-                    ? Math.min(targetDurationMs, elapsedMs)
-                    : elapsedMs;
-            setRecordingMs(displayMs);
-            setLiveWave(createWave(displayMs, RECORD_WAVEFORM_BAR_COUNT));
+            setRecordingMs(elapsedMs);
         }, 120);
 
         return () => window.clearInterval(intervalId);
@@ -269,17 +351,28 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }, [activeFocusedRecordKey, activeRecordWaveform, focusedRecord]);
 
     useEffect(() => {
+        const handlePointerMove = (event: PointerEvent) => {
+            if (typeof recordingBufferDragOffsetMsRef.current !== 'number') return;
+
+            updatePendingRecordingBufferSelectionFromPointer(event.clientX, recordingBufferDragOffsetMsRef.current);
+        };
+        const handlePointerUp = () => {
+            recordingBufferDragOffsetMsRef.current = undefined;
+        };
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
+
         return () => {
-            const recorder = mediaRecorderRef.current;
-            if (recorder) {
-                recorder.ondataavailable = null;
-                recorder.onstop = null;
-                if (recorder.state !== 'inactive') {
-                    recorder.stop();
-                }
-            }
-            clearRecordingStopTimer();
-            stopRecordingStream(recordingStreamRef.current);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
+        };
+    }, []);
+
+    useEffect(() => {
+        return () => {
             cancelRecordPlaybackFrame();
             recordPlaybackRef.current?.pause();
             recordPlaybackRef.current = null;
@@ -298,6 +391,213 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         return { draft: nextDraft, manifest: nextManifest };
     }
 
+    async function startRecordingBuffer() {
+        if (recordingBufferRef.current) return;
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            setRecordingBufferStatus('unsupported');
+            return;
+        }
+
+        const AudioContextConstructor = getAudioContextConstructor();
+        if (!AudioContextConstructor) {
+            setRecordingBufferStatus('unsupported');
+            return;
+        }
+
+        let stream: MediaStream | undefined;
+        let audioContext: AudioContext | undefined;
+
+        try {
+            setRecordingBufferStatus('starting');
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContext = new AudioContextConstructor();
+            const source = audioContext.createMediaStreamSource(stream);
+            const processor = audioContext.createScriptProcessor(2048, 1, 1);
+            const handle: RecordingBufferHandle = {
+                stream,
+                audioContext,
+                source,
+                processor,
+                chunks: [],
+                totalSamples: 0,
+                sampleRate: audioContext.sampleRate,
+            };
+
+            processor.onaudioprocess = (event) => {
+                const input = event.inputBuffer.getChannelData(0);
+                const output = event.outputBuffer.getChannelData(0);
+                const chunk = new Float32Array(input.length);
+
+                chunk.set(input);
+                output.fill(0);
+                handle.chunks.push(chunk);
+                handle.totalSamples += chunk.length;
+                handle.totalSamples = trimRecordingBufferChunks({
+                    chunks: handle.chunks,
+                    totalSamples: handle.totalSamples,
+                    maxSamples: Math.max(1, Math.round((handle.sampleRate * recordingCircularBufferMaxMs) / 1000)),
+                });
+            };
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+            void audioContext.resume().catch(() => undefined);
+
+            if (!isRecordComponentMountedRef.current) {
+                processor.disconnect();
+                source.disconnect();
+                stopRecordingStream(stream);
+                void audioContext.close();
+                return;
+            }
+
+            recordingBufferRef.current = handle;
+            setRecordingBufferStatus('ready');
+        } catch (error) {
+            if (stream) {
+                stopRecordingStream(stream);
+            }
+            if (audioContext) {
+                void audioContext.close().catch(() => undefined);
+            }
+            setRecordingBufferStatus('error');
+            setMessage(toRecordErrorMessage(error, '녹음 버퍼를 시작하지 못했습니다.'));
+        }
+    }
+
+    function stopRecordingBuffer() {
+        const handle = recordingBufferRef.current;
+        if (!handle) return;
+
+        handle.processor.onaudioprocess = null;
+        handle.processor.disconnect();
+        handle.source.disconnect();
+        stopRecordingStream(handle.stream);
+        void handle.audioContext.close().catch(() => undefined);
+        recordingBufferRef.current = null;
+    }
+
+    function snapshotRecordingBuffer() {
+        const handle = recordingBufferRef.current;
+        if (!handle || handle.totalSamples <= 0) return undefined;
+
+        const samples = concatRecordingBufferChunks(handle.chunks);
+        const bufferDurationMs = getRecordingBufferDurationMs(samples.length, handle.sampleRate);
+
+        return {
+            samples,
+            sampleRate: handle.sampleRate,
+            bufferDurationMs,
+            wave: buildRecordingBufferWaveformPeaks(samples, RECORD_WAVEFORM_BAR_COUNT),
+        };
+    }
+
+    function updatePendingRecordingBufferSelectionFromPointer(clientX: number, dragOffsetMs: number) {
+        const trimElement = recordingBufferTrimRef.current;
+        if (!trimElement) return;
+
+        stopRecordingBufferPreview();
+
+        const rect = trimElement.getBoundingClientRect();
+        if (rect.width <= 0) return;
+
+        const pointerRatio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+        setPendingRecordingBuffer((current) => {
+            if (!current) return current;
+
+            const startMs = pointerRatio * current.bufferDurationMs - dragOffsetMs;
+            return {
+                ...current,
+                selection: moveRecordingBufferSelection({
+                    bufferDurationMs: current.bufferDurationMs,
+                    selectionDurationMs: current.selection.durationMs,
+                    startRatio: startMs / Math.max(1, current.bufferDurationMs),
+                }),
+            };
+        });
+    }
+
+    function placePendingRecordingBufferSelection(event: ReactPointerEvent<HTMLDivElement>) {
+        if (event.button !== 0 || !pendingRecordingBuffer) return;
+
+        updatePendingRecordingBufferSelectionFromPointer(event.clientX, pendingRecordingBuffer.selection.durationMs / 2);
+    }
+
+    function startPendingRecordingBufferSelectionDrag(event: ReactPointerEvent<HTMLDivElement>) {
+        if (event.button !== 0 || !pendingRecordingBuffer) return;
+
+        event.stopPropagation();
+        const trimElement = recordingBufferTrimRef.current;
+        if (!trimElement) return;
+
+        const rect = trimElement.getBoundingClientRect();
+        const pointerRatio = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(1, rect.width)));
+        const pointerMs = pointerRatio * pendingRecordingBuffer.bufferDurationMs;
+        recordingBufferDragOffsetMsRef.current = Math.max(0, pointerMs - pendingRecordingBuffer.selection.startMs);
+    }
+
+    function previewPendingRecordingBuffer() {
+        if (!pendingRecordingBuffer) return;
+
+        stopRecordPlayback();
+        stopRecordingBufferPreview();
+
+        const startSample = Math.max(0, Math.floor((pendingRecordingBuffer.selection.startMs / 1000) * pendingRecordingBuffer.sampleRate));
+        const endSample = Math.min(
+            pendingRecordingBuffer.samples.length,
+            Math.ceil((pendingRecordingBuffer.selection.endMs / 1000) * pendingRecordingBuffer.sampleRate),
+        );
+        const previewSamples = pendingRecordingBuffer.samples.slice(startSample, endSample);
+        const previewBlob = encodePcm16Wav(previewSamples, pendingRecordingBuffer.sampleRate);
+        const previewUrl = URL.createObjectURL(previewBlob);
+        const audio = new Audio(previewUrl);
+
+        recordingBufferPreviewRef.current = audio;
+        recordingBufferPreviewUrlRef.current = previewUrl;
+        syncRecordPlaybackProgress(0, { syncState: true });
+        audio.onloadedmetadata = () => updateRecordingBufferPreviewProgress(audio, pendingRecordingBuffer.selection.durationMs);
+        audio.ontimeupdate = () => updateRecordingBufferPreviewProgress(audio, pendingRecordingBuffer.selection.durationMs);
+        audio.onended = stopRecordingBufferPreview;
+        audio.onerror = () => {
+            stopRecordingBufferPreview();
+            setMessage('버퍼 미리듣기를 재생하지 못했습니다.');
+        };
+        void audio
+            .play()
+            .then(() => {
+                if (recordingBufferPreviewRef.current === audio) {
+                    setIsRecordingBufferPreviewPlaying(true);
+                }
+            })
+            .catch((error: unknown) => {
+                stopRecordingBufferPreview();
+                setMessage(toRecordErrorMessage(error, '버퍼 미리듣기를 재생하지 못했습니다.'));
+            });
+    }
+
+    function stopRecordingBufferPreview() {
+        const audio = recordingBufferPreviewRef.current;
+        if (audio) {
+            audio.pause();
+            audio.onloadedmetadata = null;
+            audio.ontimeupdate = null;
+            audio.onended = null;
+            audio.onerror = null;
+        }
+
+        if (recordingBufferPreviewUrlRef.current) {
+            URL.revokeObjectURL(recordingBufferPreviewUrlRef.current);
+        }
+
+        recordingBufferPreviewRef.current = null;
+        recordingBufferPreviewUrlRef.current = undefined;
+        if (isRecordComponentMountedRef.current) {
+            setIsRecordingBufferPreviewPlaying(false);
+            syncRecordPlaybackProgress(0, { syncState: true });
+        }
+    }
+
     async function startRecording() {
         if (!selectedCue) return;
 
@@ -306,80 +606,80 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             setMessage('대사 녹음 길이가 필요합니다.');
             return;
         }
-        if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-            setMessage('현재 브라우저가 녹음을 지원하지 않습니다.');
-            return;
-        }
 
         try {
             setMessage('');
+            if (!recordingBufferRef.current) {
+                await startRecordingBuffer();
+            }
+
+            const recordingBuffer = recordingBufferRef.current;
+            if (!recordingBuffer) {
+                setMessage(
+                    recordingBufferStatus === 'unsupported'
+                        ? '현재 브라우저가 녹음 버퍼를 지원하지 않습니다.'
+                        : '녹음 버퍼를 준비하지 못했습니다.',
+                );
+                return;
+            }
+
+            await recordingBuffer.audioContext.resume().catch(() => undefined);
             stopRecordPlayback();
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mimeType = getSupportedRecordingMimeType();
-            const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+            stopRecordingBufferPreview();
             const startedAt = Date.now();
 
-            mediaRecorderRef.current = recorder;
-            recordingStreamRef.current = stream;
-            recordingChunksRef.current = [];
             recordingCueRef.current = selectedCue;
             recordingArtistIdRef.current = selectedArtistId || undefined;
             recordingStartedAtRef.current = startedAt;
             recordingTargetDurationMsRef.current = targetDurationMs;
-
-            recorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    recordingChunksRef.current.push(event.data);
-                }
-            };
-            recorder.onstop = () => {
-                void saveRecordedChunks(recorder.mimeType || mimeType || 'audio/webm');
-            };
-            recorder.onerror = () => {
-                setMessage('녹음 중 오류가 발생했습니다.');
-                setIsRecording(false);
-                setRecordingStartedAt(undefined);
-                recordingTargetDurationMsRef.current = undefined;
-                clearRecordingStopTimer();
-                stopRecordingStream(recordingStreamRef.current);
-            };
-
-            recorder.start();
-            clearRecordingStopTimer();
-            recordingStopTimerRef.current = window.setTimeout(() => {
-                stopRecording();
-            }, targetDurationMs);
+            setPendingRecordingBuffer(undefined);
             setRecordingStartedAt(startedAt);
             setRecordingMs(0);
-            setLiveWave(createWave(startedAt, RECORD_WAVEFORM_BAR_COUNT));
             setIsRecording(true);
         } catch (error) {
-            stopRecordingStream(recordingStreamRef.current);
             setMessage(toRecordErrorMessage(error, '마이크 권한을 확인할 수 없습니다.'));
         }
     }
 
     function stopRecording() {
-        const recorder = mediaRecorderRef.current;
-        if (!recorder || recorder.state === 'inactive') {
-            setIsRecording(false);
-            setRecordingStartedAt(undefined);
-            recordingTargetDurationMsRef.current = undefined;
-            clearRecordingStopTimer();
+        if (!isRecording) {
             return;
         }
 
-        clearRecordingStopTimer();
-        recorder.stop();
-    }
+        const cue = recordingCueRef.current;
+        const artistId = recordingArtistIdRef.current;
+        const targetDurationMs = recordingTargetDurationMsRef.current;
+        const snapshot = snapshotRecordingBuffer();
 
-    function clearRecordingStopTimer() {
-        if (typeof recordingStopTimerRef.current !== 'number') {
+        setIsRecording(false);
+        setRecordingStartedAt(undefined);
+        setRecordingMs(0);
+        recordingStartedAtRef.current = undefined;
+        recordingTargetDurationMsRef.current = undefined;
+
+        if (!cue || !snapshot || snapshot.samples.length === 0 || snapshot.bufferDurationMs <= 0) {
+            setMessage('저장할 녹음 버퍼가 없습니다.');
             return;
         }
 
-        window.clearTimeout(recordingStopTimerRef.current);
-        recordingStopTimerRef.current = undefined;
+        const selection = toRecordingBufferSelection({
+            bufferDurationMs: snapshot.bufferDurationMs,
+            targetDurationMs:
+                typeof targetDurationMs === 'number' && targetDurationMs > 0
+                    ? targetDurationMs
+                    : Math.max(1, cue.durationMs),
+        });
+
+        setPendingRecordingBuffer({
+            cue,
+            artistId,
+            samples: snapshot.samples,
+            sampleRate: snapshot.sampleRate,
+            bufferDurationMs: snapshot.bufferDurationMs,
+            wave: snapshot.wave,
+            selection,
+        });
+        setMessage('녹음 버퍼에서 저장할 구간을 확인한 뒤 저장하세요.');
     }
 
     async function uploadRecordFile({
@@ -437,46 +737,48 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         setSelectedCueId(cueId);
     }
 
-    async function saveRecordedChunks(contentType: string) {
-        const chunks = recordingChunksRef.current;
-        const cue = recordingCueRef.current;
-        const artistId = recordingArtistIdRef.current;
-        const targetDurationMs = recordingTargetDurationMsRef.current;
-        const durationMs =
-            typeof targetDurationMs === 'number' && targetDurationMs > 0
-                ? targetDurationMs
-                : Math.max(800, Date.now() - (recordingStartedAtRef.current ?? Date.now()));
-
-        setIsRecording(false);
-        setRecordingStartedAt(undefined);
-        setRecordingMs(0);
+    async function savePendingRecordingBuffer() {
+        if (!pendingRecordingBuffer) return;
 
         try {
-            if (!cue || chunks.length === 0) return;
-
             setIsSavingRecord(true);
+            setMessage('');
+            stopRecordingBufferPreview();
+
+            const recordFile = encodePcm16Wav(pendingRecordingBuffer.samples, pendingRecordingBuffer.sampleRate);
             await uploadRecordFile({
-                cue,
-                artistId,
-                recordFile: new Blob(chunks, { type: contentType.trim() || 'audio/webm' }),
-                durationMs,
-                contentType,
+                cue: pendingRecordingBuffer.cue,
+                artistId: pendingRecordingBuffer.artistId,
+                recordFile,
+                durationMs: pendingRecordingBuffer.bufferDurationMs,
+                contentType: recordFile.type,
             });
-            await focusLatestRecordForCue(cue.cueId);
-            setMessage('녹음이 서버에 저장되었습니다.');
+
+            const nextData = await refreshRecordingData();
+            const updatedCue = nextData.draft.cues.find((cue) => cue.id === pendingRecordingBuffer.cue.cueId);
+            if (!updatedCue?.audioId) {
+                throw new Error('저장된 녹음의 audioId를 확인할 수 없습니다.');
+            }
+
+            await updateCueAudioRange({
+                apiBaseUrl,
+                trackId: updatedCue.trackId,
+                cueId: updatedCue.id,
+                audioId: updatedCue.audioId,
+                audioStartTime: pendingRecordingBuffer.selection.startMs,
+                audioEndTime: pendingRecordingBuffer.selection.endMs,
+            });
+            await focusLatestRecordForCue(pendingRecordingBuffer.cue.cueId);
+            setPendingRecordingBuffer(undefined);
+            setMessage('선택한 버퍼 구간을 녹음으로 저장했습니다.');
         } catch (error) {
             setMessage(toRecordErrorMessage(error, '녹음 저장에 실패했습니다.'));
         } finally {
-            mediaRecorderRef.current = null;
-            recordingChunksRef.current = [];
             recordingCueRef.current = undefined;
             recordingArtistIdRef.current = undefined;
             recordingStartedAtRef.current = undefined;
             recordingTargetDurationMsRef.current = undefined;
-            clearRecordingStopTimer();
             setIsSavingRecord(false);
-            stopRecordingStream(recordingStreamRef.current);
-            recordingStreamRef.current = null;
         }
     }
 
@@ -662,7 +964,31 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         });
     }
 
+    function toggleTransportPlayback() {
+        if (pendingRecordingBuffer) {
+            if (isRecordingBufferPreviewPlaying) {
+                stopRecordingBufferPreview();
+                return;
+            }
+
+            previewPendingRecordingBuffer();
+            return;
+        }
+
+        toggleRecordPlayback();
+    }
+
     function stopTransport() {
+        if (isRecording) {
+            stopRecording();
+            return;
+        }
+
+        if (isRecordingBufferPreviewPlaying) {
+            stopRecordingBufferPreview();
+            return;
+        }
+
         stopRecordPlayback();
     }
 
@@ -718,6 +1044,17 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         syncRecordPlaybackProgress(progress);
     }
 
+    function updateRecordingBufferPreviewProgress(audio: HTMLAudioElement, selectionDurationMs: number) {
+        const durationSeconds =
+            Number.isFinite(audio.duration) && audio.duration > 0
+                ? audio.duration
+                : selectionDurationMs > 0
+                  ? selectionDurationMs / 1000
+                  : 0;
+        const progress = durationSeconds > 0 ? audio.currentTime / durationSeconds : 0;
+        syncRecordPlaybackProgress(progress);
+    }
+
     function syncRecordPlaybackProgress(progress: number, options?: { syncState?: boolean }) {
         const clampedProgress = Math.min(1, Math.max(0, progress));
         const progressPercent = Math.round(clampedProgress * 10000) / 100;
@@ -750,7 +1087,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }
 
     function seekRecordWaveform(event: ReactPointerEvent<HTMLDivElement>) {
-        if (event.button !== 0 || isRecording || !focusedRecord || !activeFocusedRecordKey) return;
+        if (event.button !== 0 || isRecording || pendingRecordingBuffer || !focusedRecord || !activeFocusedRecordKey) return;
 
         const rect = event.currentTarget.getBoundingClientRect();
         const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
@@ -1089,7 +1426,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                 ref={waveformRef}
                                 role="slider"
                                 style={waveformStyle}
-                                tabIndex={focusedRecord && !isRecording ? 0 : -1}
+                                tabIndex={focusedRecord && !isRecording && !pendingRecordingBuffer ? 0 : -1}
                             >
                                 {hasRecordWaveform ? (
                                     <>
@@ -1098,7 +1435,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                                 <i key={index} style={{ height: `${height}%` }} />
                                             ))}
                                         </div>
-                                        {!isRecording ? (
+                                        {!isRecording && (!pendingRecordingBuffer || isRecordingBufferPreviewPlaying) ? (
                                             <div aria-hidden="true" className="tr-waveform-progress">
                                                 {currentWave.map((height, index) => (
                                                     <i key={index} style={{ height: `${height}%` }} />
@@ -1113,27 +1450,32 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                             </div>
                             <div className="tr-transport">
                                 <button
-                                    aria-label={isFocusedRecordPlaying ? '일시정지' : '재생'}
-                                    disabled={!focusedRecord || isRecording}
-                                    onClick={() => toggleRecordPlayback()}
+                                    aria-label={isTransportPlaybackActive ? '일시정지' : '재생'}
+                                    disabled={!(pendingRecordingBuffer || focusedRecord) || isRecording}
+                                    onClick={toggleTransportPlayback}
                                     type="button"
                                 >
-                                    <StudioCatalogIcon name={isFocusedRecordPlaying ? 'pause' : 'play'} />
-                                    <span>{isFocusedRecordPlaying ? '일시정지' : '재생'}</span>
+                                    <StudioCatalogIcon name={isTransportPlaybackActive ? 'pause' : 'play'} />
+                                    <span>{isTransportPlaybackActive ? '일시정지' : '재생'}</span>
                                 </button>
-                                <button aria-label="정지" disabled={isRecording || !playingRecordKey} onClick={stopTransport} type="button">
+                                <button
+                                    aria-label="정지"
+                                    disabled={!isRecording && !playingRecordKey && !isRecordingBufferPreviewPlaying}
+                                    onClick={stopTransport}
+                                    type="button"
+                                >
                                     <StudioCatalogIcon name="stop" />
                                     <span>정지</span>
                                 </button>
                                 <button
                                     aria-label="녹음"
                                     className={`tr-record-action ${isRecording ? 'recording' : ''}`}
-                                    disabled={!selectedCue || isSavingRecord || isRecording}
+                                    disabled={!selectedCue || isSavingRecord || isRecording || recordingBufferStatus === 'starting'}
                                     onClick={() => void startRecording()}
                                     type="button"
                                 >
                                     <StudioCatalogIcon name="mic" />
-                                    <span>{isSavingRecord ? '저장 중' : '녹음'}</span>
+                                    <span>{isSavingRecord ? '저장 중' : pendingRecordingBuffer ? '다시 녹음' : '녹음'}</span>
                                 </button>
                                 <button
                                     aria-label="외부 녹음 파일 가져오기"
@@ -1153,6 +1495,81 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                     type="file"
                                 />
                             </div>
+                            {pendingRecordingBuffer ? (
+                                <div className="tr-record-buffer">
+                                    <div className="tr-record-buffer-head">
+                                        <div>
+                                            <h3>녹음 버퍼</h3>
+                                            <p>최근 30초에서 사용할 구간을 끌어서 지정</p>
+                                        </div>
+                                        <span>
+                                            사용 {formatDurationSeconds(pendingRecordingBuffer.selection.durationMs)} · 버퍼{' '}
+                                            {formatDurationSeconds(pendingRecordingBuffer.bufferDurationMs)}
+                                        </span>
+                                    </div>
+                                    <div
+                                        className="tr-record-buffer-wave"
+                                        onPointerDown={placePendingRecordingBufferSelection}
+                                        ref={recordingBufferTrimRef}
+                                    >
+                                        <div
+                                            className="tr-record-buffer-bars"
+                                            style={{ '--tr-waveform-bar-count': pendingRecordingBuffer.wave.length } as CSSProperties}
+                                        >
+                                            {pendingRecordingBuffer.wave.map((height, index) => {
+                                                const barTimeMs =
+                                                    pendingRecordingBuffer.wave.length > 1
+                                                        ? (index / (pendingRecordingBuffer.wave.length - 1)) *
+                                                          pendingRecordingBuffer.bufferDurationMs
+                                                        : 0;
+                                                const isSelected =
+                                                    barTimeMs >= pendingRecordingBuffer.selection.startMs &&
+                                                    barTimeMs <= pendingRecordingBuffer.selection.endMs;
+
+                                                return (
+                                                    <i
+                                                        className={isSelected ? 'selected' : ''}
+                                                        key={index}
+                                                        style={{ height: `${height}%` }}
+                                                    />
+                                                );
+                                            })}
+                                        </div>
+                                        {pendingRecordingBufferWindow ? (
+                                            <div
+                                                className="tr-record-buffer-window"
+                                                onPointerDown={startPendingRecordingBufferSelectionDrag}
+                                                style={{
+                                                    left: `${pendingRecordingBufferWindow.leftPercent}%`,
+                                                    width: `${pendingRecordingBufferWindow.widthPercent}%`,
+                                                }}
+                                            />
+                                        ) : null}
+                                    </div>
+                                    <div className="tr-record-buffer-actions">
+                                        <button disabled={isSavingRecord} onClick={() => void savePendingRecordingBuffer()} type="button">
+                                            선택 구간 저장
+                                        </button>
+                                        <button
+                                            disabled={isSavingRecord}
+                                            onClick={() => {
+                                                stopRecordingBufferPreview();
+                                                setPendingRecordingBuffer(undefined);
+                                                setMessage('');
+                                            }}
+                                            type="button"
+                                        >
+                                            취소
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className={`tr-record-buffer-status ${recordingBufferStatus}`}>
+                                    <span>버퍼</span>
+                                    <strong>{recordingBufferStatus === 'ready' ? formatDurationSeconds(recordingBufferMs) : '준비 중'}</strong>
+                                    <em>최대 {formatDurationSeconds(recordingCircularBufferMaxMs)}</em>
+                                </div>
+                            )}
                             {message ? <p className="tr-record-message">{message}</p> : null}
                         </div>
                     </section>
@@ -1360,17 +1777,41 @@ function getClientApiBaseUrl(): string {
     return (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100').replace(/\/$/, '');
 }
 
-function getSupportedRecordingMimeType(): string {
-    if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
-        return '';
-    }
-
-    return RECORDING_MIME_TYPES.find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) ?? '';
-}
-
 function getMutableRecordApiId(record: RecordingTakeSummary): number | undefined {
     if (record.id < 0) return undefined;
     return getRecordApiId(record.id);
+}
+
+async function updateCueAudioRange({
+    apiBaseUrl,
+    trackId,
+    cueId,
+    audioId,
+    audioStartTime,
+    audioEndTime,
+}: {
+    apiBaseUrl: string;
+    trackId: number;
+    cueId: number;
+    audioId: number;
+    audioStartTime: number;
+    audioEndTime: number;
+}) {
+    const response = await fetch(`${apiBaseUrl}/tracks/${trackId}/cues/${cueId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioId, audioStartTime, audioEndTime }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Cue audio range update failed: ${response.status}`);
+    }
+}
+
+function getAudioContextConstructor(): typeof AudioContext | undefined {
+    if (typeof window === 'undefined') return undefined;
+
+    return window.AudioContext ?? (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 }
 
 function getRecordingTakeKey(record: RecordingTakeSummary): string {

@@ -67,10 +67,11 @@ test('recording screen does not show the unimplemented export action', () => {
 });
 
 test('recording console exposes playback, stop, and record controls', () => {
-    assert.match(source, /aria-label=\{isFocusedRecordPlaying \? '일시정지' : '재생'\}/);
+    assert.match(source, /aria-label=\{isTransportPlaybackActive \? '일시정지' : '재생'\}/);
     assert.match(source, /aria-label="정지"/);
     assert.match(source, /aria-label="녹음"/);
     assert.match(source, /onClick=\{stopTransport\}/);
+    assert.match(source, /onClick=\{toggleTransportPlayback\}/);
     assert.match(source, /onClick=\{\(\) => void startRecording\(\)\}/);
     assert.doesNotMatch(source, /toggleRecording/);
     assert.doesNotMatch(styles, /\.tr-record-main/);
@@ -95,20 +96,41 @@ test('recording console can import an external audio file as a record', () => {
 test('recording can start and save without a selected artist', () => {
     assert.doesNotMatch(source, /녹음할 성우를 먼저 선택하세요/);
     assert.doesNotMatch(source, /if \(!cue \|\| !artistId \|\| chunks\.length === 0\) return;/);
-    assert.match(source, /if \(!cue \|\| chunks\.length === 0\) return;/);
     assert.match(source, /recordingArtistIdRef\.current = selectedArtistId \|\| undefined;/);
-    assert.match(source, /disabled=\{!selectedCue \|\| isSavingRecord \|\| isRecording\}/);
+    assert.match(source, /artistId: pendingRecordingBuffer\.artistId/);
+    assert.match(source, /disabled=\{!selectedCue \|\| isSavingRecord \|\| isRecording \|\| recordingBufferStatus === 'starting'\}/);
     assert.doesNotMatch(source, /disabled=\{!selectedCue \|\| !selectedArtistId \|\| isSavingRecord \|\| isRecording\}/);
 });
 
-test('recording auto-stops at the selected cue duration and saves that duration', () => {
-    assert.match(source, /const recordingTargetDurationMsRef = useRef<number \| undefined>\(undefined\);/);
-    assert.match(source, /const targetDurationMs = Math\.round\(selectedCue\.durationMs\);/);
-    assert.match(source, /recordingTargetDurationMsRef\.current = targetDurationMs;/);
-    assert.match(source, /recordingStopTimerRef\.current = window\.setTimeout\(\(\) => \{[\s\S]*?stopRecording\(\);[\s\S]*?\}, targetDurationMs\);/);
-    assert.match(source, /const durationMs =[\s\S]*?targetDurationMs[\s\S]*?: Math\.max\(800, Date\.now\(\) - \(recordingStartedAtRef\.current \?\? Date\.now\(\)\)\);/);
-    assert.match(source, /disabled=\{isRecording \|\| !playingRecordKey\}/);
-    assert.doesNotMatch(source, /if \(isRecording\) \{[\s\S]*?stopRecording\(\);[\s\S]*?return;[\s\S]*?\}/);
+test('recording uses a page-level circular buffer and saves an explicit cue audio range', () => {
+    assert.match(source, /recordingCircularBufferMaxMs/);
+    assert.match(source, /const recordingBufferRef = useRef<RecordingBufferHandle \| null>\(null\);/);
+    assert.match(source, /void startRecordingBuffer\(\);/);
+    assert.match(source, /const pendingRecordingBuffer/);
+    assert.match(source, /const \[isRecordingBufferPreviewPlaying, setIsRecordingBufferPreviewPlaying\]/);
+    assert.match(source, /toRecordingBufferSelection\(\{/);
+    assert.match(source, /encodePcm16Wav\(pendingRecordingBuffer\.samples, pendingRecordingBuffer\.sampleRate\)/);
+    assert.match(source, /await updateCueAudioRange\(\{/);
+    assert.match(source, /audioStartTime: pendingRecordingBuffer\.selection\.startMs/);
+    assert.match(source, /audioEndTime: pendingRecordingBuffer\.selection\.endMs/);
+    assert.match(source, /const pendingRecordingSelectedWave = pendingRecordingBuffer[\s\S]*?buildRecordingBufferSelectionWaveformPeaks\(\{/);
+    assert.match(source, /pendingRecordingBuffer\s*\?\s*pendingRecordingSelectedWave/);
+    assert.match(source, /pendingRecordingBuffer\s*\?\s*pendingRecordingBuffer\.selection\.durationMs/);
+    assert.match(source, /const isTransportPlaybackActive = pendingRecordingBuffer \? isRecordingBufferPreviewPlaying : isFocusedRecordPlaying;/);
+    assert.match(source, /function toggleTransportPlayback\(\) \{[\s\S]*?if \(pendingRecordingBuffer\) \{[\s\S]*?previewPendingRecordingBuffer\(\);[\s\S]*?return;[\s\S]*?\}/);
+    assert.match(source, /function updateRecordingBufferPreviewProgress\(audio: HTMLAudioElement, selectionDurationMs: number\)/);
+    assert.match(source, /audio\.onloadedmetadata = \(\) => updateRecordingBufferPreviewProgress\(audio, pendingRecordingBuffer\.selection\.durationMs\);/);
+    assert.match(source, /audio\.ontimeupdate = \(\) => updateRecordingBufferPreviewProgress\(audio, pendingRecordingBuffer\.selection\.durationMs\);/);
+    assert.match(source, /!isRecording && \(!pendingRecordingBuffer \|\| isRecordingBufferPreviewPlaying\) \? \(/);
+    assert.match(source, /disabled=\{!\(pendingRecordingBuffer \|\| focusedRecord\) \|\| isRecording\}/);
+    assert.match(source, /disabled=\{!isRecording && !playingRecordKey && !isRecordingBufferPreviewPlaying\}/);
+    assert.match(source, /if \(isRecording\) \{[\s\S]*?stopRecording\(\);[\s\S]*?return;[\s\S]*?\}/);
+    assert.match(styles, /\.tr-record-buffer\s*\{/);
+    assert.match(styles, /\.tr-record-buffer-window\s*\{/);
+    assert.doesNotMatch(source, /aria-label="선택 구간 미리듣기"/);
+    assert.doesNotMatch(styles, /\.tr-record-buffer-window button/);
+    assert.doesNotMatch(source, /recordingStopTimerRef/);
+    assert.doesNotMatch(source, /window\.setTimeout\(\(\) => \{[\s\S]*?stopRecording\(\);[\s\S]*?\}, targetDurationMs\)/);
 });
 
 test('recording screen focuses the latest saved take until the user clicks another take', () => {
@@ -150,8 +172,9 @@ test('recording waveform decodes focused take audio and caches rendered peaks', 
     assert.match(source, /if \(!focusedRecord\?\.audioUrl \|\| !activeFocusedRecordKey \|\| activeRecordWaveform\) return;/);
     assert.match(source, /audioContext\.decodeAudioData\(await response\.arrayBuffer\(\)\)/);
     assert.match(source, /setRecordWaveforms\(\(current\) =>/);
-    assert.match(source, /const hasRecordWaveform = isRecording \|\| Boolean\(focusedRecord\?\.audioUrl\);/);
-    assert.match(source, /focusedRecord\?\.audioUrl\s*\?\s*activeRecordWaveform \?\? createWave\(focusedRecord\.audioUrl, RECORD_WAVEFORM_BAR_COUNT\)\s*:\s*\[\]/);
+    assert.match(source, /const hasRecordWaveform = isRecording \|\| Boolean\(pendingRecordingBuffer\) \|\| Boolean\(focusedRecord\?\.audioUrl\);/);
+    assert.match(source, /pendingRecordingBuffer\s*\?\s*pendingRecordingSelectedWave/);
+    assert.match(source, /focusedRecord\?\.audioUrl\s*\?\s*activeRecordWaveform \?\? createWave\(focusedRecord\.audioUrl, RECORD_WAVEFORM_BAR_COUNT\)/);
     assert.match(source, /function createWave\(seed: string \| number \| undefined, count: number\): number\[\]/);
     assert.doesNotMatch(source, /createWave\(focusedRecord\?\.audioUrl \?\? selectedCue\?\.cueId \?\? 'empty', RECORD_WAVEFORM_BAR_COUNT\)/);
     assert.match(source, /\{hasRecordWaveform \? \(/);
@@ -185,7 +208,7 @@ test('recording waveform progress fill follows actual audio playback progress', 
     assert.match(source, /function syncRecordPlaybackProgress\(progress: number, options\?: \{ syncState\?: boolean \}\)/);
     assert.match(source, /waveformRef\.current\?\.style\.setProperty\('--tr-waveform-progress', `\$\{progressPercent\}%`\);/);
     assert.match(source, /now - recordPlaybackProgressStateSyncedAtRef\.current > 250/);
-    assert.match(source, /const waveformProgressPercent = isRecording \? 0 : Math\.round\(Math\.min\(1, Math\.max\(0, recordPlaybackProgress\)\) \* 10000\) \/ 100;/);
+    assert.match(source, /isRecording \|\| \(pendingRecordingBuffer && !isRecordingBufferPreviewPlaying\)[\s\S]*?\? 0[\s\S]*?: Math\.round\(Math\.min\(1, Math\.max\(0, recordPlaybackProgress\)\) \* 10000\) \/ 100;/);
     assert.match(source, /'--tr-waveform-progress': `\$\{waveformProgressPercent\}%`/);
     assert.match(source, /className="tr-waveform-progress"/);
     assert.match(source, /ref=\{waveformRef\}/);
