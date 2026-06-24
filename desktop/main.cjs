@@ -9,7 +9,7 @@ const { getDesktopConfig, startManagedProcesses, stopManagedProcesses, waitForHt
 
 let managedProcesses = [];
 let mainWindow = null;
-const appIconPath = path.join(__dirname, 'assets', 'tooned-player-app-icon.png');
+const appIconPath = path.join(__dirname, 'assets', 'dobedub-avatar-squircle.png');
 
 function createWindow(config) {
     mainWindow = new BrowserWindow({

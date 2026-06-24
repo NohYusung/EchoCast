@@ -77,6 +77,7 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "desktop/assets/dobedub-avatar-squircle.icns",
       "target": [
         "dmg"
       ]
