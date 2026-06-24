@@ -232,3 +232,33 @@ test('toCueTimingUpdateRequest sends cue audio trim range with timeline range', 
         },
     );
 });
+
+test('toCueTimingUpdateRequest rejects voice cue timeline duration that differs from script duration', () => {
+    assert.throws(
+        () =>
+            toCueTimingUpdateRequest({
+                start: 12,
+                duration: 3.2,
+                scriptDuration: 3,
+                isVoiceCue: true,
+                audioStart: 4,
+                audioEnd: 7,
+            }),
+        /대사 duration/,
+    );
+});
+
+test('toCueTimingUpdateRequest rejects voice cue audio trim range that differs from script duration', () => {
+    assert.throws(
+        () =>
+            toCueTimingUpdateRequest({
+                start: 12,
+                duration: 3,
+                scriptDuration: 3,
+                isVoiceCue: true,
+                audioStart: 4,
+                audioEnd: 7.3,
+            }),
+        /대사 duration/,
+    );
+});

@@ -7,8 +7,11 @@ export type RecordingCueStatus = 'pending' | 'done';
 export interface RecordingTakeSummary {
     id: number;
     cueId: number;
+    audioId?: number;
     audioUrl?: string;
     durationMs?: number;
+    audioStartTime?: number;
+    audioEndTime?: number;
     volume: number;
     isAccepted: boolean;
     source: 'draft' | 'manifest';
@@ -118,6 +121,7 @@ export function buildRecordingCueQueue({
             addRecord(recordsByCueId, {
                 id: -cue.id,
                 cueId: cue.id,
+                audioId: cue.audioId,
                 audioUrl: cue.approvedRecordUrl,
                 volume: cue.volume,
                 isAccepted: true,
@@ -133,7 +137,16 @@ export function buildRecordingCueQueue({
             const resolvedCharacterId = cue.characterId ?? script?.characterId ?? 0;
             const character = charactersById.get(resolvedCharacterId);
             const track = tracksById.get(cue.trackId);
-            const records = recordsByCueId.get(cue.id) ?? [];
+            const cueAudioId = toOptionalNumber(cue.audioId ?? manifestCue?.audioId);
+            const cueAudioStartTime = toOptionalNumber(cue.audioStartTime ?? manifestCue?.audioStartTime);
+            const cueAudioEndTime = toOptionalNumber(cue.audioEndTime ?? manifestCue?.audioEndTime);
+            const records = (recordsByCueId.get(cue.id) ?? []).map((record) =>
+                toRecordingTakeWithCueAudioRange(record, {
+                    audioId: cueAudioId,
+                    audioStartTime: cueAudioStartTime,
+                    audioEndTime: cueAudioEndTime,
+                }),
+            );
             const latestRecord = records.at(-1);
 
             return {
@@ -250,11 +263,39 @@ function toRecordingTake(record: DraftRecord | RecordManifest, source: Recording
     return {
         id: record.id,
         cueId: record.cueId,
+        audioId: record.audioId,
         audioUrl: record.recordUrl,
         durationMs: record.duration,
         volume: 1,
         isAccepted: record.isAccepted,
         source,
+    };
+}
+
+function toRecordingTakeWithCueAudioRange(
+    record: RecordingTakeSummary,
+    cueAudioRange: { audioId?: number; audioStartTime?: number; audioEndTime?: number },
+): RecordingTakeSummary {
+    if (
+        typeof cueAudioRange.audioStartTime !== 'number' ||
+        typeof cueAudioRange.audioEndTime !== 'number' ||
+        cueAudioRange.audioEndTime <= cueAudioRange.audioStartTime
+    ) {
+        return record;
+    }
+
+    if (
+        typeof cueAudioRange.audioId === 'number' &&
+        typeof record.audioId === 'number' &&
+        record.audioId !== cueAudioRange.audioId
+    ) {
+        return record;
+    }
+
+    return {
+        ...record,
+        audioStartTime: cueAudioRange.audioStartTime,
+        audioEndTime: cueAudioRange.audioEndTime,
     };
 }
 

@@ -349,6 +349,126 @@ describe('CueService', () => {
         }
     });
 
+    it('rejects record cue timeline duration that differs from script duration', async () => {
+        const dataSource = await createCueServiceDataSource();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Cue duration product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Cue duration episode',
+                })
+            );
+            const character = await dataSource.manager.save(
+                new Character({
+                    productId: product.id,
+                    name: 'Cue duration character',
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Cue duration track',
+                    type: 'record',
+                    characterId: character.id,
+                })
+            );
+            const script = await dataSource.manager.save(new Script({ line: '기준 대사', duration: 1800 }));
+            const cue = await dataSource.manager.save(
+                new Cue({
+                    scriptId: script.id,
+                    characterId: character.id,
+                    trackId: track.id,
+                    startTime: 1000,
+                    endTime: 2800,
+                })
+            );
+            const cueService = createCueService(dataSource);
+
+            await assert.rejects(
+                () =>
+                    cueService.update({
+                        trackId: track.id,
+                        cueId: cue.id,
+                        startTime: 1000,
+                        endTime: 3200,
+                    }),
+                (error: unknown) =>
+                    error instanceof BadRequestException && /대사 duration/.test(error.message)
+            );
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
+    it('rejects record cue audio source duration that differs from script duration', async () => {
+        const dataSource = await createCueServiceDataSource();
+
+        try {
+            const product = await dataSource.manager.save(new Product({ title: 'Cue audio duration product' }));
+            const episode = await dataSource.manager.save(
+                new Episode({
+                    productId: product.id,
+                    episodeNumber: 1,
+                    title: 'Cue audio duration episode',
+                })
+            );
+            const character = await dataSource.manager.save(
+                new Character({
+                    productId: product.id,
+                    name: 'Cue audio duration character',
+                })
+            );
+            const track = await dataSource.manager.save(
+                new Track({
+                    episodeId: episode.id,
+                    name: 'Cue audio duration track',
+                    type: 'record',
+                    characterId: character.id,
+                })
+            );
+            const audio = await dataSource.manager.save(
+                new Audio({
+                    episodeId: episode.id,
+                    audioType: 'record',
+                    name: 'voice-buffer.wav',
+                    audioUrl: 'https://assets.example.com/voice-buffer.wav',
+                    duration: 10000,
+                })
+            );
+            const script = await dataSource.manager.save(new Script({ line: '오디오 기준 대사', duration: 1800 }));
+            const cue = await dataSource.manager.save(
+                new Cue({
+                    scriptId: script.id,
+                    characterId: character.id,
+                    trackId: track.id,
+                    audioId: audio.id,
+                    startTime: 1000,
+                    endTime: 2800,
+                    audioStartTime: 2000,
+                    audioEndTime: 3800,
+                })
+            );
+            const cueService = createCueService(dataSource);
+
+            await assert.rejects(
+                () =>
+                    cueService.update({
+                        trackId: track.id,
+                        cueId: cue.id,
+                        audioStartTime: 2000,
+                        audioEndTime: 4200,
+                    }),
+                (error: unknown) =>
+                    error instanceof BadRequestException && /대사 duration/.test(error.message)
+            );
+        } finally {
+            await dataSource.destroy();
+        }
+    });
+
     it('moves a cue to another character-linked track when targetTrackId is provided', async () => {
         const dataSource = await createCueServiceDataSource();
 

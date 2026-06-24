@@ -5,6 +5,8 @@ export type CueTimelineTiming = {
     duration: number;
     audioStart?: number;
     audioEnd?: number;
+    isVoiceCue?: boolean;
+    scriptDuration?: number;
 };
 
 export type CueTimingUpdateRequest = {
@@ -25,6 +27,8 @@ export type CueAudioTimelineEdit = {
 export type CueAudioTimelineClip = CueTimelineTiming & {
     audioDuration?: number;
 };
+
+const voiceCueDurationToleranceMs = 50;
 
 export type CueStripPositionRequest = {
     startCanvasMediaId: number;
@@ -139,14 +143,51 @@ export function resolveCueTimelineTrackId({
     return String(parentTrackId);
 }
 
+function toDurationMilliseconds(durationSeconds: number | undefined) {
+    return typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) && durationSeconds > 0
+        ? Math.round(durationSeconds * 1000)
+        : undefined;
+}
+
+function assertVoiceCueDurationMatchesScript({
+    actualDurationMs,
+    scriptDurationMs,
+}: {
+    actualDurationMs: number;
+    scriptDurationMs: number;
+}) {
+    if (Math.abs(actualDurationMs - scriptDurationMs) > voiceCueDurationToleranceMs) {
+        throw new Error('보이스 큐 길이는 대사 duration과 같아야 합니다.');
+    }
+}
+
 export function toCueTimingUpdateRequest(timing: CueTimelineTiming): CueTimingUpdateRequest {
     const startTime = Math.round(timing.start * 1000);
+    const endTime = Math.round((timing.start + timing.duration) * 1000);
+    const audioStartTime =
+        typeof timing.audioStart === 'number' ? Math.round(timing.audioStart * 1000) : undefined;
+    const audioEndTime = typeof timing.audioEnd === 'number' ? Math.round(timing.audioEnd * 1000) : undefined;
+    const scriptDurationMs = toDurationMilliseconds(timing.scriptDuration);
+
+    if (timing.isVoiceCue && scriptDurationMs !== undefined) {
+        assertVoiceCueDurationMatchesScript({
+            actualDurationMs: endTime - startTime,
+            scriptDurationMs,
+        });
+
+        if (audioStartTime !== undefined && audioEndTime !== undefined) {
+            assertVoiceCueDurationMatchesScript({
+                actualDurationMs: audioEndTime - audioStartTime,
+                scriptDurationMs,
+            });
+        }
+    }
 
     return {
         startTime,
-        endTime: Math.round((timing.start + timing.duration) * 1000),
-        ...(typeof timing.audioStart === 'number' ? { audioStartTime: Math.round(timing.audioStart * 1000) } : {}),
-        ...(typeof timing.audioEnd === 'number' ? { audioEndTime: Math.round(timing.audioEnd * 1000) } : {}),
+        endTime,
+        ...(audioStartTime !== undefined ? { audioStartTime } : {}),
+        ...(audioEndTime !== undefined ? { audioEndTime } : {}),
     };
 }
 

@@ -247,6 +247,8 @@ type TimelineClip = {
     audioStart?: number;
     audioEnd?: number;
     audioDuration?: number;
+    scriptDuration?: number;
+    isVoiceCue?: boolean;
     characterId?: CharacterId;
     effects?: EffectId[];
     volume?: number;
@@ -477,6 +479,7 @@ type VisualCutPointerEditHandlers = {
 type TrackCueListItem = {
     id: number;
     script: string;
+    duration?: number;
     characterId?: number;
     trackId: number;
     audioId?: number;
@@ -1639,6 +1642,11 @@ function toTimelineData(tracks: TrackListItem[]): TrackTimelineData {
                 .map((cue) => {
                     const start = toTimelineSeconds(cue.startTime);
                     const end = toTimelineSeconds(cue.endTime);
+                    const scriptDuration =
+                        typeof cue.duration === 'number' && Number.isFinite(cue.duration) && cue.duration > 0
+                            ? toTimelineSeconds(cue.duration)
+                            : undefined;
+                    const isVoiceCue = track.type === 'record';
                     const cueTrackId = resolveCueTimelineTrackId({
                         parentTrackId: track.id,
                         cueTrackId: cue.trackId,
@@ -1648,7 +1656,7 @@ function toTimelineData(tracks: TrackListItem[]): TrackTimelineData {
                         id: `cue-${cue.id}`,
                         track: cueTrackId,
                         start,
-                        duration: Math.max(end - start, 0.2),
+                        duration: isVoiceCue && scriptDuration !== undefined ? scriptDuration : Math.max(end - start, 0.2),
                         label: cue.script || cue.audio?.name || '오디오',
                         sublabel: cue.audioId
                             ? `audio ${cue.audioId} · vol ${cue.volume}`
@@ -1661,6 +1669,8 @@ function toTimelineData(tracks: TrackListItem[]): TrackTimelineData {
                             typeof cue.audioEndTime === 'number' ? toTimelineSeconds(cue.audioEndTime) : undefined,
                         audioDuration:
                             typeof cue.audio?.duration === 'number' ? toTimelineSeconds(cue.audio.duration) : undefined,
+                        scriptDuration,
+                        isVoiceCue,
                         characterId: typeof cue.characterId === 'number' ? String(cue.characterId) : undefined,
                         volume: cue.volume,
                         startCanvasMediaId: cue.startCanvasMediaId,
@@ -5849,7 +5859,7 @@ function AudioTracks({
                                     }
                                     type="button"
                                 >
-                                    {isLocked ? null : (
+                                    {isLocked || clip.isVoiceCue ? null : (
                                         <TimelineResizeHandles
                                             item={clip}
                                             itemKind="audio"

@@ -17380,13 +17380,13 @@ p {
     display: grid;
     height: 100%;
     grid-template-columns: repeat(var(--tr-waveform-bar-count, 300), minmax(0, 1fr));
-    align-items: center;
+    align-items: end;
     gap: 2px;
 }
 
 .tr-record-buffer-bars i {
     width: min(8px, 100%);
-    align-self: center;
+    align-self: end;
     justify-self: center;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.09);

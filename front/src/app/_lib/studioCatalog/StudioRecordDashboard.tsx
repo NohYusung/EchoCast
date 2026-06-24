@@ -81,6 +81,10 @@ type PendingRecordingBuffer = {
     selection: RecordingBufferSelection;
 };
 
+type RecordingBufferPreviewOptions = {
+    autoplay?: boolean;
+};
+
 const filterLabels: Record<RecordingCueFilter, string> = {
     all: '전체',
     pending: '대기',
@@ -263,11 +267,12 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         ? recordingMs
         : pendingRecordingBuffer
           ? pendingRecordingBuffer.selection.durationMs
-          : (focusedRecord?.durationMs ?? 0);
-    const waveformProgressPercent =
-        isRecording || (pendingRecordingBuffer && !isRecordingBufferPreviewPlaying)
-            ? 0
-            : Math.round(Math.min(1, Math.max(0, recordPlaybackProgress)) * 10000) / 100;
+          : focusedRecord
+            ? getRecordDisplayDurationMs(focusedRecord)
+            : 0;
+    const waveformProgressPercent = isRecording
+        ? 0
+        : Math.round(Math.min(1, Math.max(0, recordPlaybackProgress)) * 10000) / 100;
     const waveformStyle = {
         '--tr-waveform-bar-count': currentWave.length,
         '--tr-waveform-progress': `${waveformProgressPercent}%`,
@@ -322,7 +327,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
         let isCancelled = false;
         setLoadingWaveformKey(activeFocusedRecordKey);
-        void buildRecordWaveformPeaks(focusedRecord.audioUrl, RECORD_WAVEFORM_BAR_COUNT)
+        void buildRecordWaveformPeaks(focusedRecord.audioUrl, RECORD_WAVEFORM_BAR_COUNT, getRecordPlaybackRangeMs(focusedRecord))
             .then((peaks) => {
                 if (isCancelled) return;
 
@@ -537,7 +542,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         recordingBufferDragOffsetMsRef.current = Math.max(0, pointerMs - pendingRecordingBuffer.selection.startMs);
     }
 
-    function previewPendingRecordingBuffer() {
+    function previewPendingRecordingBuffer(startSeconds = 0, options?: RecordingBufferPreviewOptions) {
         if (!pendingRecordingBuffer) return;
 
         stopRecordPlayback();
@@ -552,17 +557,33 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         const previewBlob = encodePcm16Wav(previewSamples, pendingRecordingBuffer.sampleRate);
         const previewUrl = URL.createObjectURL(previewBlob);
         const audio = new Audio(previewUrl);
+        const durationSeconds = pendingRecordingBuffer.selection.durationMs / 1000;
+        const previewStartSeconds = Math.min(durationSeconds, Math.max(0, startSeconds));
 
         recordingBufferPreviewRef.current = audio;
         recordingBufferPreviewUrlRef.current = previewUrl;
-        syncRecordPlaybackProgress(0, { syncState: true });
-        audio.onloadedmetadata = () => updateRecordingBufferPreviewProgress(audio, pendingRecordingBuffer.selection.durationMs);
+        syncRecordPlaybackProgress(durationSeconds > 0 ? previewStartSeconds / durationSeconds : 0, { syncState: true });
+        const applyPreviewStart = () => {
+            audio.currentTime = previewStartSeconds;
+            updateRecordingBufferPreviewProgress(audio, pendingRecordingBuffer.selection.durationMs);
+        };
+        audio.onloadedmetadata = applyPreviewStart;
         audio.ontimeupdate = () => updateRecordingBufferPreviewProgress(audio, pendingRecordingBuffer.selection.durationMs);
         audio.onended = stopRecordingBufferPreview;
         audio.onerror = () => {
             stopRecordingBufferPreview();
             setMessage('버퍼 미리듣기를 재생하지 못했습니다.');
         };
+        try {
+            applyPreviewStart();
+        } catch {
+            // loadedmetadata에서 다시 적용한다.
+        }
+        if (options?.autoplay === false) {
+            setIsRecordingBufferPreviewPlaying(false);
+            return;
+        }
+
         void audio
             .play()
             .then(() => {
@@ -576,10 +597,43 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             });
     }
 
+    function resumeRecordingBufferPreview() {
+        const audio = recordingBufferPreviewRef.current;
+        if (!audio || !pendingRecordingBuffer) {
+            previewPendingRecordingBuffer();
+            return;
+        }
+
+        void audio
+            .play()
+            .then(() => {
+                if (recordingBufferPreviewRef.current === audio) {
+                    setIsRecordingBufferPreviewPlaying(true);
+                    updateRecordingBufferPreviewProgress(audio, pendingRecordingBuffer.selection.durationMs);
+                }
+            })
+            .catch((error: unknown) => {
+                stopRecordingBufferPreview();
+                setMessage(toRecordErrorMessage(error, '버퍼 미리듣기를 재생하지 못했습니다.'));
+            });
+    }
+
+    function pauseRecordingBufferPreview() {
+        const audio = recordingBufferPreviewRef.current;
+        if (!audio) return;
+
+        audio.pause();
+        if (isRecordComponentMountedRef.current) {
+            setIsRecordingBufferPreviewPlaying(false);
+            updateRecordingBufferPreviewProgress(audio, pendingRecordingBuffer?.selection.durationMs ?? 0);
+        }
+    }
+
     function stopRecordingBufferPreview() {
         const audio = recordingBufferPreviewRef.current;
         if (audio) {
             audio.pause();
+            audio.currentTime = 0;
             audio.onloadedmetadata = null;
             audio.ontimeupdate = null;
             audio.onended = null;
@@ -967,7 +1021,12 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     function toggleTransportPlayback() {
         if (pendingRecordingBuffer) {
             if (isRecordingBufferPreviewPlaying) {
-                stopRecordingBufferPreview();
+                pauseRecordingBufferPreview();
+                return;
+            }
+
+            if (recordingBufferPreviewRef.current) {
+                resumeRecordingBufferPreview();
                 return;
             }
 
@@ -1018,6 +1077,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
             if (recordPlaybackRef.current !== audio) return;
 
             updateRecordPlaybackProgressForRecord(audio, record);
+            if (stopRecordPlaybackAtRangeEnd(audio, record)) return;
             if (!audio.paused && !audio.ended) {
                 recordPlaybackFrameRef.current = window.requestAnimationFrame(tick);
             }
@@ -1034,14 +1094,33 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
     }
 
     function updateRecordPlaybackProgressForRecord(audio: HTMLAudioElement, record: RecordingTakeSummary | undefined) {
-        const durationSeconds =
-            Number.isFinite(audio.duration) && audio.duration > 0
-                ? audio.duration
-                : typeof record?.durationMs === 'number' && record.durationMs > 0
-                  ? record.durationMs / 1000
-                  : 0;
+        if (record) {
+            const range = getRecordPlaybackRangeSeconds(record);
+            const progress = range.durationSeconds > 0 ? (audio.currentTime - range.startSeconds) / range.durationSeconds : 0;
+            syncRecordPlaybackProgress(progress);
+            return;
+        }
+
+        const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
         const progress = durationSeconds > 0 ? audio.currentTime / durationSeconds : 0;
         syncRecordPlaybackProgress(progress);
+    }
+
+    function stopRecordPlaybackAtRangeEnd(audio: HTMLAudioElement, record: RecordingTakeSummary | undefined) {
+        if (!record || typeof record.audioEndTime !== 'number') return false;
+
+        const range = getRecordPlaybackRangeSeconds(record);
+        if (range.durationSeconds <= 0 || audio.currentTime < range.endSeconds) return false;
+        if (recordPlaybackRef.current !== audio) return true;
+
+        audio.pause();
+        cancelRecordPlaybackFrame();
+        recordPlaybackRef.current = null;
+        recordPlaybackSeekRef.current = undefined;
+        setPlayingRecordKey(undefined);
+        setIsRecordPlaybackPaused(false);
+        syncRecordPlaybackProgress(1, { syncState: true });
+        return true;
     }
 
     function updateRecordingBufferPreviewProgress(audio: HTMLAudioElement, selectionDurationMs: number) {
@@ -1071,10 +1150,12 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
 
     function applyPendingRecordPlaybackSeek(audio: HTMLAudioElement, recordKey: string, record: RecordingTakeSummary) {
         const pendingSeek = recordPlaybackSeekRef.current;
-        if (!pendingSeek || pendingSeek.recordKey !== recordKey) return;
 
         const applySeek = () => {
-            audio.currentTime = Math.max(0, pendingSeek.seconds);
+            audio.currentTime =
+                pendingSeek && pendingSeek.recordKey === recordKey
+                    ? Math.max(0, pendingSeek.seconds)
+                    : getRecordPlaybackRangeSeconds(record).startSeconds;
             recordPlaybackSeekRef.current = undefined;
             updateRecordPlaybackProgressForRecord(audio, record);
         };
@@ -1086,15 +1167,44 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
         }
     }
 
-    function seekRecordWaveform(event: ReactPointerEvent<HTMLDivElement>) {
-        if (event.button !== 0 || isRecording || pendingRecordingBuffer || !focusedRecord || !activeFocusedRecordKey) return;
+    function seekRecordingBufferPreviewWaveform(event: ReactPointerEvent<HTMLDivElement>) {
+        if (!pendingRecordingBuffer) return;
 
+        const audio = recordingBufferPreviewRef.current;
         const rect = event.currentTarget.getBoundingClientRect();
         const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-        const durationSeconds = getRecordDurationSeconds(focusedRecord);
+        const durationSeconds = pendingRecordingBuffer.selection.durationMs / 1000;
         if (durationSeconds <= 0) return;
 
         const nextSeconds = ratio * durationSeconds;
+        if (!audio) {
+            previewPendingRecordingBuffer(nextSeconds, { autoplay: false });
+            return;
+        }
+
+        audio.currentTime = nextSeconds;
+        audio.pause();
+        setIsRecordingBufferPreviewPlaying(false);
+        syncRecordPlaybackProgress(ratio, { syncState: true });
+        updateRecordingBufferPreviewProgress(audio, pendingRecordingBuffer.selection.durationMs);
+    }
+
+    function seekRecordWaveform(event: ReactPointerEvent<HTMLDivElement>) {
+        if (event.button !== 0 || isRecording) return;
+
+        if (pendingRecordingBuffer) {
+            seekRecordingBufferPreviewWaveform(event);
+            return;
+        }
+
+        if (!focusedRecord || !activeFocusedRecordKey) return;
+
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+        const range = getRecordPlaybackRangeSeconds(focusedRecord);
+        if (range.durationSeconds <= 0) return;
+
+        const nextSeconds = range.startSeconds + ratio * range.durationSeconds;
         const currentAudio = recordPlaybackRef.current;
         recordPlaybackSeekRef.current = { recordKey: activeFocusedRecordKey, seconds: nextSeconds };
         syncRecordPlaybackProgress(ratio, { syncState: true });
@@ -1435,7 +1545,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                                 <i key={index} style={{ height: `${height}%` }} />
                                             ))}
                                         </div>
-                                        {!isRecording && (!pendingRecordingBuffer || isRecordingBufferPreviewPlaying) ? (
+                                        {!isRecording ? (
                                             <div aria-hidden="true" className="tr-waveform-progress">
                                                 {currentWave.map((height, index) => (
                                                     <i key={index} style={{ height: `${height}%` }} />
@@ -1617,7 +1727,7 @@ export function StudioRecordDashboard({ productId, episodeId, draft, manifest, e
                                         <div>
                                             <strong>테이크 {index + 1}</strong>
                                             <small>
-                                                서버 기록 · {formatDurationSeconds(record.durationMs ?? 0)}
+                                                서버 기록 · {formatDurationSeconds(getRecordDisplayDurationMs(record))}
                                             </small>
                                         </div>
                                         <button
@@ -1698,7 +1808,11 @@ async function requestRecordingUploadUrl(apiBaseUrl: string, request: { key: str
     return uploadUrl;
 }
 
-async function buildRecordWaveformPeaks(audioUrl: string, barCount: number): Promise<number[]> {
+async function buildRecordWaveformPeaks(
+    audioUrl: string,
+    barCount: number,
+    range?: { startMs: number; endMs?: number },
+): Promise<number[]> {
     const response = await fetch(audioUrl, { cache: 'force-cache' });
     if (!response.ok) {
         throw new Error(`Waveform audio request failed: ${response.status}`);
@@ -1714,10 +1828,13 @@ async function buildRecordWaveformPeaks(audioUrl: string, barCount: number): Pro
     try {
         const audioBuffer = await audioContext.decodeAudioData(await response.arrayBuffer());
         const safeBarCount = Math.max(1, Math.round(barCount));
-        const samplesPerBar = Math.max(1, Math.floor(audioBuffer.length / safeBarCount));
+        const startSample = Math.max(0, Math.floor((range?.startMs ?? 0) / 1000 * audioBuffer.sampleRate));
+        const endSample = Math.min(audioBuffer.length, Math.ceil((range?.endMs ?? audioBuffer.duration * 1000) / 1000 * audioBuffer.sampleRate));
+        const scopedSampleCount = Math.max(1, endSample - startSample);
+        const samplesPerBar = Math.max(1, Math.floor(scopedSampleCount / safeBarCount));
         const rawPeaks = Array.from({ length: safeBarCount }, (_, barIndex) => {
-            const start = barIndex * samplesPerBar;
-            const end = barIndex === safeBarCount - 1 ? audioBuffer.length : Math.min(audioBuffer.length, start + samplesPerBar);
+            const start = startSample + barIndex * samplesPerBar;
+            const end = barIndex === safeBarCount - 1 ? endSample : Math.min(endSample, start + samplesPerBar);
             let sumSquares = 0;
             let sampleCount = 0;
 
@@ -1828,8 +1945,32 @@ function getLatestRecordingTake(records: RecordingTakeSummary[]): RecordingTakeS
     }, undefined);
 }
 
-function getRecordDurationSeconds(record: RecordingTakeSummary): number {
-    return typeof record.durationMs === 'number' && record.durationMs > 0 ? record.durationMs / 1000 : 0;
+function getRecordDisplayDurationMs(record: RecordingTakeSummary): number {
+    return getRecordPlaybackRangeMs(record).durationMs;
+}
+
+function getRecordPlaybackRangeMs(record: RecordingTakeSummary): { startMs: number; endMs?: number; durationMs: number } {
+    const startMs =
+        typeof record.audioStartTime === 'number' && Number.isFinite(record.audioStartTime)
+            ? Math.max(0, Math.round(record.audioStartTime))
+            : 0;
+    const endMs =
+        typeof record.audioEndTime === 'number' && Number.isFinite(record.audioEndTime) && record.audioEndTime > startMs
+            ? Math.round(record.audioEndTime)
+            : undefined;
+    const sourceDurationMs = typeof record.durationMs === 'number' && record.durationMs > 0 ? Math.round(record.durationMs) : 0;
+    const durationMs = typeof endMs === 'number' ? Math.max(0, endMs - startMs) : sourceDurationMs;
+
+    return { startMs, endMs, durationMs };
+}
+
+function getRecordPlaybackRangeSeconds(record: RecordingTakeSummary) {
+    const range = getRecordPlaybackRangeMs(record);
+    const startSeconds = range.startMs / 1000;
+    const durationSeconds = range.durationMs / 1000;
+    const endSeconds = typeof range.endMs === 'number' ? range.endMs / 1000 : startSeconds + durationSeconds;
+
+    return { startSeconds, endSeconds, durationSeconds };
 }
 
 function getExternalRecordContentType(file: File): string {

@@ -121,7 +121,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
                 script: 'API로 수정한 큐',
                 duration: 1800,
                 startTime: 1800,
-                endTime: 6000,
+                endTime: 3600,
                 startPosition: 18,
                 endPosition: 72,
                 volume: 0.65,
@@ -140,7 +140,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(trackWithUpdatedCue.cues[0].script, 'API로 수정한 큐');
         assert.equal(trackWithUpdatedCue.cues[0].duration, 1800);
         assert.equal(trackWithUpdatedCue.cues[0].startTime, 1800);
-        assert.equal(trackWithUpdatedCue.cues[0].endTime, 6000);
+        assert.equal(trackWithUpdatedCue.cues[0].endTime, 3600);
         assert.equal(trackWithUpdatedCue.cues[0].startPosition, 18);
         assert.equal(trackWithUpdatedCue.cues[0].endPosition, 72);
         assert.equal(trackWithUpdatedCue.cues[0].volume, 0.65);
@@ -185,7 +185,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
                 script: 'API로 이동한 큐',
                 duration: 2100,
                 startTime: 2000,
-                endTime: 7000,
+                endTime: 4100,
                 startPosition: 44,
                 endPosition: 44,
             })
@@ -223,7 +223,7 @@ test('POST /tracks/:trackId/cues creates a cue and GET /episodes/:episodeId/trac
         assert.equal(targetTrackWithMovedCue.cues[0].script, 'API로 이동한 큐');
         assert.equal(targetTrackWithMovedCue.cues[0].duration, 2100);
         assert.equal(targetTrackWithMovedCue.cues[0].startTime, 2000);
-        assert.equal(targetTrackWithMovedCue.cues[0].endTime, 7000);
+        assert.equal(targetTrackWithMovedCue.cues[0].endTime, 4100);
         assert.equal(targetTrackWithMovedCue.cues[0].startPosition, 44);
         assert.equal(targetTrackWithMovedCue.cues[0].endPosition, 44);
 

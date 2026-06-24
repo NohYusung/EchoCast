@@ -71,6 +71,15 @@ export class CueService extends DddService {
             audioEndTime,
             audioDuration: audio?.duration,
         });
+        if (track.type === 'record') {
+            this.validateVoiceCueDurationConsistency({
+                scriptDuration: duration,
+                startTime,
+                endTime,
+                audioStartTime,
+                audioEndTime,
+            });
+        }
         this.validatePositions({ startPosition, endPosition });
         const {
             startCanvasMediaId: resolvedStartCanvasMediaId,
@@ -205,9 +214,11 @@ export class CueService extends DddService {
         }
         this.validateScriptDuration(duration);
 
+        const nextStartTime = startTime ?? cue.startTime ?? undefined;
+        const nextEndTime = endTime ?? cue.endTime ?? undefined;
         this.validateTimelineRange({
-            startTime: startTime ?? cue.startTime ?? undefined,
-            endTime: endTime ?? cue.endTime ?? undefined,
+            startTime: nextStartTime,
+            endTime: nextEndTime,
         });
         const nextAudioId = audioId !== undefined ? audioId : (cue.audioId ?? undefined);
         const audio = await this.resolveAudio({ track: targetTrack, audioId: nextAudioId });
@@ -219,6 +230,15 @@ export class CueService extends DddService {
             audioEndTime: nextAudioEndTime,
             audioDuration: audio?.duration,
         });
+        if (targetTrack.type === 'record') {
+            this.validateVoiceCueDurationConsistency({
+                scriptDuration: duration !== undefined ? duration : (cue.scriptRef?.duration ?? undefined),
+                startTime: nextStartTime,
+                endTime: nextEndTime,
+                audioStartTime: nextAudioStartTime,
+                audioEndTime: nextAudioEndTime,
+            });
+        }
         const nextStartPosition = startPosition ?? cue.startPosition;
         const nextEndPosition = endPosition ?? cue.endPosition;
         this.validatePositions({ startPosition: nextStartPosition, endPosition: nextEndPosition });
@@ -458,6 +478,53 @@ export class CueService extends DddService {
         }
         if (typeof audioDuration === 'number' && audioEndTime > audioDuration) {
             throw new BadRequestException('큐 오디오 소스 범위가 오디오 duration을 초과합니다.');
+        }
+    }
+
+    private validateVoiceCueDurationConsistency({
+        scriptDuration,
+        startTime,
+        endTime,
+        audioStartTime,
+        audioEndTime,
+    }: {
+        scriptDuration?: number;
+        startTime?: number;
+        endTime?: number;
+        audioStartTime?: number;
+        audioEndTime?: number;
+    }) {
+        if (scriptDuration === undefined) {
+            return;
+        }
+        if (!Number.isFinite(scriptDuration) || scriptDuration <= 0) {
+            throw new BadRequestException('대사 녹음 길이는 0보다 커야 합니다.');
+        }
+
+        const normalizedScriptDuration = Math.round(scriptDuration);
+        if (startTime !== undefined && endTime !== undefined) {
+            this.validateVoiceCueDurationMatchesScript({
+                duration: endTime - startTime,
+                scriptDuration: normalizedScriptDuration,
+            });
+        }
+        if (audioStartTime !== undefined && audioEndTime !== undefined) {
+            this.validateVoiceCueDurationMatchesScript({
+                duration: audioEndTime - audioStartTime,
+                scriptDuration: normalizedScriptDuration,
+            });
+        }
+    }
+
+    private validateVoiceCueDurationMatchesScript({
+        duration,
+        scriptDuration,
+    }: {
+        duration: number;
+        scriptDuration: number;
+    }) {
+        if (Math.abs(Math.round(duration) - scriptDuration) > 50) {
+            throw new BadRequestException('보이스 큐 길이는 대사 duration과 같아야 합니다.');
         }
     }
 

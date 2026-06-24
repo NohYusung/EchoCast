@@ -174,6 +174,42 @@ test('buildRecordingCueQueue preserves saved strip placement fields for recordin
     );
 });
 
+test('buildRecordingCueQueue carries cue audio trim range onto the matching record', () => {
+    const queue = buildRecordingCueQueue({
+        draft: {
+            ...draft,
+            cues: draft.cues.map((cue) =>
+                cue.id === 1
+                    ? {
+                          ...cue,
+                          audioId: 101,
+                          audioStartTime: 400,
+                          audioEndTime: 1700,
+                      }
+                    : cue,
+            ),
+        },
+        characterId: 1,
+    });
+
+    assert.deepEqual(
+        queue[0]?.records.map((record) => ({
+            audioId: record.audioId,
+            durationMs: record.durationMs,
+            audioStartTime: record.audioStartTime,
+            audioEndTime: record.audioEndTime,
+        })),
+        [
+            {
+                audioId: 101,
+                durationMs: 1900,
+                audioStartTime: 400,
+                audioEndTime: 1700,
+            },
+        ],
+    );
+});
+
 test('buildRecordingCueQueue only includes cues that belong to record tracks', () => {
     const queue = buildRecordingCueQueue({
         draft: {
