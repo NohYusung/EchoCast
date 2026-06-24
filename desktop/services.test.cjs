@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const {
     getDesktopConfig,
     getDesktopServiceDefinitions,
+    getPackagedNextServerEntry,
     startManagedProcesses,
     stopManagedProcesses,
     waitForHttp,
@@ -35,6 +36,40 @@ test('getDesktopServiceDefinitions wires back and front workspace commands', () 
     );
     assert.equal(services[0].env.PORT, '4100');
     assert.equal(services[1].env.NEXT_PUBLIC_API_BASE_URL, 'http://localhost:4100');
+});
+
+test('getDesktopServiceDefinitions uses the packaged Next server without starting the backend', () => {
+    const config = getDesktopConfig(
+        {
+            NEW_DUBRIGHT_API_BASE_URL: 'https://api.example.com',
+            NEW_DUBRIGHT_DESKTOP_FRONT_PORT: '3200',
+            NEW_DUBRIGHT_DESKTOP_PACKAGED: 'true',
+        },
+        {
+            execPath: '/Applications/new-dubright.app/Contents/MacOS/new-dubright',
+            resourcesPath: '/Applications/new-dubright.app/Contents/Resources',
+        },
+    );
+    const services = getDesktopServiceDefinitions(config);
+
+    assert.equal(config.isPackaged, true);
+    assert.equal(config.apiBaseUrl, 'https://api.example.com');
+    assert.equal(config.frontStandaloneDir, '/Applications/new-dubright.app/Contents/Resources/front-standalone');
+    assert.deepEqual(
+        services.map((service) => [service.name, service.command]),
+        [['front', '/Applications/new-dubright.app/Contents/MacOS/new-dubright']],
+    );
+    assert.deepEqual(services[0].args, ['/Applications/new-dubright.app/Contents/Resources/front-standalone/front/server.js']);
+    assert.equal(services[0].cwd, '/Applications/new-dubright.app/Contents/Resources/front-standalone/front');
+    assert.equal(services[0].env.ELECTRON_RUN_AS_NODE, '1');
+    assert.equal(services[0].env.NEXT_PUBLIC_API_BASE_URL, 'https://api.example.com');
+    assert.equal(services[0].env.PORT, '3200');
+});
+
+test('getPackagedNextServerEntry supports a root standalone server fallback', () => {
+    const serverEntry = getPackagedNextServerEntry('/tmp/new-dubright-missing-standalone');
+
+    assert.equal(serverEntry, '/tmp/new-dubright-missing-standalone/front/server.js');
 });
 
 test('startManagedProcesses spawns each service and stopManagedProcesses kills active children', () => {

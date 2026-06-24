@@ -39,7 +39,11 @@ function shutdownManagedProcesses() {
 }
 
 async function bootDesktopApp() {
-    const config = getDesktopConfig();
+    const config = getDesktopConfig(process.env, {
+        execPath: process.execPath,
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+    });
 
     if (process.platform === 'darwin' && app.dock) {
         app.dock.setIcon(appIconPath);
@@ -47,17 +51,19 @@ async function bootDesktopApp() {
 
     managedProcesses = startManagedProcesses(config);
 
-    const [isBackReady, isFrontReady] = await Promise.all([
-        waitForHttp(config.apiReadyUrl),
-        waitForHttp(config.frontUrl),
-    ]);
-
-    if (!isBackReady) {
-        throw new Error(`Nest backend did not become ready at ${config.apiReadyUrl}`);
-    }
+    const readinessChecks = config.isPackaged
+        ? [waitForHttp(config.frontUrl)]
+        : [waitForHttp(config.apiReadyUrl), waitForHttp(config.frontUrl)];
+    const readinessResults = await Promise.all(readinessChecks);
+    const isBackReady = config.isPackaged ? true : readinessResults[0];
+    const isFrontReady = config.isPackaged ? readinessResults[0] : readinessResults[1];
 
     if (!isFrontReady) {
         throw new Error(`Next frontend did not become ready at ${config.frontUrl}`);
+    }
+
+    if (!isBackReady) {
+        throw new Error(`Nest backend did not become ready at ${config.apiReadyUrl}`);
     }
 
     createWindow(config);
@@ -81,7 +87,11 @@ app.on('before-quit', () => {
 
 app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) {
-        const config = getDesktopConfig();
+        const config = getDesktopConfig(process.env, {
+            execPath: process.execPath,
+            isPackaged: app.isPackaged,
+            resourcesPath: process.resourcesPath,
+        });
         createWindow(config);
     }
 });

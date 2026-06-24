@@ -2,6 +2,7 @@
   "name": "new-dubright",
   "version": "0.1.0",
   "private": true,
+  "main": "desktop/main.cjs",
   "workspaces": [
     "back",
     "front"
@@ -10,6 +11,9 @@
     "dev:back": "npm run start:dev --workspace @new-dubright/back",
     "dev:front": "npm run dev --workspace @new-dubright/front",
     "desktop": "electron desktop/main.cjs",
+    "desktop:build:front": "npm run build --workspace @new-dubright/front",
+    "desktop:dir": "npm run desktop:build:front && ELECTRON_BUILDER_CACHE=/private/tmp/new-dubright-electron-builder-cache electron-builder --dir",
+    "desktop:dmg": "npm run desktop:build:front && ELECTRON_BUILDER_CACHE=/private/tmp/new-dubright-electron-builder-cache electron-builder --mac dmg",
     "build": "npm run build --workspaces --if-present",
     "format": "prettier --write \"back/src/**/*.ts\" \"front/src/**/*.{ts,tsx}\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -22,11 +26,63 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "electron": "^39.8.10",
+    "electron-builder": "^26.15.3",
     "prettier": "^3.8.3",
     "tsx": "^4.20.6",
     "typescript": "^5.7.3"
   },
   "dependencies": {
     "class-transformer": "^0.5.1"
+  },
+  "build": {
+    "appId": "com.dobedub.newdubright",
+    "productName": "new-dubright",
+    "asar": true,
+    "directories": {
+      "output": "dist/desktop"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "front/.next/standalone",
+        "to": "front-standalone",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "front/.next/standalone/node_modules",
+        "to": "front-standalone/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "front/.next/static",
+        "to": "front-standalone/front/.next/static",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "front/public",
+        "to": "front-standalone/front/public",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ]
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   }
 }

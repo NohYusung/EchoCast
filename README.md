@@ -22,6 +22,8 @@
 - `npm run dev:back`: run the NestJS API on `http://localhost:4100`.
 - `npm run dev:front`: run the Next.js app on `http://localhost:3000`.
 - `npm run desktop`: run the Electron desktop shell, which starts the NestJS API and Next.js frontend, opens an Electron window, and stops both child processes when the app exits.
+- `npm run desktop:dir`: build the frontend and create an unpacked Electron app for local packaging checks.
+- `npm run desktop:dmg`: build the frontend and create a local macOS DMG in `dist/desktop/`.
 - `npm run typecheck`: typecheck all workspaces.
 - `npm test`: run all workspace tests.
 - `npm run build`: build all workspaces.
@@ -32,6 +34,8 @@
 - Set `NEW_DUBRIGHT_DESKTOP_BACK_PORT` or `NEW_DUBRIGHT_DESKTOP_FRONT_PORT` to override ports.
 - Set `NEW_DUBRIGHT_DESKTOP_PATH` to open a specific route when the local backend already has the required data, for example:
   `NEW_DUBRIGHT_DESKTOP_PATH=/studio/products/1/episodes/1 npm run desktop`.
+- Packaged DMG builds include the Next.js standalone frontend and do not start the NestJS backend.
+- Set `NEXT_PUBLIC_API_BASE_URL` before `npm run desktop:dmg` when the packaged frontend should call a remote backend.
 
 ## Player Flow
 
