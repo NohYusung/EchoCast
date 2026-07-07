@@ -94,6 +94,11 @@ export class AudioService extends DddService {
         if (!audio) {
             throw new NotFoundException('오디오를 찾을 수 없습니다.');
         }
+        // Number.isFinite는 NaN, Infinity, -Infinity처럼 타임라인에 배치할 수 없는 숫자를 걸러낸다.
+        /*
+        AGENT
+        - finite가 뭔데? 주석설명. 
+        */
         if (!Number.isFinite(startTime)) {
             throw new BadRequestException('큐 startTime이 필요합니다.');
         }
@@ -124,7 +129,9 @@ export class AudioService extends DddService {
                     new Track({
                         episodeId,
                         name: trackName?.trim() || audio.name,
-                        type: trackType ?? (audio.audioType === 'bgm' || audio.audioType === 'effect' ? audio.audioType : 'audio'),
+                        type:
+                            trackType ??
+                            (audio.audioType === 'bgm' || audio.audioType === 'effect' ? audio.audioType : 'audio'),
                         characterId,
                     })
                 ));

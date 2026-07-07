@@ -35,7 +35,7 @@ export class JwtHelperService {
             return undefined;
         }
 
-        const secret = process.env.NEW_DUBRIGHT_JWT_SECRET ?? process.env.JWT_SECRET;
+        const secret = process.env.ECHOCAST_JWT_SECRET ?? process.env.NEW_DUBRIGHT_JWT_SECRET ?? process.env.JWT_SECRET;
 
         if (!secret) {
             return process.env.NODE_ENV === 'production' ? undefined : payload;

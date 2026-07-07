@@ -71,11 +71,11 @@ jobs:
 
       # Nest 백엔드 TypeScript 타입 오류를 배포 전에 차단한다.
       - name: Typecheck back
-        run: npm run typecheck --workspace @new-dubright/back
+        run: npm run typecheck --workspace @echocast/back
 
       # 백엔드 unit/e2e 테스트를 실행해 API 계약과 도메인 로직 회귀를 막는다.
       - name: Test back
-        run: npm run test --workspace @new-dubright/back
+        run: npm run test --workspace @echocast/back
 
   # 프론트엔드 검증 단계. 프론트 또는 공통 파일 변경 시 타입체크, 테스트, 빌드를 실행한다.
   front_ci:
@@ -102,15 +102,15 @@ jobs:
 
       # Next.js 프론트 TypeScript 타입 오류를 배포 전에 차단한다.
       - name: Typecheck front
-        run: npm run typecheck --workspace @new-dubright/front
+        run: npm run typecheck --workspace @echocast/front
 
       # 프론트 테스트를 실행해 플레이어/스튜디오 UI 로직 회귀를 막는다.
       - name: Test front
-        run: npm run test --workspace @new-dubright/front
+        run: npm run test --workspace @echocast/front
 
       # production Next.js build가 가능한지 확인한다.
       - name: Build front
-        run: npm run build --workspace @new-dubright/front
+        run: npm run build --workspace @echocast/front
 
   # 백엔드 산출물 보관 단계. push/manual 실행에서 빌드 결과를 artifact로 남긴다.
   backend_delivery:
@@ -139,13 +139,13 @@ jobs:
 
       # Nest 백엔드를 dist 산출물로 컴파일한다.
       - name: Build backend
-        run: npm run build --workspace @new-dubright/back
+        run: npm run build --workspace @echocast/back
 
       # dist와 package 정보를 GitHub artifact로 저장해 배포 조사나 재사용이 가능하게 한다.
       - name: Upload backend artifact
         uses: actions/upload-artifact@v4
         with:
-          name: new-dubright-backend
+          name: echocast-backend
           path: |
             back/dist
             back/package.json
@@ -179,13 +179,13 @@ jobs:
 
       # Next.js production build 산출물을 생성한다.
       - name: Build frontend
-        run: npm run build --workspace @new-dubright/front
+        run: npm run build --workspace @echocast/front
 
       # .next, public, package 정보를 GitHub artifact로 저장한다.
       - name: Upload frontend artifact
         uses: actions/upload-artifact@v4
         with:
-          name: new-dubright-frontend
+          name: echocast-frontend
           path: |
             front/.next
             front/public
@@ -208,11 +208,11 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
       AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
-      BACKEND_ECR_REPOSITORY: ${{ vars.BACKEND_ECR_REPOSITORY || 'new-dubright-back-dev' }}
+      BACKEND_ECR_REPOSITORY: ${{ vars.BACKEND_ECR_REPOSITORY || 'echocast-back-dev' }}
       BACKEND_ECS_CLUSTER: ${{ vars.BACKEND_ECS_CLUSTER || 'dev-ecs' }}
-      BACKEND_ECS_SERVICE: ${{ vars.BACKEND_ECS_SERVICE || 'new-dubright-back-task-dev-service-h9wg7sei' }}
-      BACKEND_LOG_GROUP: ${{ vars.BACKEND_LOG_GROUP || '/ecs/new-dubright-back-task-dev' }}
-      BACKEND_SECRET_ARN: ${{ vars.BACKEND_SECRET_ARN || 'arn:aws:secretsmanager:ap-northeast-2:471112500555:secret:dev/new-dubright/back-ulvm9v' }}
+      BACKEND_ECS_SERVICE: ${{ vars.BACKEND_ECS_SERVICE || 'echocast-back-task-dev-service-h9wg7sei' }}
+      BACKEND_LOG_GROUP: ${{ vars.BACKEND_LOG_GROUP || '/ecs/echocast-back-task-dev' }}
+      BACKEND_SECRET_ARN: ${{ vars.BACKEND_SECRET_ARN || 'arn:aws:secretsmanager:ap-northeast-2:471112500555:secret:dev/echocast/back-ulvm9v' }}
       BACKEND_TASK_ROLE_ARN: ${{ vars.BACKEND_TASK_ROLE_ARN || 'arn:aws:iam::471112500555:role/DevEcsTaskIAM' }}
       BACKEND_EXECUTION_ROLE_ARN: ${{ vars.BACKEND_EXECUTION_ROLE_ARN || 'arn:aws:iam::471112500555:role/ecsTaskExecutionRole' }}
     steps:

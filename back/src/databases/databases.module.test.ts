@@ -11,7 +11,7 @@ describe('resolveTypeOrmOptions', () => {
                 port: 3306,
                 username: 'test',
                 password: '',
-                database: 'new-dubright',
+                database: 'echocast',
                 synchronize: false,
                 logging: true,
             },

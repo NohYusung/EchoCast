@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 import './styles.css';
 
 export const metadata: Metadata = {
-    title: 'DobeDub',
-    description: 'DobeDub player studio',
+    title: 'EchoCast',
+    description: 'EchoCast player studio',
     icons: {
         icon: '/brand/tooned-player-mark.svg',
         apple: '/brand/tooned-player-app-icon.svg',

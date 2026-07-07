@@ -114,9 +114,10 @@ async function verifyPassword({ password, hash }: { password: string; hash: stri
 
 function signAccessToken(user: User) {
     const secret =
+        process.env.ECHOCAST_JWT_SECRET ??
         process.env.NEW_DUBRIGHT_JWT_SECRET ??
         process.env.JWT_SECRET ??
-        (process.env.NODE_ENV === 'production' ? undefined : 'new-dubright-local-dev-secret');
+        (process.env.NODE_ENV === 'production' ? undefined : 'echocast-local-dev-secret');
 
     if (!secret) {
         throw new InternalServerErrorException('JWT secret 설정이 필요합니다.');

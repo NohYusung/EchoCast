@@ -54,7 +54,8 @@ type VoiceArtist = {
 type ArtistDraft = Omit<VoiceArtist, 'id'>;
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:4100';
-const artistStorageKey = 'new-dubright:studio:artists:v1';
+const artistStorageKey = 'echocast:studio:artists:v1';
+const legacyArtistStorageKey = 'new-dubright:studio:artists:v1';
 const colors = ['#5b9bff', '#f472b6', '#34d399', '#fbbf24', '#a78bfa', '#2dd4bf', '#fb7185', '#60a5fa'];
 const tagOptions = ['차분함', '밝음', '허스키', '저음', '고음', '감정연기', '내레이션', '소년', '소녀', '코믹'];
 const sexLabels: Record<ArtistSex, string> = { F: '여성', M: '남성', N: '중성' };
@@ -781,7 +782,8 @@ function readStoredArtists() {
     if (typeof window === 'undefined') return seedArtists();
 
     try {
-        const parsed = JSON.parse(window.localStorage.getItem(artistStorageKey) || 'null') as VoiceArtist[] | null;
+        const stored = window.localStorage.getItem(artistStorageKey) ?? window.localStorage.getItem(legacyArtistStorageKey);
+        const parsed = JSON.parse(stored || 'null') as VoiceArtist[] | null;
         if (parsed && parsed.length > 0) return parsed;
     } catch {
         return seedArtists();
@@ -803,6 +805,10 @@ function writeStoredArtists(artists: VoiceArtist[]) {
 }
 
 function assignmentStorageKey(productId: string) {
+    return `echocast:studio:products:${productId}:artist-assignments:v1`;
+}
+
+function legacyAssignmentStorageKey(productId: string) {
     return `new-dubright:studio:products:${productId}:artist-assignments:v1`;
 }
 
@@ -810,10 +816,10 @@ function readAssignments(productId: string) {
     if (typeof window === 'undefined') return {};
 
     try {
-        return JSON.parse(window.localStorage.getItem(assignmentStorageKey(productId)) || '{}') as Record<
-            string,
-            string
-        >;
+        const stored =
+            window.localStorage.getItem(assignmentStorageKey(productId)) ??
+            window.localStorage.getItem(legacyAssignmentStorageKey(productId));
+        return JSON.parse(stored || '{}') as Record<string, string>;
     } catch {
         return {};
     }

@@ -19,7 +19,7 @@ function createWindow(config) {
         minHeight: 760,
         backgroundColor: '#05070a',
         icon: appIconPath,
-        title: 'new-dubright',
+        title: 'EchoCast',
         webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
@@ -73,7 +73,7 @@ app.whenReady()
     .then(bootDesktopApp)
     .catch((error) => {
         shutdownManagedProcesses();
-        dialog.showErrorBox('new-dubright failed to start', error instanceof Error ? error.message : String(error));
+        dialog.showErrorBox('EchoCast failed to start', error instanceof Error ? error.message : String(error));
         app.quit();
     });
 

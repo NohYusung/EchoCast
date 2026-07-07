@@ -137,7 +137,7 @@ test("direction screen mirrors the dubright screen-direction workbench structure
   await expect(page.locator(".bottom-btn-box")).toContainText("연출 완료");
 });
 
-test("studio uses the new dubright timeline production-tool layout", async ({
+test("studio uses the EchoCast timeline production-tool layout", async ({
   page,
   request,
 }) => {

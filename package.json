@@ -1,5 +1,5 @@
 {
-  "name": "new-dubright",
+  "name": "echocast",
   "version": "0.1.0",
   "private": true,
   "main": "desktop/main.cjs",
@@ -8,18 +8,18 @@
     "front"
   ],
   "scripts": {
-    "dev:back": "npm run start:dev --workspace @new-dubright/back",
-    "dev:front": "npm run dev --workspace @new-dubright/front",
+    "dev:back": "npm run start:dev --workspace @echocast/back",
+    "dev:front": "npm run dev --workspace @echocast/front",
     "desktop": "electron desktop/main.cjs",
-    "desktop:build:front": "npm run build --workspace @new-dubright/front",
-    "desktop:dir": "npm run desktop:build:front && ELECTRON_BUILDER_CACHE=/private/tmp/new-dubright-electron-builder-cache electron-builder --dir",
-    "desktop:dmg": "npm run desktop:build:front && ELECTRON_BUILDER_CACHE=/private/tmp/new-dubright-electron-builder-cache electron-builder --mac dmg",
+    "desktop:build:front": "npm run build --workspace @echocast/front",
+    "desktop:dir": "npm run desktop:build:front && ELECTRON_BUILDER_CACHE=/private/tmp/echocast-electron-builder-cache electron-builder --dir",
+    "desktop:dmg": "npm run desktop:build:front && ELECTRON_BUILDER_CACHE=/private/tmp/echocast-electron-builder-cache electron-builder --mac dmg",
     "build": "npm run build --workspaces --if-present",
     "format": "prettier --write \"back/src/**/*.ts\" \"front/src/**/*.{ts,tsx}\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test:desktop && npm run test --workspaces --if-present",
     "test:desktop": "node --test desktop/**/*.test.cjs",
-    "test:e2e": "npm run build --workspace @new-dubright/front && npm run test:e2e --workspace @new-dubright/front"
+    "test:e2e": "npm run build --workspace @echocast/front && npm run test:e2e --workspace @echocast/front"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
@@ -35,8 +35,8 @@
     "class-transformer": "^0.5.1"
   },
   "build": {
-    "appId": "com.dobedub.newdubright",
-    "productName": "new-dubright",
+    "appId": "com.dobedub.echocast",
+    "productName": "EchoCast",
     "asar": true,
     "directories": {
       "output": "dist/desktop"

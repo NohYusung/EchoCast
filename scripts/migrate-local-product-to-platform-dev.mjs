@@ -9,7 +9,7 @@ const DEFAULT_SOURCE_ENV_PATH = path.join(ROOT_DIR, 'back/.env.local');
 const DEFAULT_TARGET_ENV_PATH = '/Users/nes0903/Documents/platform-dev-mcp/.env';
 const DEFAULT_TARGET_HOST = 'platform-dev-v3.cl0syga28ddv.ap-northeast-2.rds.amazonaws.com';
 const DEFAULT_TARGET_PORT = 3306;
-const DEFAULT_TARGET_DATABASE = 'new_dubright';
+const DEFAULT_TARGET_DATABASE = 'echocast';
 
 const MIGRATION_TABLES = [
     'products',
@@ -127,13 +127,33 @@ function requireValue(value, label) {
     return value;
 }
 
+function readEnv(env, key, ...legacyKeys) {
+    for (const candidateKey of [key, ...legacyKeys]) {
+        const value = env[candidateKey];
+        if (value !== undefined) {
+            return value;
+        }
+    }
+
+    return undefined;
+}
+
 function buildSourceConfig(sourceEnv) {
     return {
-        host: requireValue(process.env.SOURCE_DB_HOST ?? sourceEnv.NEW_DUBRIGHT_DB_HOST, 'source DB host'),
-        port: Number(process.env.SOURCE_DB_PORT ?? sourceEnv.NEW_DUBRIGHT_DB_PORT ?? 3306),
-        user: requireValue(process.env.SOURCE_DB_USER ?? sourceEnv.NEW_DUBRIGHT_DB_USERNAME, 'source DB user'),
-        password: process.env.SOURCE_DB_PASSWORD ?? sourceEnv.NEW_DUBRIGHT_DB_PASSWORD ?? '',
-        database: requireValue(process.env.SOURCE_DB_DATABASE ?? sourceEnv.NEW_DUBRIGHT_DB_DATABASE, 'source DB database'),
+        host: requireValue(
+            process.env.SOURCE_DB_HOST ?? readEnv(sourceEnv, 'ECHOCAST_DB_HOST', 'NEW_DUBRIGHT_DB_HOST'),
+            'source DB host',
+        ),
+        port: Number(process.env.SOURCE_DB_PORT ?? readEnv(sourceEnv, 'ECHOCAST_DB_PORT', 'NEW_DUBRIGHT_DB_PORT') ?? 3306),
+        user: requireValue(
+            process.env.SOURCE_DB_USER ?? readEnv(sourceEnv, 'ECHOCAST_DB_USERNAME', 'NEW_DUBRIGHT_DB_USERNAME'),
+            'source DB user',
+        ),
+        password: process.env.SOURCE_DB_PASSWORD ?? readEnv(sourceEnv, 'ECHOCAST_DB_PASSWORD', 'NEW_DUBRIGHT_DB_PASSWORD') ?? '',
+        database: requireValue(
+            process.env.SOURCE_DB_DATABASE ?? readEnv(sourceEnv, 'ECHOCAST_DB_DATABASE', 'NEW_DUBRIGHT_DB_DATABASE'),
+            'source DB database',
+        ),
         multipleStatements: false,
     };
 }

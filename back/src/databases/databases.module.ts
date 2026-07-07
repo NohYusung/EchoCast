@@ -32,9 +32,9 @@ export class DatabasesModule implements OnModuleInit, OnModuleDestroy {
 
     onModuleInit() {
         if (!this.dataSource.isInitialized) {
-            throw new Error('new-dubright database is not initialized.');
+            throw new Error('echocast database is not initialized.');
         }
-        this.logger.log('new-dubright database is initialized.');
+        this.logger.log('echocast database is initialized.');
     }
 
     async onModuleDestroy() {

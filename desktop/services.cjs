@@ -21,23 +21,46 @@ function normalizeLaunchPath(value) {
     return value.startsWith('/') ? value : `/${value}`;
 }
 
+function readEnv(env, key, ...legacyKeys) {
+    for (const candidateKey of [key, ...legacyKeys]) {
+        const value = env[candidateKey];
+        if (value !== undefined) {
+            return value;
+        }
+    }
+
+    return undefined;
+}
+
 function getDesktopConfig(env = process.env, runtime = {}) {
-    const frontPort = parsePort(env.NEW_DUBRIGHT_DESKTOP_FRONT_PORT ?? env.TEST_PLAYER_DESKTOP_FRONT_PORT, DEFAULT_FRONT_PORT);
-    const backPort = parsePort(env.NEW_DUBRIGHT_DESKTOP_BACK_PORT ?? env.TEST_PLAYER_DESKTOP_BACK_PORT, DEFAULT_BACK_PORT);
-    const host = env.NEW_DUBRIGHT_DESKTOP_HOST || env.TEST_PLAYER_DESKTOP_HOST || DEFAULT_HOST;
+    const frontPort = parsePort(
+        readEnv(env, 'ECHOCAST_DESKTOP_FRONT_PORT', 'NEW_DUBRIGHT_DESKTOP_FRONT_PORT', 'TEST_PLAYER_DESKTOP_FRONT_PORT'),
+        DEFAULT_FRONT_PORT,
+    );
+    const backPort = parsePort(
+        readEnv(env, 'ECHOCAST_DESKTOP_BACK_PORT', 'NEW_DUBRIGHT_DESKTOP_BACK_PORT', 'TEST_PLAYER_DESKTOP_BACK_PORT'),
+        DEFAULT_BACK_PORT,
+    );
+    const host = readEnv(env, 'ECHOCAST_DESKTOP_HOST', 'NEW_DUBRIGHT_DESKTOP_HOST', 'TEST_PLAYER_DESKTOP_HOST') || DEFAULT_HOST;
     const frontUrl = `http://${host}:${frontPort}`;
     const isPackaged =
         typeof runtime.isPackaged === 'boolean'
             ? runtime.isPackaged
-            : env.NEW_DUBRIGHT_DESKTOP_PACKAGED === 'true' || env.NEW_DUBRIGHT_DESKTOP_MODE === 'packaged';
+            : readEnv(env, 'ECHOCAST_DESKTOP_PACKAGED', 'NEW_DUBRIGHT_DESKTOP_PACKAGED') === 'true' ||
+              readEnv(env, 'ECHOCAST_DESKTOP_MODE', 'NEW_DUBRIGHT_DESKTOP_MODE') === 'packaged';
     const localApiBaseUrl = `http://${host}:${backPort}`;
     const apiBaseUrl = isPackaged
-        ? env.NEW_DUBRIGHT_API_BASE_URL || env.NEXT_PUBLIC_API_BASE_URL || localApiBaseUrl
+        ? readEnv(env, 'ECHOCAST_API_BASE_URL', 'NEW_DUBRIGHT_API_BASE_URL') ||
+          env.NEXT_PUBLIC_API_BASE_URL ||
+          localApiBaseUrl
         : localApiBaseUrl;
-    const launchPath = normalizeLaunchPath(env.NEW_DUBRIGHT_DESKTOP_PATH ?? env.TEST_PLAYER_DESKTOP_PATH);
+    const launchPath = normalizeLaunchPath(
+        readEnv(env, 'ECHOCAST_DESKTOP_PATH', 'NEW_DUBRIGHT_DESKTOP_PATH', 'TEST_PLAYER_DESKTOP_PATH'),
+    );
     const resourcesPath = runtime.resourcesPath || process.resourcesPath || path.resolve(__dirname, '..');
     const frontStandaloneDir =
-        env.NEW_DUBRIGHT_DESKTOP_STANDALONE_DIR || path.join(resourcesPath, PACKAGED_FRONT_RESOURCE_DIR);
+        readEnv(env, 'ECHOCAST_DESKTOP_STANDALONE_DIR', 'NEW_DUBRIGHT_DESKTOP_STANDALONE_DIR') ||
+        path.join(resourcesPath, PACKAGED_FRONT_RESOURCE_DIR);
 
     return {
         apiReadyUrl: new URL('/products', apiBaseUrl).toString(),
@@ -80,7 +103,7 @@ function getDesktopServiceDefinitions(config) {
         {
             name: 'back',
             command: 'npm',
-            args: ['run', 'start:dev', '--workspace', '@new-dubright/back'],
+            args: ['run', 'start:dev', '--workspace', '@echocast/back'],
             cwd: config.rootDir,
             env: {
                 PORT: String(config.backPort),
@@ -89,7 +112,7 @@ function getDesktopServiceDefinitions(config) {
         {
             name: 'front',
             command: 'npm',
-            args: ['run', 'dev', '--workspace', '@new-dubright/front', '--', '-p', String(config.frontPort)],
+            args: ['run', 'dev', '--workspace', '@echocast/front', '--', '-p', String(config.frontPort)],
             cwd: config.rootDir,
             env: {
                 NEXT_PUBLIC_API_BASE_URL: config.apiBaseUrl,

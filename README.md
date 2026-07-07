@@ -1,6 +1,6 @@
-# new-dubright
+# EchoCast
 
-`new-dubright` is a monorepo scaffold for testing the next Dubright player direction.
+`EchoCast` is a monorepo scaffold for testing the next Dubright player direction.
 
 ## Structure
 
@@ -31,9 +31,9 @@
 ## Desktop Shell
 
 - Default ports are `4100` for `back` and `3000` for `front`.
-- Set `NEW_DUBRIGHT_DESKTOP_BACK_PORT` or `NEW_DUBRIGHT_DESKTOP_FRONT_PORT` to override ports.
-- Set `NEW_DUBRIGHT_DESKTOP_PATH` to open a specific route when the local backend already has the required data, for example:
-  `NEW_DUBRIGHT_DESKTOP_PATH=/studio/products/1/episodes/1 npm run desktop`.
+- Set `ECHOCAST_DESKTOP_BACK_PORT` or `ECHOCAST_DESKTOP_FRONT_PORT` to override ports.
+- Set `ECHOCAST_DESKTOP_PATH` to open a specific route when the local backend already has the required data, for example:
+  `ECHOCAST_DESKTOP_PATH=/studio/products/1/episodes/1 npm run desktop`.
 - Packaged DMG builds include the Next.js standalone frontend and do not start the NestJS backend.
 - Set `NEXT_PUBLIC_API_BASE_URL` before `npm run desktop:dmg` when the packaged frontend should call a remote backend.
 
@@ -47,7 +47,7 @@
 ## Backend Dev Deploy
 
 - `.github/workflows/ci-cd.yml` builds and pushes `back/Dockerfile` to ECR on `main` pushes when backend or common files change.
-- Default target: ECR `new-dubright-back-dev`, ECS cluster `dev-ecs`, service `new-dubright-back-task-dev-service`, region `ap-northeast-2`.
+- Default target: ECR `echocast-back-dev`, ECS cluster `dev-ecs`, service `echocast-back-task-dev-service`, region `ap-northeast-2`.
 - Required GitHub auth: set either repository variable `AWS_ROLE_TO_ASSUME` for OIDC or repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 - Override defaults with repository variables when needed: `AWS_REGION`, `BACKEND_ECR_REPOSITORY`, `BACKEND_ECS_CLUSTER`, `BACKEND_ECS_SERVICE`, `BACKEND_SECRET_ARN`, `BACKEND_LOG_GROUP`, `BACKEND_TASK_ROLE_ARN`, `BACKEND_EXECUTION_ROLE_ARN`.
 - Set repository variable `BACKEND_DEPLOY_ENABLED=false` to disable backend deploy while keeping CI active.

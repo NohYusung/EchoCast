@@ -4,11 +4,11 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY back/package.json ./back/package.json
 COPY front/package.json ./front/package.json
-RUN npm ci --workspace @new-dubright/back --include-workspace-root=false
+RUN npm ci --workspace @echocast/back --include-workspace-root=false
 
 COPY back ./back
-RUN npm run build --workspace @new-dubright/back
-RUN npm prune --omit=dev --workspace @new-dubright/back --include-workspace-root=false
+RUN npm run build --workspace @echocast/back
+RUN npm prune --omit=dev --workspace @echocast/back --include-workspace-root=false
 
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app

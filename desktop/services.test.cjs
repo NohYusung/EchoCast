@@ -12,8 +12,8 @@ const {
 
 test('getDesktopConfig builds local front and back URLs from environment ports', () => {
     const config = getDesktopConfig({
-        NEW_DUBRIGHT_DESKTOP_FRONT_PORT: '3107',
-        NEW_DUBRIGHT_DESKTOP_BACK_PORT: '4107',
+        ECHOCAST_DESKTOP_FRONT_PORT: '3107',
+        ECHOCAST_DESKTOP_BACK_PORT: '4107',
     });
 
     assert.equal(config.frontPort, 3107);
@@ -23,6 +23,18 @@ test('getDesktopConfig builds local front and back URLs from environment ports',
     assert.equal(config.apiReadyUrl, 'http://localhost:4107/products');
 });
 
+test('getDesktopConfig accepts legacy new-dubright desktop env keys', () => {
+    const config = getDesktopConfig({
+        NEW_DUBRIGHT_DESKTOP_FRONT_PORT: '3307',
+        NEW_DUBRIGHT_DESKTOP_BACK_PORT: '4307',
+    });
+
+    assert.equal(config.frontPort, 3307);
+    assert.equal(config.backPort, 4307);
+    assert.equal(config.frontUrl, 'http://localhost:3307');
+    assert.equal(config.apiBaseUrl, 'http://localhost:4307');
+});
+
 test('getDesktopServiceDefinitions wires back and front workspace commands', () => {
     const config = getDesktopConfig({});
     const services = getDesktopServiceDefinitions(config);
@@ -30,8 +42,8 @@ test('getDesktopServiceDefinitions wires back and front workspace commands', () 
     assert.deepEqual(
         services.map((service) => [service.name, service.command, service.args]),
         [
-            ['back', 'npm', ['run', 'start:dev', '--workspace', '@new-dubright/back']],
-            ['front', 'npm', ['run', 'dev', '--workspace', '@new-dubright/front', '--', '-p', '3000']],
+            ['back', 'npm', ['run', 'start:dev', '--workspace', '@echocast/back']],
+            ['front', 'npm', ['run', 'dev', '--workspace', '@echocast/front', '--', '-p', '3000']],
         ],
     );
     assert.equal(services[0].env.PORT, '4100');
@@ -41,35 +53,35 @@ test('getDesktopServiceDefinitions wires back and front workspace commands', () 
 test('getDesktopServiceDefinitions uses the packaged Next server without starting the backend', () => {
     const config = getDesktopConfig(
         {
-            NEW_DUBRIGHT_API_BASE_URL: 'https://api.example.com',
-            NEW_DUBRIGHT_DESKTOP_FRONT_PORT: '3200',
-            NEW_DUBRIGHT_DESKTOP_PACKAGED: 'true',
+            ECHOCAST_API_BASE_URL: 'https://api.example.com',
+            ECHOCAST_DESKTOP_FRONT_PORT: '3200',
+            ECHOCAST_DESKTOP_PACKAGED: 'true',
         },
         {
-            execPath: '/Applications/new-dubright.app/Contents/MacOS/new-dubright',
-            resourcesPath: '/Applications/new-dubright.app/Contents/Resources',
+            execPath: '/Applications/EchoCast.app/Contents/MacOS/EchoCast',
+            resourcesPath: '/Applications/EchoCast.app/Contents/Resources',
         },
     );
     const services = getDesktopServiceDefinitions(config);
 
     assert.equal(config.isPackaged, true);
     assert.equal(config.apiBaseUrl, 'https://api.example.com');
-    assert.equal(config.frontStandaloneDir, '/Applications/new-dubright.app/Contents/Resources/front-standalone');
+    assert.equal(config.frontStandaloneDir, '/Applications/EchoCast.app/Contents/Resources/front-standalone');
     assert.deepEqual(
         services.map((service) => [service.name, service.command]),
-        [['front', '/Applications/new-dubright.app/Contents/MacOS/new-dubright']],
+        [['front', '/Applications/EchoCast.app/Contents/MacOS/EchoCast']],
     );
-    assert.deepEqual(services[0].args, ['/Applications/new-dubright.app/Contents/Resources/front-standalone/front/server.js']);
-    assert.equal(services[0].cwd, '/Applications/new-dubright.app/Contents/Resources/front-standalone/front');
+    assert.deepEqual(services[0].args, ['/Applications/EchoCast.app/Contents/Resources/front-standalone/front/server.js']);
+    assert.equal(services[0].cwd, '/Applications/EchoCast.app/Contents/Resources/front-standalone/front');
     assert.equal(services[0].env.ELECTRON_RUN_AS_NODE, '1');
     assert.equal(services[0].env.NEXT_PUBLIC_API_BASE_URL, 'https://api.example.com');
     assert.equal(services[0].env.PORT, '3200');
 });
 
 test('getPackagedNextServerEntry supports a root standalone server fallback', () => {
-    const serverEntry = getPackagedNextServerEntry('/tmp/new-dubright-missing-standalone');
+    const serverEntry = getPackagedNextServerEntry('/tmp/echocast-missing-standalone');
 
-    assert.equal(serverEntry, '/tmp/new-dubright-missing-standalone/front/server.js');
+    assert.equal(serverEntry, '/tmp/echocast-missing-standalone/front/server.js');
 });
 
 test('startManagedProcesses spawns each service and stopManagedProcesses kills active children', () => {
